@@ -1,0 +1,48 @@
+# 4K Recording Scenario
+# Sensor -> ISP_FE (OTF) -> ISP_BE (M2M) -> VENC (M2M)
+
+scenario:
+  name: "4K_Recording"
+  
+  tasks:
+    # Sensor capture - 4K resolution (3840 x 2160 = 8,294,400 pixels)
+    - id: "t_sensor"
+      hw: "Sensor_Ext"
+      pixels: 8294400
+      description: "4K sensor capture"
+
+    # ISP Front-End processing
+    - id: "t_isp_fe"
+      hw: "ISP_FE"
+      pixels: 8294400
+      description: "ISP front-end (BPC, LSC)"
+
+    # ISP Back-End processing
+    - id: "t_isp_be"
+      hw: "ISP_BE"
+      pixels: 8294400
+      description: "ISP back-end (TNR, color processing)"
+
+    # Video encoding
+    - id: "t_venc"
+      hw: "VENC"
+      pixels: 8294400
+      description: "H.264/HEVC encoding"
+
+  edges:
+    # Sensor to ISP_FE: Direct OTF connection (pipelined)
+    - src: "t_sensor"
+      dst: "t_isp_fe"
+      type: "OTF"
+
+    # ISP_FE to ISP_BE: Memory-to-Memory
+    - src: "t_isp_fe"
+      dst: "t_isp_be"
+      type: "M2M"
+      buffer_size: 33177600  # 4 bytes/pixel * 8.3MP
+
+    # ISP_BE to VENC: Memory-to-Memory
+    - src: "t_isp_be"
+      dst: "t_venc"
+      type: "M2M"
+      buffer_size: 33177600

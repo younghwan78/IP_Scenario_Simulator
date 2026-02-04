@@ -1,0 +1,29 @@
+﻿============================================================
+SoC Multimedia Architecture Simulator - Demo
+============================================================
+
+[SoC Hardware Hierarchy]
+├── Sensor_Ext (ExternalNode, 3840x2160@30fps, mode=4K_30fps)
+├── ISP_FE (IPNode, 600MHz, PPC=4)
+│   └── Scaler0 (ScalerModule, scale=0.50x0.50)
+├── ISP_BE (IPNode, 600MHz, PPC=2)
+└── VENC (IPNode, 400MHz, PPC=1)
+
+python : Traceback (most recent call last):
+위치 줄:1 문자:26
++ .\venv\Scripts\activate; python main.py --demo 2>&1 | Out-File -FileP ...
++                          ~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::S 
+   tring) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "E:\10_Codes\23_MMIP_Scenario_simulation2\main.py", line 378, in <module>
+    main()
+    ~~~~^^
+  File "E:\10_Codes\23_MMIP_Scenario_simulation2\main.py", line 304, in main
+    results = run_demo()
+  File "E:\10_Codes\23_MMIP_Scenario_simulation2\main.py", line 242, in run_demo
+    print(text_viewer.print_scenario_graph(scenario))
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'cp949' codec can't encode character '\u2550' in position 327:
+ illegal multibyte sequence
