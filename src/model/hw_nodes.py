@@ -153,10 +153,14 @@ class IPNode(HWNode):
         ppc: Pixels Per Clock
         efficiency: Processing efficiency (0.0 ~ 1.0)
         modules: List of child modules (optional)
+        supported_modes: List of supported IP modes (e.g., ['default', 'power_saving'])
+        supports_crop: Whether this IP supports crop functionality
     """
     ppc: float = 1.0
     efficiency: float = 1.0
     modules: List[Any] = field(default_factory=list)  # List[Module]
+    supported_modes: List[str] = field(default_factory=lambda: ['default'])
+    supports_crop: bool = False
     
     def add_module(self, module: 'Module') -> 'IPNode':
         """

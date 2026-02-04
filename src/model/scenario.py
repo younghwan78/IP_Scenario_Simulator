@@ -28,15 +28,43 @@ class Task:
     Attributes:
         task_id: Unique task identifier
         mapped_hw: Name of the hardware node to execute on
-        workload: Workload parameters (pixels, ops, data_size, etc.)
+        workload: Workload parameters (pixels, width, height, ops, data_size, etc.)
+        ip_mode: Optional IP operating mode (e.g., 'power_saving', 'high_performance')
+        crop_size: Optional crop region (width, height) - requires HW crop support
     """
     task_id: str
     mapped_hw: str
     workload: Dict[str, Any] = field(default_factory=dict)
+    ip_mode: Optional[str] = None
+    crop_size: Optional[Tuple[int, int]] = None
     
     def get_pixels(self) -> int:
-        """Get pixel count from workload."""
-        return self.workload.get('pixels', 0)
+        """Get pixel count from workload (width * height or direct pixels)."""
+        if 'pixels' in self.workload:
+            return self.workload['pixels']
+        width = self.workload.get('width', 0)
+        height = self.workload.get('height', 0)
+        return width * height
+    
+    def get_width(self) -> int:
+        """Get frame width."""
+        return self.workload.get('width', 0)
+    
+    def get_height(self) -> int:
+        """Get frame height."""
+        return self.workload.get('height', 0)
+    
+    def get_size(self) -> Tuple[int, int]:
+        """Get frame size as (width, height)."""
+        return (self.get_width(), self.get_height())
+    
+    def get_crop_size(self) -> Optional[Tuple[int, int]]:
+        """Get crop output size if specified."""
+        return self.crop_size
+    
+    def requires_crop(self) -> bool:
+        """Check if task requires crop functionality."""
+        return self.crop_size is not None
     
     def get_ops(self) -> int:
         """Get operation count from workload."""
@@ -83,7 +111,10 @@ class ScenarioGraph:
         self._tasks: Dict[str, Task] = {}
     
     def add_task(self, task_id: str, mapped_hw: str, 
-                 workload: Optional[Dict[str, Any]] = None, **kwargs) -> 'ScenarioGraph':
+                 workload: Optional[Dict[str, Any]] = None,
+                 ip_mode: Optional[str] = None,
+                 crop_size: Optional[Tuple[int, int]] = None,
+                 **kwargs) -> 'ScenarioGraph':
         """
         Add a task to the scenario.
         
@@ -91,7 +122,9 @@ class ScenarioGraph:
             task_id: Unique task identifier
             mapped_hw: Hardware node name to execute on
             workload: Workload parameters dict
-            **kwargs: Additional workload parameters
+            ip_mode: Optional IP mode (e.g., 'power_saving', 'high_performance')
+            crop_size: Optional crop output size (width, height)
+            **kwargs: Additional workload parameters (width, height, pixels, etc.)
             
         Returns:
             self for method chaining
@@ -100,7 +133,13 @@ class ScenarioGraph:
             workload = {}
         workload.update(kwargs)
         
-        task = Task(task_id=task_id, mapped_hw=mapped_hw, workload=workload)
+        task = Task(
+            task_id=task_id, 
+            mapped_hw=mapped_hw, 
+            workload=workload,
+            ip_mode=ip_mode,
+            crop_size=crop_size
+        )
         self._tasks[task_id] = task
         self.graph.add_node(task_id, task=task)
         return self

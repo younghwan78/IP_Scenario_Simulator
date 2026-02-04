@@ -129,10 +129,22 @@ classDiagram
         +set_attr(key, value)
     }
     
+    class ExternalNode {
+        +frame_width: int
+        +frame_height: int
+        +fps: float
+        +sensor_mode: str
+        +is_external: bool = True
+        +get_processing_time() float "Always 0.0"
+        +get_frame_timing() Dict
+    }
+    
     class IPNode {
         +ppc: float
         +efficiency: float
         +modules: List~Module~
+        +supported_modes: List~str~
+        +supports_crop: bool
         +add_module(module) IPNode
         +get_processing_time(workload) float
     }
@@ -157,6 +169,7 @@ classDiagram
         +access_latency: float
     }
     
+    HWNode <|-- ExternalNode
     HWNode <|-- IPNode
     HWNode <|-- DMANode
     HWNode <|-- ProcessorNode
@@ -167,6 +180,7 @@ classDiagram
 
 | Node Type | Formula | Units |
 |-----------|---------|-------|
+| **ExternalNode** | `0.0` (excluded from SoC timing) | seconds |
 | **IPNode** | `pixels / (clock_freq × ppc × efficiency)` | seconds |
 | **DMANode** | `latency + (data_size / effective_bandwidth)` | seconds |
 | **ProcessorNode** | `(ops × cycles_per_op) / (clock_freq × cores)` | seconds |
@@ -248,7 +262,7 @@ classDiagram
         +name: str
         +graph: nx.DiGraph
         -_tasks: Dict~str, Task~
-        +add_task(task_id, mapped_hw, workload)
+        +add_task(task_id, mapped_hw, workload, ip_mode, crop_size)
         +add_dependency(src, dst, conn_type)
         +get_predecessors(task_id) List
         +get_otf_groups() List~List~
@@ -261,8 +275,14 @@ classDiagram
         +task_id: str
         +mapped_hw: str
         +workload: Dict
+        +ip_mode: str "Optional, default='default'"
+        +crop_size: Tuple~int,int~ "Optional"
         +get_pixels() int
-        +get_ops() int
+        +get_width() int
+        +get_height() int
+        +get_size() Tuple
+        +get_crop_size() Tuple
+        +requires_crop() bool
     }
     
     class ConnectionType {
@@ -432,6 +452,7 @@ print(viewer.print_simulation_summary(results))
 
 ```
 [SoC Hardware Hierarchy]
+├── Sensor_Ext (ExternalNode, 3840x2160@30fps, mode=4K_30fps)
 ├── ISP_FE (IPNode, 600MHz, PPC=4)
 │   ├── Scaler0 (ScalerModule, scale=0.50x0.50)
 │   └── Crop0 (CropModule, region=(0,0,1920,1080))
@@ -469,6 +490,14 @@ classDiagram
 
 ```yaml
 hardware:
+  # External node (Sensor) - excluded from SoC timing
+  - name: "Sensor_Ext"
+    type: "External"
+    frame_width: 3840
+    frame_height: 2160
+    fps: 30.0
+    sensor_mode: "4K_30fps"
+
   - name: "ISP_FE"
     type: "IP"
     clock: 600000000      # 600 MHz
@@ -476,10 +505,24 @@ hardware:
     efficiency: 0.95
     power_static: 15.0    # mW
     power_dynamic: 80.0   # mW
+    supports_crop: false
+    supported_modes:      # Available IP modes
+      - "default"
+      - "power_saving"
+      - "high_performance"
     modules:
       - name: "Scaler0"
         type: "Scaler"
         scale_factor: [0.5, 0.5]
+
+  - name: "ISP_BE"
+    type: "IP"
+    clock: 600000000
+    ppc: 2
+    supports_crop: true   # This IP supports crop
+    supported_modes:
+      - "default"
+      - "power_saving"
 
   - name: "DMA_Read"
     type: "DMA"
@@ -498,11 +541,22 @@ scenario:
   tasks:
     - id: "t_sensor"
       hw: "Sensor_Ext"
-      pixels: 8294400     # 3840 × 2160
+      width: 3840           # New: width/height format
+      height: 2160
       
     - id: "t_isp_fe"
       hw: "ISP_FE"
-      pixels: 8294400
+      width: 3840
+      height: 2160
+      ip_mode: "default"   # Optional: power_saving, high_performance
+      
+    - id: "t_isp_be"
+      hw: "ISP_BE"
+      width: 3840
+      height: 2160
+      crop_width: 1920     # Optional: output crop size
+      crop_height: 1080
+      ip_mode: "power_saving"
 
   edges:
     - src: "t_sensor"
@@ -514,6 +568,16 @@ scenario:
       type: "M2M"         # Sequential
       buffer_size: 33177600
 ```
+
+### 6.3 Validation
+
+Simulator는 실행 전 HW capability validation을 수행합니다:
+
+| Validation | Error Condition |
+|------------|----------------|
+| **Crop Support** | task에 `crop_size` 지정 시 HW의 `supports_crop=false`이면 에러 |
+| **IP Mode** | task의 `ip_mode`가 HW의 `supported_modes`에 없으면 에러 |
+| **Default Mode** | `ip_mode` 미지정 시 자동으로 `'default'` 사용 |
 
 ---
 

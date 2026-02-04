@@ -58,13 +58,19 @@ def create_hw_node(config: dict) -> HWNode:
         )
     
     elif node_type == 'IP':
+        # Parse supported_modes from config (default to ['default'])
+        supported_modes = config.get('supported_modes', ['default'])
+        supports_crop = config.get('supports_crop', False)
+        
         node = IPNode(
             name=name,
             clock_freq=clock,
             ppc=config.get('ppc', 1.0),
             efficiency=config.get('efficiency', 1.0),
             power_static=power_static,
-            power_dynamic=power_dynamic
+            power_dynamic=power_dynamic,
+            supported_modes=supported_modes,
+            supports_crop=supports_crop
         )
         
         # Add modules if present
@@ -159,17 +165,33 @@ def create_scenario(config: dict) -> ScenarioGraph:
     # Add tasks
     for task_config in scenario_data.get('tasks', []):
         workload = {}
+        
+        # Support both 'pixels' and 'width/height' formats
         if 'pixels' in task_config:
             workload['pixels'] = task_config['pixels']
+        if 'width' in task_config:
+            workload['width'] = task_config['width']
+        if 'height' in task_config:
+            workload['height'] = task_config['height']
         if 'ops' in task_config:
             workload['ops'] = task_config['ops']
         if 'data_size' in task_config:
             workload['data_size'] = task_config['data_size']
         
+        # Parse crop_size from separate width/height fields
+        crop_size = None
+        if 'crop_width' in task_config and 'crop_height' in task_config:
+            crop_size = (task_config['crop_width'], task_config['crop_height'])
+        
+        # Get optional ip_mode
+        ip_mode = task_config.get('ip_mode', None)
+        
         scenario.add_task(
             task_id=task_config['id'],
             mapped_hw=task_config['hw'],
-            workload=workload
+            workload=workload,
+            ip_mode=ip_mode,
+            crop_size=crop_size
         )
     
     # Add edges

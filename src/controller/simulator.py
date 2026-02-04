@@ -160,6 +160,48 @@ class SoCSimulator:
         self.hw_registry[name] = placeholder
         return placeholder
     
+    def _validate_hw_capabilities(self) -> None:
+        """
+        Validate that hardware supports required task features.
+        
+        Checks:
+        - Crop support if task requires crop
+        - IP mode compatibility
+        
+        Raises:
+            ValueError: If validation fails
+        """
+        errors = []
+        
+        for task in self.scenario.get_tasks():
+            hw = self._get_hw(task.mapped_hw)
+            
+            # Check crop support
+            if task.requires_crop():
+                if isinstance(hw, IPNode):
+                    if not hw.supports_crop:
+                        errors.append(
+                            f"Task '{task.task_id}' requires crop but HW '{hw.name}' "
+                            f"does not support crop (set supports_crop=True)"
+                        )
+                else:
+                    errors.append(
+                        f"Task '{task.task_id}' requires crop but HW '{hw.name}' "
+                        f"is not an IPNode"
+                    )
+            
+            # Check IP mode support (treat None/missing as 'default')
+            ip_mode = task.ip_mode if task.ip_mode else 'default'
+            if isinstance(hw, IPNode):
+                if ip_mode not in hw.supported_modes:
+                    errors.append(
+                        f"Task '{task.task_id}' uses mode '{ip_mode}' but HW "
+                        f"'{hw.name}' only supports: {hw.supported_modes}"
+                    )
+        
+        if errors:
+            raise ValueError("HW capability validation failed:\n  " + "\n  ".join(errors))
+    
     def _init_resources(self) -> None:
         """Initialize SimPy resources for all HW nodes."""
         for hw in self.hw_registry.values():
@@ -307,10 +349,13 @@ class SoCSimulator:
         if self.scenario is None:
             raise ValueError("No scenario loaded")
         
-        # Validate scenario
+        # Validate scenario structure
         is_valid, errors = self.scenario.validate()
         if not is_valid:
             raise ValueError(f"Invalid scenario: {errors}")
+        
+        # Validate HW capabilities for tasks
+        self._validate_hw_capabilities()
         
         # Initialize SimPy environment
         self.env = simpy.Environment()
