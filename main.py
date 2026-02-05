@@ -510,9 +510,9 @@ def main():
                     visualizer.save_gantt(fig, args.output_gantt)
                     print(f"Gantt chart saved to: {args.output_gantt}")
 
-            if args.output_json:
-                visualizer = Visualizer()
-                visualizer.export_perfetto_json(results, args.output_json)
+        if args.output_json:
+            visualizer = Visualizer()
+            visualizer.export_perfetto_json(results, args.output_json)
 
         return
 
@@ -579,9 +579,9 @@ def main():
                 visualizer.save_gantt(fig, args.output_gantt)
                 print(f"Gantt chart saved to: {args.output_gantt}")
 
-        if args.output_json:
-            visualizer = Visualizer()
-            visualizer.export_perfetto_json(results, args.output_json)
+    if args.output_json:
+        visualizer = Visualizer()
+        visualizer.export_perfetto_json(results, args.output_json)
 
 
 if __name__ == "__main__":
