@@ -76,8 +76,8 @@ scenario:
         format: "NV12"
         compression: "AFBC"
       transfer:
-        write_dma: "DMA_Write"
-        read_dma: "DMA_Read"
+        write_dma: "WDMA_FE"
+        read_dma: "RDMA_BE"
         memory: "DRAM"
 
     # ISP_BE to VENC: Memory-to-Memory (Explicit DMA)
@@ -88,6 +88,6 @@ scenario:
         format: "NV12"
         compression: "Linear"
       transfer:
-        write_dma: "DMA_Write"
-        read_dma: "DMA_Read"
+        write_dma: "WDMA_BE"
+        read_dma: "RDMA_VENC"
         memory: "DRAM"

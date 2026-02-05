@@ -133,10 +133,23 @@ classDiagram
         +frame_width: int
         +frame_height: int
         +fps: float
-        +sensor_mode: str
         +is_external: bool = True
         +get_processing_time() float "Always 0.0"
         +get_frame_timing() Dict
+    }
+
+    class SensorNode {
+        +supported_sensor_modes: List~str~
+        +sensor_mode: str
+        +v_valid_time: float
+        +get_required_throughput() float
+    }
+
+    class DisplayNode {
+        +display_mode: str
+        +h_total: int
+        +v_total: int
+        +pixel_clock() float
     }
 
     class IPNode {
@@ -145,16 +158,15 @@ classDiagram
         +modules: List~Module~
         +supported_modes: List~str~
         +supports_crop: bool
-        +add_module(module) IPNode
-        +get_processing_time(workload) float
-    }
-
-    class DMANode {
-        +bandwidth: float
-        +multiple_outstanding: int
-        +burst_length: int
+        +supports_scale: bool
         +latency: float
-        +get_transfer_time(data_size) float
+        +max_clock: float
+        +clock_table: List~float~
+        +required_freq: float
+        +target_freq: float
+        +add_module(module) IPNode
+        +get_module(name) Module
+        +get_processing_time(workload) float
     }
 
     class ProcessorNode {
@@ -170,8 +182,9 @@ classDiagram
     }
 
     HWNode <|-- ExternalNode
+    ExternalNode <|-- SensorNode
+    ExternalNode <|-- DisplayNode
     HWNode <|-- IPNode
-    HWNode <|-- DMANode
     HWNode <|-- ProcessorNode
     HWNode <|-- MemoryNode
 ```
@@ -181,8 +194,9 @@ classDiagram
 | Node Type | Formula | Units |
 |-----------|---------|-------|
 | **ExternalNode** | `0.0` (excluded from SoC timing) | seconds |
+| **SensorNode** | `0.0` (vValid time used for OTF clock calculation) | seconds |
 | **IPNode** | `pixels / (clock_freq × ppc × efficiency)` | seconds |
-| **DMANode** | `latency + (data_size / effective_bandwidth)` | seconds |
+| **DMAModule** | `data_size / (max_bandwidth × MO_efficiency)` | seconds |
 | **ProcessorNode** | `(ops × cycles_per_op) / (clock_freq × cores)` | seconds |
 | **MemoryNode** | `access_latency + (data_size / bandwidth)` | seconds |
 
@@ -191,15 +205,16 @@ classDiagram
 `extra_attrs` 딕셔너리를 통해 확장 속성을 지원합니다:
 
 ```python
-dma = DMANode(name="DMA_Read", bandwidth=25.6e9)
-dma.set_attr('qos_level', 'high')
-dma.set_attr('priority', 1)
-dma.set_attr('arbiter_weight', 0.5)
+ip = IPNode(name="ISP_FE", clock_freq=600e6)
+ip.set_attr('qos_level', 'high')
+ip.set_attr('priority', 1)
+ip.set_attr('arbiter_weight', 0.5)
 ```
 
 ### 3.2 Module System
 
 IP 내부의 functional unit을 모델링합니다. 모듈은 parent IP로부터 clock을 상속받습니다.
+**DMA 컨트롤러는 IP 내부의 DMAModule로 모델링됩니다** (별도의 DMANode가 아님).
 
 ```mermaid
 classDiagram
@@ -218,6 +233,9 @@ classDiagram
 
     class ScalerModule {
         +scale_factor: Tuple~float, float~
+        +min_scale: Tuple
+        +max_scale: Tuple
+        +set_sizes(input, output)
         +calculate_output_size(input) Tuple
     }
 
@@ -231,9 +249,24 @@ classDiagram
         +calculate_output_size(input) Tuple
     }
 
+    class DMAModule {
+        +max_bandwidth: float
+        +direction: str "read or write"
+        +multiple_outstanding: int
+        +supported_compressions: List~str~
+        +compression_ratios: Dict~str, float~
+        +get_transfer_time(data_size) float
+    }
+
+    class BypassModule {
+        +get_processing_time() float "Always 0.0"
+    }
+
     Module <|-- ScalerModule
     Module <|-- CropModule
     Module <|-- GenericModule
+    Module <|-- DMAModule
+    Module <|-- BypassModule
 
     IPNode "1" *-- "*" Module : contains
 ```
@@ -484,89 +517,119 @@ classDiagram
 
 ---
 
-## 6. Configuration
-
 ### 6.1 Hardware Configuration (hw_config/)
+
+HW Config은 **정적인 HW Capability**를 정의합니다. 런타임에 변경되는 값은 Scenario Config에서 지정합니다.
 
 ```yaml
 hardware:
-  # External node (Sensor) - excluded from SoC timing
+  # Sensor Node - HW constraints only (frame size/fps in scenario)
   - name: "Sensor_Ext"
-    type: "External"
-    frame_width: 3840
-    frame_height: 2160
-    fps: 30.0
-    sensor_mode: "4K_30fps"
+    type: "Sensor"
+    power_static: 10.0
+    power_dynamic: 50.0
+    supported_sensor_modes:
+      - "4K_30fps"
+      - "4K_60fps"
+      - "1080p_120fps"
+    # frame_width, frame_height, fps, v_valid_time -> scenario config
 
   - name: "ISP_FE"
     type: "IP"
-    clock: 600000000      # 600 MHz
-    ppc: 4                # Pixels Per Clock
+    max_clock: 600000000     # 600 MHz max
+    clock_table:             # Available clock steps for DVFS
+      - 600000000
+      - 400000000
+      - 200000000
+    ppc: 4
     efficiency: 0.95
-    power_static: 15.0    # mW
-    power_dynamic: 80.0   # mW
-    supports_crop: false
-    supported_modes:      # Available IP modes
+    power_static: 15.0
+    power_dynamic: 80.0
+    min_size: [64, 64]
+    max_size: [8192, 8192]
+    supports_crop: true
+    supports_scale: true
+    latency: 5.0              # OTF pipeline latency (microseconds)
+    supported_modes:
       - "default"
       - "power_saving"
       - "high_performance"
     modules:
+      - name: "BPC"
+        type: "Generic"
+        ppc: 4
       - name: "Scaler0"
         type: "Scaler"
-        scale_factor: [0.5, 0.5]
-
-  - name: "ISP_BE"
-    type: "IP"
-    clock: 600000000
-    ppc: 2
-    supports_crop: true   # This IP supports crop
-    supported_modes:
-      - "default"
-      - "power_saving"
-
-  - name: "DMA_Read"
-    type: "DMA"
-    bandwidth: 25600000000    # 25.6 GB/s
-    multiple_outstanding: 16  # MO
-    burst_length: 256
-    latency: 0.0000001        # 100ns
+        ppc: 4
+        min_scale: [0.25, 0.25]
+        max_scale: [4.0, 4.0]
+      # DMA is now a module inside IP
+      - name: "WDMA_FE"
+        type: "DMA"
+        direction: "write"
+        max_bandwidth: 25600000000
+        multiple_outstanding: 16
+        supported_compressions: ["AFBC", "Linear"]
+        compression_ratios:
+          AFBC: 0.6
+          Linear: 1.0
 ```
 
 ### 6.2 Scenario Configuration (scenario_config/)
+
+Scenario Config은 **런타임 설정**을 정의합니다: 해상도, FPS, 모듈 파라미터, DMA 전송 설정.
 
 ```yaml
 scenario:
   name: "4K_Recording"
 
+  # Sensor runtime settings
+  sensor:
+    hw: "Sensor_Ext"
+    frame_width: 3840
+    frame_height: 2160
+    fps: 30.0
+    sensor_mode: "4K_30fps"
+    v_valid_time: 0.0118      # 11.8ms vValid (for OTF clock calc)
+
+  # Module settings (scaler/crop params)
+  module_settings:
+    - hw: "ISP_FE"
+      module: "Scaler0"
+      input_size: [3840, 2160]
+      output_size: [1920, 1080]
+
   tasks:
     - id: "t_sensor"
       hw: "Sensor_Ext"
-      width: 3840           # New: width/height format
-      height: 2160
 
     - id: "t_isp_fe"
       hw: "ISP_FE"
       width: 3840
       height: 2160
-      ip_mode: "default"   # Optional: power_saving, high_performance
+      ip_mode: "default"
 
     - id: "t_isp_be"
       hw: "ISP_BE"
       width: 3840
       height: 2160
-      crop_width: 1920     # Optional: output crop size
-      crop_height: 1080
-      ip_mode: "power_saving"
 
   edges:
     - src: "t_sensor"
       dst: "t_isp_fe"
-      type: "OTF"         # Pipelined
+      type: "OTF"             # Pipelined
 
+    # Explicit DMA Transfer for M2M
     - src: "t_isp_fe"
       dst: "t_isp_be"
-      type: "M2M"         # Sequential
-      buffer_size: 33177600
+      type: "M2M"
+      data:
+        format: "NV12"
+        compression: "AFBC"
+      transfer:
+        write_dma: "WDMA_FE"  # Module name in ISP_FE
+        read_dma: "RDMA_BE"   # Module name in ISP_BE
+        memory: "DRAM"
 ```
 
 ### 6.3 Validation
@@ -642,6 +705,54 @@ with hw.resource.request() as req:
     yield req  # 리소스 사용 가능할 때까지 대기
     yield self.env.timeout(processing_time)
 # 자동 해제
+```
+
+### 7.4 OTF Clock Optimization
+
+Sensor의 vValid 시간 내에 프레임을 처리해야 하는 OTF 연결에서, 필요한 최소 클럭을 자동으로 계산합니다.
+
+```python
+def optimize_otf_clocks(self):
+    for group in self.get_otf_groups():
+        # 1. Sensor 찾기 & vValid로부터 Required Throughput 계산
+        sensor = find_sensor_in_group(group)
+        required_throughput = sensor.get_required_throughput()  # pixels/sec
+
+        # 2. 각 IP에 대해 필요 클럭 계산
+        for task in group:
+            ip = get_ip_node(task)
+            required_freq = required_throughput / (ip.ppc * ip.efficiency)
+            ip.required_freq = required_freq
+
+            # 3. Clock Table에서 최적값 선택 (Minimum Valid)
+            for freq in sorted(ip.clock_table):
+                if freq >= required_freq:
+                    ip.target_freq = freq
+                    break
+```
+
+### 7.5 Explicit DMA Transfer
+
+M2M 연결에서 DMA 전송을 명시적으로 시뮬레이션합니다. DMA는 IP 내부의 모듈로 정의됩니다.
+
+```python
+def _simulate_dma_transfer(self, src_task, dst_task, transfer_config, data_config):
+    # 1. Source IP에서 Write DMA 모듈 찾기
+    write_dma = self._resolve_dma_module(src_task, transfer_config['write_dma'])
+
+    # 2. 데이터 크기 계산 (해상도 × BPP × 압축률)
+    size = calculate_transfer_size(width, height, format, compression)
+
+    # 3. Write DMA 전송 시뮬레이션
+    with write_dma.resource.request() as req:
+        yield req
+        yield self.env.timeout(write_dma.get_transfer_time(size))
+
+    # 4. Destination IP에서 Read DMA 모듈 찾기 & 전송
+    read_dma = self._resolve_dma_module(dst_task, transfer_config['read_dma'])
+    with read_dma.resource.request() as req:
+        yield req
+        yield self.env.timeout(read_dma.get_transfer_time(size))
 ```
 
 ---

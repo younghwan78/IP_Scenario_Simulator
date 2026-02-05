@@ -14,7 +14,8 @@ from abc import ABC, abstractmethod
 
 import simpy
 
-from ..model.hw_nodes import HWNode, IPNode, DMANode, ProcessorNode, MemoryNode
+from ..model.hw_nodes import HWNode, IPNode, ProcessorNode, MemoryNode
+from ..model.modules import DMAModule
 from ..model.scenario import ScenarioGraph, ConnectionType, Task
 
 
@@ -219,16 +220,21 @@ class SoCSimulator:
         """Initialize SimPy resources for all HW nodes."""
         for hw in self.hw_registry.values():
             hw.resource = simpy.Resource(self.env, capacity=1)
+            # Initialize resources for DMA modules in IP
+            if isinstance(hw, IPNode):
+                for module in hw.modules:
+                    if isinstance(module, DMAModule):
+                        module.resource = simpy.Resource(self.env, capacity=1)
 
     def _calculate_transfer_size(self, width: int, height: int, fmt: str, 
-                               compression: str, dma_node: DMANode) -> int:
+                               compression: str, dma_module: DMAModule) -> int:
         """Calculate transfer size based on resolution, format, and compression."""
         bpp = BPP_MAP.get(fmt, 1.0)
         base_size = width * height * bpp
         
         # Apply compression ratio if supported
-        if compression in dma_node.supported_compressions:
-            ratio = dma_node.compression_ratios.get(compression, 1.0)
+        if compression in dma_module.supported_compressions:
+            ratio = dma_module.compression_ratios.get(compression, 1.0)
             return int(base_size * ratio)
         return int(base_size)
 
@@ -240,75 +246,74 @@ class SoCSimulator:
         read_dma_name = transfer_config.get('read_dma')
         
         # Resolve Data Size
-        # Try to get from data config, else defaults
         fmt = data_config.get('format', 'NV12')
         comp = data_config.get('compression', 'Linear')
-        # Resolution: try data config first, then try to get from src task output?
-        # For simplicity, if not in data, try to query task workload
+        
         width = 0
         height = 0
         src_task = self.scenario.get_task(src_task_id)
         if src_task:
-             # Try task workload or output crop size
              if src_task.crop_size:
                  width, height = src_task.crop_size
              else:
                  width = src_task.workload.get('width', 0)
                  height = src_task.workload.get('height', 0)
         
-        # If still 0, try data config
-        if width == 0:
-            # Fallback or error? defaulting to 0 means 0 transfer time
-            pass 
-
-        # 2. Write DMA
+        # 2. Write DMA (Resolve from IP)
         if write_dma_name:
-            dma = self._get_hw(write_dma_name)
-            if isinstance(dma, DMANode):
-                size = self._calculate_transfer_size(width, height, fmt, comp, dma)
-                
-                # Create dynamic task result entry
-                dma_task_id = f"dma_w_{src_task_id}_{dst_task_id}"
-                start = self.env.now
-                dma_time = dma.get_transfer_time(size)
-                
-                with dma.resource.request() as req:
-                    yield req
-                    yield self.env.timeout(dma_time)
-                
-                end = self.env.now
-                dma.utilization = 1.0
-                power = dma.get_power_consumption(end - start)
-                
-                self._task_results.append(TaskResult(
-                    task_id=dma_task_id, hw_name=dma.name,
-                    start_time=start, end_time=end, duration=end-start,
-                    power_consumed=power, workload={'size': size, 'fmt': fmt}
-                ))
+            write_dma = self._resolve_dma_module(src_task_id, write_dma_name)
+            size = self._calculate_transfer_size(width, height, fmt, comp, write_dma)
+            
+            dma_time = write_dma.get_transfer_time(size)
+            
+            # Request resource (DMAModule._resource)
+            # Note: We initialized module.resource in _init_resources
+            with write_dma.resource.request() as req:
+                yield req
+                yield self.env.timeout(dma_time)
+            
+            self._record_dma_result(src_task_id, f"{write_dma.name}(Write)", dma_time, size, fmt)
 
-        # 3. Read DMA
+        # 3. Read DMA (Resolve from IP)
         if read_dma_name:
-            dma = self._get_hw(read_dma_name)
-            if isinstance(dma, DMANode):
-                size = self._calculate_transfer_size(width, height, fmt, comp, dma)
+            read_dma = self._resolve_dma_module(dst_task_id, read_dma_name)
+            size = self._calculate_transfer_size(width, height, fmt, comp, read_dma)
+            
+            dma_time = read_dma.get_transfer_time(size)
+            
+            with read_dma.resource.request() as req:
+                yield req
+                yield self.env.timeout(dma_time)
                 
-                dma_task_id = f"dma_r_{src_task_id}_{dst_task_id}"
-                start = self.env.now
-                dma_time = dma.get_transfer_time(size)
-                
-                with dma.resource.request() as req:
-                    yield req
-                    yield self.env.timeout(dma_time)
-                    
-                end = self.env.now
-                dma.utilization = 1.0
-                power = dma.get_power_consumption(end - start)
-                
-                self._task_results.append(TaskResult(
-                    task_id=dma_task_id, hw_name=dma.name,
-                    start_time=start, end_time=end, duration=end-start,
-                    power_consumed=power, workload={'size': size, 'fmt': fmt}
-                ))
+            self._record_dma_result(dst_task_id, f"{read_dma.name}(Read)", dma_time, size, fmt)
+
+    def _resolve_dma_module(self, task_id: str, module_name: str) -> DMAModule:
+        """Find DMAModule within the IP mapped to the task."""
+        task = self.scenario.get_task(task_id)
+        if not task:
+             raise ValueError(f"Task {task_id} not found")
+        
+        hw = self._get_hw(task.mapped_hw)
+        if hasattr(hw, 'get_module'):
+            module = hw.get_module(module_name)
+            if module and isinstance(module, DMAModule):
+                return module
+        
+        raise ValueError(f"DMA Module '{module_name}' not found in HW '{hw.name}' (mapped to '{task_id}')")
+
+    def _record_dma_result(self, owner_task_id: str, hw_name: str, duration: float, size: int, fmt: str):
+        """Helper to record DMA task result."""
+        start = self.env.now - duration
+        result = TaskResult(
+            task_id=f"dma_{owner_task_id}_{hw_name}", 
+            hw_name=hw_name,
+            start_time=start,
+            end_time=self.env.now,
+            duration=duration,
+            power_consumed=0.0, 
+            workload={'size': size, 'fmt': fmt}
+        )
+        self._task_results.append(result)
 
     def _run_task_process(self, task: Task) -> Generator:
         """

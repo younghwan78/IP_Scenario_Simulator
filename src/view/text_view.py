@@ -11,9 +11,9 @@ from typing import Any, Dict, List, Optional
 
 from ..model.hw_nodes import (
     HWNode, ExternalNode, SensorNode, DisplayNode,
-    IPNode, DMANode, ProcessorNode, MemoryNode
+    IPNode, ProcessorNode, MemoryNode
 )
-from ..model.modules import Module, ScalerModule, CropModule
+from ..model.modules import Module, ScalerModule, CropModule, DMAModule
 from ..model.scenario import ScenarioGraph, ConnectionType
 
 
@@ -93,9 +93,7 @@ class TextViewer:
                 if hasattr(node, 'required_freq') and node.required_freq > 0:
                      clock_info += f" [Req: {node.required_freq/1e6:.0f}MHz]"
             return f"{node.name} ({node_type}, {clock_info}, PPC={node.ppc})"
-        elif isinstance(node, DMANode):
-            bw_gbps = node.bandwidth / 1e9
-            return f"{node.name} ({node_type}, MO={node.multiple_outstanding}, BW={bw_gbps:.1f}GB/s)"
+
         elif isinstance(node, ProcessorNode):
             return f"{node.name} ({node_type}, {clock_mhz:.0f}MHz, Cores={node.num_cores})"
         elif isinstance(node, MemoryNode):
@@ -120,6 +118,10 @@ class TextViewer:
         elif isinstance(module, CropModule):
             x, y, w, h = module.crop_region
             return f"{module.name} ({mod_type}, region=({x},{y},{w},{h}))"
+
+        elif isinstance(module, DMAModule):
+            bw_gbps = module.max_bandwidth / 1e9
+            return f"{module.name} ({mod_type}, MO={module.multiple_outstanding}, BW={bw_gbps:.1f}GB/s)"
 
         else:
             return f"{module.name} ({mod_type})"

@@ -5,7 +5,6 @@ Provides base classes for modeling hardware components:
 - HWNode: Base class with extensible attributes
 - ExternalNode: External module (Sensor, PHY) excluded from timing simulation
 - IPNode: Pixel-based processing (ISP, Codec, DPU)
-- DMANode: Memory access with Multiple Outstanding support
 - ProcessorNode: Cycle-based processing (CPU, DSP, NPU)
 - MemoryNode: Memory/DRAM modeling
 """
@@ -338,53 +337,7 @@ class IPNode(HWNode):
         return None
 
 
-@dataclass
-class DMANode(HWNode):
-    """
-    DMA Node for memory access with advanced attributes.
 
-    Supports Multiple Outstanding (MO) and other DMA-specific parameters.
-
-    Attributes:
-        bandwidth: Maximum bandwidth in bytes/second
-        multiple_outstanding: Number of outstanding transactions (MO)
-        burst_length: Burst length in bytes
-        latency: Base latency in seconds
-        supported_compressions: List of supported compression modes
-        compression_ratios: Dict mapping compression mode to size ratio (e.g. {'AFBC': 0.6})
-    """
-    bandwidth: float = 25.6e9  # 25.6 GB/s default
-    multiple_outstanding: int = 16
-    burst_length: int = 256
-    latency: float = 0.0
-    supported_compressions: List[str] = field(default_factory=list)
-    compression_ratios: Dict[str, float] = field(default_factory=dict)
-
-    def get_processing_time(self, workload: Dict[str, Any]) -> float:
-        """
-        Calculate transfer time for data workload.
-
-        Considers bandwidth and MO for effective throughput.
-
-        Args:
-            workload: Dict with 'data_size' key (in bytes)
-
-        Returns:
-            Transfer time in seconds
-        """
-        data_size = workload.get('data_size', 0)
-        if data_size <= 0 or self.bandwidth <= 0:
-            return 0.0
-
-        # Effective bandwidth considering MO and burst efficiency
-        effective_bw = self.bandwidth * min(1.0, self.multiple_outstanding / 16.0)
-        transfer_time = data_size / effective_bw
-
-        return self.latency + transfer_time
-
-    def get_transfer_time(self, data_size: int) -> float:
-        """Convenience method for transfer time calculation."""
-        return self.get_processing_time({'data_size': data_size})
 
 
 @dataclass

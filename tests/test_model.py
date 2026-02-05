@@ -9,8 +9,8 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.model.hw_nodes import HWNode, IPNode, DMANode, ProcessorNode, MemoryNode
-from src.model.modules import Module, ScalerModule, CropModule, GenericModule
+from src.model.hw_nodes import HWNode, IPNode, ProcessorNode, MemoryNode
+from src.model.modules import Module, ScalerModule, CropModule, GenericModule, DMAModule
 from src.model.scenario import ScenarioGraph, ConnectionType, Task
 
 
@@ -78,34 +78,23 @@ class TestIPNode:
         assert scaler.get_clock_freq() == 600e6
 
 
-class TestDMANode:
-    """Tests for DMANode class."""
+class TestDMAModule:
+    """Tests for DMAModule class."""
 
     def test_transfer_time_calculation(self):
         """Test DMA transfer time calculation with MO."""
-        dma = DMANode(
+        dma = DMAModule(
             name="DMA_Read",
-            bandwidth=25.6e9,  # 25.6 GB/s
-            multiple_outstanding=16,
-            latency=100e-9  # 100ns
+            max_bandwidth=25.6e9,  # 25.6 GB/s
+            multiple_outstanding=16
         )
 
         data_size = 100 * 1024 * 1024  # 100 MB
         transfer_time = dma.get_transfer_time(data_size)
 
-        # 100MB / 25.6GB/s + 100ns latency
-        expected = (100 * 1024 * 1024) / 25.6e9 + 100e-9
+        # 100MB / 25.6GB/s (Efficiency 1.0)
+        expected = (100 * 1024 * 1024) / 25.6e9
         assert abs(transfer_time - expected) < 1e-9
-
-    def test_dma_extra_attrs(self):
-        """Test extensible attributes for DMA."""
-        dma = DMANode(name="DMA_Test", bandwidth=25.6e9)
-        dma.set_attr('qos_level', 'high')
-        dma.set_attr('priority', 1)
-
-        assert dma.get_attr('qos_level') == 'high'
-        assert dma.get_attr('priority') == 1
-        assert dma.get_attr('nonexistent', 'default') == 'default'
 
 
 class TestProcessorNode:

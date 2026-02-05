@@ -9,8 +9,8 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.model.hw_nodes import IPNode, DMANode, ProcessorNode, MemoryNode
-from src.model.modules import ScalerModule, CropModule
+from src.model.hw_nodes import IPNode, ProcessorNode, MemoryNode
+from src.model.modules import ScalerModule, CropModule, DMAModule
 from src.model.scenario import ScenarioGraph
 from src.controller.simulator import SimulationResults, TaskResult
 from src.view.text_view import TextViewer
@@ -25,12 +25,14 @@ class TestTextViewer:
         hw_registry = {
             "ISP_FE": IPNode(name="ISP_FE", clock_freq=600e6, ppc=4),
             "VENC": IPNode(name="VENC", clock_freq=400e6, ppc=1),
-            "DMA_Read": DMANode(name="DMA_Read", bandwidth=25.6e9, multiple_outstanding=16),
         }
 
         # Add module to ISP_FE
         hw_registry["ISP_FE"].add_module(
             ScalerModule(name="Scaler0", scale_factor=(0.5, 0.5))
+        )
+        hw_registry["ISP_FE"].add_module(
+            DMAModule(name="DMA_Read", max_bandwidth=25.6e9, multiple_outstanding=16)
         )
 
         viewer = TextViewer()
@@ -83,16 +85,16 @@ class TestTextViewer:
         assert "HW1" in output
         assert "HW2" in output
 
-    def test_dma_node_formatting(self):
-        """Test DMA node text formatting with MO and bandwidth."""
-        hw_registry = {
-            "DMA_Write": DMANode(
-                name="DMA_Write",
-                bandwidth=25.6e9,
-                multiple_outstanding=32,
-                burst_length=512
-            )
-        }
+    def test_dma_module_formatting(self):
+        """Test DMA module text formatting with MO and bandwidth."""
+        ip = IPNode(name="Test_IP")
+        ip.add_module(DMAModule(
+            name="DMA_Write",
+            max_bandwidth=25.6e9,
+            multiple_outstanding=32
+        ))
+        
+        hw_registry = {"Test_IP": ip}
 
         viewer = TextViewer()
         output = viewer.print_hw_hierarchy(hw_registry)

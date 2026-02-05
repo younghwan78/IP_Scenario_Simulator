@@ -49,6 +49,17 @@ hardware:
         min_scale: [0.25, 0.25]
         max_scale: [4.0, 4.0]
         # scale_factor, input/output size -> scenario config
+      - name: "WDMA_FE"
+        type: "DMA"
+        direction: "write"
+        max_bandwidth: 25600000000
+        multiple_outstanding: 16
+        supported_compressions:
+          - "AFBC"
+          - "Linear"
+        compression_ratios:
+          AFBC: 0.6
+          Linear: 1.0
 
   # ISP Back-End (supports crop)
   - name: "ISP_BE"
@@ -76,6 +87,28 @@ hardware:
         type: "Crop"
         ppc: 2
         # crop_region -> scenario config
+      - name: "RDMA_BE"
+        type: "DMA"
+        direction: "read"
+        max_bandwidth: 25600000000
+        multiple_outstanding: 16
+        supported_compressions:
+          - "AFBC"
+          - "Linear"
+        compression_ratios:
+          AFBC: 0.6
+          Linear: 1.0
+      - name: "WDMA_BE"
+        type: "DMA"
+        direction: "write"
+        max_bandwidth: 25600000000
+        multiple_outstanding: 16
+        supported_compressions:
+          - "AFBC"
+          - "Linear"
+        compression_ratios:
+          AFBC: 0.6
+          Linear: 1.0
 
   # Video Encoder
   - name: "VENC"
@@ -97,33 +130,18 @@ hardware:
       - "default"
       - "power_saving"
       - "high_quality"
-
-  # DMA Controllers
-  - name: "DMA_Read"
-    type: "DMA"
-    bandwidth: 25600000000  # 25.6 GB/s
-    multiple_outstanding: 16
-    burst_length: 256
-    latency: 0.0000001  # 100ns
-    supported_compressions:
-      - "AFBC"
-      - "Linear"
-    compression_ratios:
-      AFBC: 0.6
-      Linear: 1.0
-
-  - name: "DMA_Write"
-    type: "DMA"
-    bandwidth: 25600000000
-    multiple_outstanding: 16
-    burst_length: 256
-    latency: 0.0000001
-    supported_compressions:
-      - "AFBC"
-      - "Linear"
-    compression_ratios:
-      AFBC: 0.6
-      Linear: 1.0
+    modules:
+      - name: "RDMA_VENC"
+        type: "DMA"
+        direction: "read"
+        max_bandwidth: 25600000000
+        multiple_outstanding: 16
+        supported_compressions:
+          - "AFBC"
+          - "Linear"
+        compression_ratios:
+          AFBC: 0.6
+          Linear: 1.0
 
   # CPU Cluster
   - name: "CPU_Cluster"
@@ -140,3 +158,4 @@ hardware:
     bandwidth: 51200000000  # 51.2 GB/s
     capacity: 8589934592  # 8 GB
     access_latency: 0.0000001  # 100ns
+

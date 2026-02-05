@@ -272,3 +272,52 @@ class BypassModule(Module):
     def get_processing_time(self, workload: Dict[str, Any]) -> float:
         """Bypass has zero processing time."""
         return 0.0
+
+
+@dataclass
+class DMAModule(Module):
+    """
+    DMA module for intra-IP memory access.
+
+    Attributes:
+        max_bandwidth: Maximum bandwidth in bytes/second (Capability)
+        direction: 'read' or 'write'
+        multiple_outstanding: Number of outstanding transactions (MO)
+        supported_compressions: List of supported compression modes
+        compression_ratios: Dict mapping compression mode to size ratio
+    """
+    max_bandwidth: float = 25.6e9
+    direction: str = 'read'
+    multiple_outstanding: int = 16
+    supported_compressions: List[str] = field(default_factory=list)
+    compression_ratios: Dict[str, float] = field(default_factory=dict)
+
+    # SimPy resource for contention modeling
+    _resource: Optional[Any] = field(default=None, repr=False) # valid only during simulation
+
+    @property
+    def resource(self) -> Optional[Any]:
+        return self._resource
+
+    @resource.setter
+    def resource(self, res: Any) -> None:
+        self._resource = res
+
+    def calculate_output_size(self, input_size: Tuple[int, int]) -> Tuple[int, int]:
+        """DMA doesn't change resolution."""
+        return input_size
+
+    def get_transfer_time(self, data_size: int) -> float:
+        """
+        Calculate transfer time for data workload.
+        Considers bandwidth and MO for effective throughput.
+        """
+        if data_size <= 0 or self.max_bandwidth <= 0:
+            return 0.0
+
+        # Effective bandwidth considering MO (Simple model)
+        # Assuming MO=16 is optimal (1.0 efficiency)
+        efficiency = min(1.0, self.multiple_outstanding / 16.0)
+        effective_bw = self.max_bandwidth * efficiency
+        
+        return data_size / effective_bw

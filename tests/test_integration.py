@@ -9,7 +9,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.model.hw_nodes import IPNode, DMANode
+from src.model.hw_nodes import IPNode
 from src.model.modules import ScalerModule, CropModule
 from src.model.scenario import ScenarioGraph
 from src.controller.simulator import SoCSimulator

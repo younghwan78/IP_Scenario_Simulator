@@ -17,9 +17,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from src.model.hw_nodes import (
     HWNode, ExternalNode, SensorNode, DisplayNode,
-    IPNode, DMANode, ProcessorNode, MemoryNode
+    IPNode, ProcessorNode, MemoryNode
 )
-from src.model.modules import Module, ScalerModule, CropModule, GenericModule
+from src.model.modules import Module, ScalerModule, CropModule, GenericModule, DMAModule
 from src.model.scenario import ScenarioGraph, ConnectionType
 from src.controller.simulator import SoCSimulator
 from src.controller.performance_analyzer import PerformanceAnalyzer
@@ -124,20 +124,6 @@ def create_hw_node(config: dict) -> HWNode:
 
         return node
 
-    elif node_type == 'DMA':
-        return DMANode(
-            name=name,
-            clock_freq=clock,
-            bandwidth=config.get('bandwidth', 25.6e9),
-            multiple_outstanding=config.get('multiple_outstanding', 16),
-            burst_length=config.get('burst_length', 256),
-            latency=config.get('latency', 0.0),
-            supported_compressions=config.get('supported_compressions', []),
-            compression_ratios=config.get('compression_ratios', {}),
-            power_static=power_static,
-            power_dynamic=power_dynamic
-        )
-
     elif node_type == 'Processor':
         return ProcessorNode(
             name=name,
@@ -196,6 +182,16 @@ def create_module(config: dict) -> Module:
             crop_region=tuple(region),
             ppc=config.get('ppc', 1.0),
             efficiency=config.get('efficiency', 1.0)
+        )
+
+    elif mod_type == 'DMA':
+        return DMAModule(
+            name=name,
+            max_bandwidth=config.get('max_bandwidth', 25.6e9),
+            direction=config.get('direction', 'read'),
+            multiple_outstanding=config.get('multiple_outstanding', 16),
+            supported_compressions=config.get('supported_compressions', []),
+            compression_ratios=config.get('compression_ratios', {})
         )
 
     else:
