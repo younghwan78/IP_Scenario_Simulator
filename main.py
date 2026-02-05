@@ -8,13 +8,17 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
+from typing import Dict
 
 import yaml
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.model.hw_nodes import HWNode, IPNode, DMANode, ProcessorNode, MemoryNode, ExternalNode
+from src.model.hw_nodes import (
+    HWNode, ExternalNode, SensorNode, DisplayNode,
+    IPNode, DMANode, ProcessorNode, MemoryNode
+)
 from src.model.modules import Module, ScalerModule, CropModule, GenericModule
 from src.model.scenario import ScenarioGraph, ConnectionType
 from src.controller.simulator import SoCSimulator
@@ -41,36 +45,75 @@ def create_hw_node(config: dict) -> HWNode:
     """Create HWNode from configuration dictionary."""
     node_type = config.get('type', 'IP')
     name = config['name']
-    clock = config.get('clock', 1e9)
+    clock = config.get('clock', config.get('max_clock', 1e9))  # Use max_clock if clock not set
     power_static = config.get('power_static', 0.0)
     power_dynamic = config.get('power_dynamic', 0.0)
     
-    if node_type == 'External':
-        # External node (Sensor, PHY) - excluded from SoC timing simulation
+    if node_type == 'Sensor':
+        # SensorNode - static HW config only, runtime values set by scenario
+        supported_modes = config.get('supported_sensor_modes', [])
+        return SensorNode(
+            name=name,
+            # Default values, overridden by scenario config
+            frame_width=config.get('frame_width', 1920),
+            frame_height=config.get('frame_height', 1080),
+            fps=config.get('fps', 30.0),
+            supported_sensor_modes=supported_modes,
+            sensor_mode=config.get('sensor_mode', ''),
+            v_valid_time=config.get('v_valid_time', None),
+            power_static=power_static,
+            power_dynamic=power_dynamic
+        )
+    
+    elif node_type == 'Display':
+        # DisplayNode with display timing parameters
+        return DisplayNode(
+            name=name,
+            frame_width=config.get('frame_width', 1920),
+            frame_height=config.get('frame_height', 1080),
+            fps=config.get('fps', 60.0),
+            display_mode=config.get('display_mode', ''),
+            h_total=config.get('h_total', None),
+            v_total=config.get('v_total', None),
+            power_static=power_static,
+            power_dynamic=power_dynamic
+        )
+    
+    elif node_type == 'External':
+        # Generic ExternalNode (backward compatibility)
         return ExternalNode(
             name=name,
             frame_width=config.get('frame_width', 3840),
             frame_height=config.get('frame_height', 2160),
             fps=config.get('fps', 30.0),
-            sensor_mode=config.get('sensor_mode', ''),
             power_static=power_static,
             power_dynamic=power_dynamic
         )
     
     elif node_type == 'IP':
-        # Parse supported_modes from config (default to ['default'])
+        # Parse new fields for HW constraints
         supported_modes = config.get('supported_modes', ['default'])
         supports_crop = config.get('supports_crop', False)
+        supports_scale = config.get('supports_scale', False)
+        max_clock = config.get('max_clock', None)
+        clock_table = config.get('clock_table', [])
+        min_size = tuple(config.get('min_size', [1, 1]))
+        max_size = tuple(config.get('max_size', [65535, 65535]))
         
         node = IPNode(
             name=name,
             clock_freq=clock,
             ppc=config.get('ppc', 1.0),
             efficiency=config.get('efficiency', 1.0),
+            max_clock=max_clock,
+            clock_table=clock_table,
+            min_size=min_size,
+            max_size=max_size,
             power_static=power_static,
             power_dynamic=power_dynamic,
             supported_modes=supported_modes,
-            supports_crop=supports_crop
+            supports_crop=supports_crop,
+            supports_scale=supports_scale
         )
         
         # Add modules if present
@@ -131,9 +174,13 @@ def create_module(config: dict) -> Module:
     
     if mod_type == 'Scaler':
         scale = config.get('scale_factor', [1.0, 1.0])
+        min_scale = config.get('min_scale', [0.0625, 0.0625])
+        max_scale = config.get('max_scale', [16.0, 16.0])
         return ScalerModule(
             name=name,
             scale_factor=tuple(scale),
+            min_scale=tuple(min_scale),
+            max_scale=tuple(max_scale),
             ppc=config.get('ppc', 1.0),
             efficiency=config.get('efficiency', 1.0)
         )
@@ -206,28 +253,123 @@ def create_scenario(config: dict) -> ScenarioGraph:
     return scenario
 
 
+def apply_scenario_settings(hw_nodes: Dict[str, HWNode], 
+                            scenario_config: dict) -> None:
+    """
+    Apply scenario-specific settings to HW nodes.
+    
+    This function applies runtime configuration from the scenario to HW nodes:
+    - Sensor settings: frame_width, frame_height, fps, sensor_mode, v_valid_time
+    - Module settings: scaler input/output sizes, crop regions
+    
+    Args:
+        hw_nodes: Dictionary mapping HW names to HWNode instances
+        scenario_config: Scenario configuration dictionary
+    """
+    scenario_data = scenario_config.get('scenario', scenario_config)
+    
+    # Apply sensor settings
+    sensor_cfg = scenario_data.get('sensor', {})
+    if sensor_cfg:
+        hw_name = sensor_cfg.get('hw')
+        if hw_name and hw_name in hw_nodes:
+            sensor = hw_nodes[hw_name]
+            if isinstance(sensor, SensorNode):
+                if 'frame_width' in sensor_cfg:
+                    sensor.frame_width = sensor_cfg['frame_width']
+                if 'frame_height' in sensor_cfg:
+                    sensor.frame_height = sensor_cfg['frame_height']
+                if 'fps' in sensor_cfg:
+                    sensor.fps = sensor_cfg['fps']
+                if 'sensor_mode' in sensor_cfg:
+                    sensor.sensor_mode = sensor_cfg['sensor_mode']
+                if 'v_valid_time' in sensor_cfg:
+                    sensor.v_valid_time = sensor_cfg['v_valid_time']
+    
+    # Apply module settings
+    for mod_setting in scenario_data.get('module_settings', []):
+        hw_name = mod_setting.get('hw')
+        mod_name = mod_setting.get('module')
+        
+        if not hw_name or not mod_name or hw_name not in hw_nodes:
+            continue
+        
+        hw = hw_nodes[hw_name]
+        if not isinstance(hw, IPNode):
+            continue
+        
+        module = hw.get_module(mod_name)
+        if module is None:
+            continue
+        
+        # Scaler settings: input/output size -> auto-calculate scale_factor
+        if isinstance(module, ScalerModule):
+            input_size = mod_setting.get('input_size')
+            output_size = mod_setting.get('output_size')
+            if input_size and output_size:
+                module.set_sizes(tuple(input_size), tuple(output_size))
+            elif 'scale_factor' in mod_setting:
+                module.scale_factor = tuple(mod_setting['scale_factor'])
+        
+        # Crop settings: crop_region
+        elif isinstance(module, CropModule):
+            if 'crop_region' in mod_setting:
+                module.crop_region = tuple(mod_setting['crop_region'])
+
+
 def run_demo():
     """Run a demonstration with sample configuration."""
     print("=" * 60)
     print("SoC Multimedia Architecture Simulator - Demo")
     print("=" * 60)
     
-    # Create hardware nodes manually for demo
+    # Create hardware nodes with STATIC HW config only (no sensor settings)
     hw_nodes = [
-        # External node (Sensor) - excluded from SoC timing calculation
-        ExternalNode(name="Sensor_Ext", frame_width=3840, frame_height=2160,
-                     fps=30.0, sensor_mode="4K_30fps",
-                     power_static=10.0, power_dynamic=50.0),
+        # SensorNode - static config only, runtime values applied from scenario
+        SensorNode(name="Sensor_Ext", 
+                   supported_sensor_modes=["4K_30fps", "4K_60fps", "1080p_120fps"],
+                   power_static=10.0, power_dynamic=50.0),
         IPNode(name="ISP_FE", clock_freq=600e6, ppc=4, efficiency=0.95,
+               max_clock=600e6, min_size=(64, 64), max_size=(8192, 8192),
+               supports_scale=True,
                power_static=15.0, power_dynamic=80.0),
         IPNode(name="ISP_BE", clock_freq=600e6, ppc=2, efficiency=0.90,
+               max_clock=600e6, supports_crop=True,
                power_static=12.0, power_dynamic=60.0),
         IPNode(name="VENC", clock_freq=400e6, ppc=1, efficiency=0.85,
+               max_clock=400e6, min_size=(128, 128), max_size=(4096, 2160),
                power_static=20.0, power_dynamic=100.0),
     ]
     
-    # Add modules to ISP_FE
-    hw_nodes[1].add_module(ScalerModule(name="Scaler0", scale_factor=(0.5, 0.5), ppc=4))
+    # Add modules to ISP_FE (HW config: constraints only)
+    hw_nodes[1].add_module(ScalerModule(name="Scaler0", ppc=4,
+                                        min_scale=(0.25, 0.25), max_scale=(4.0, 4.0)))
+    
+    # Build HW registry
+    hw_registry = {node.name: node for node in hw_nodes}
+    
+    # Simulate scenario config (normally loaded from YAML)
+    scenario_config = {
+        'sensor': {
+            'hw': 'Sensor_Ext',
+            'frame_width': 3840,
+            'frame_height': 2160,
+            'fps': 30.0,
+            'sensor_mode': '4K_30fps',
+            'v_valid_time': 0.0118
+        },
+        'module_settings': [
+            {
+                'hw': 'ISP_FE',
+                'module': 'Scaler0',
+                'input_size': [3840, 2160],
+                'output_size': [1920, 1080]
+            }
+        ]
+    }
+    
+    # Apply scenario settings to HW nodes
+    apply_scenario_settings(hw_registry, scenario_config)
     
     # Create scenario
     scenario = ScenarioGraph(name="4K_Recording")
@@ -244,7 +386,8 @@ def run_demo():
     
     # Create simulator
     simulator = SoCSimulator()
-    simulator.register_hw_list(hw_nodes)
+    for node in hw_registry.values():
+        simulator.register_hw(node)
     simulator.load_scenario(scenario)
     
     # Add analyzers
@@ -359,9 +502,14 @@ def main():
         print("Error: --scenario-config required when not in demo mode")
         return
     
+    # Build HW registry and apply scenario settings
+    hw_registry = {node.name: node for node in hw_nodes}
+    apply_scenario_settings(hw_registry, scenario_config)
+    
     # Run simulation
     simulator = SoCSimulator()
-    simulator.register_hw_list(hw_nodes)
+    for node in hw_registry.values():
+        simulator.register_hw(node)
     simulator.load_scenario(scenario)
     simulator.add_analyzer(PerformanceAnalyzer())
     simulator.add_analyzer(PowerAnalyzer())

@@ -9,7 +9,10 @@ Provides human-readable text output for:
 
 from typing import Any, Dict, List, Optional
 
-from ..model.hw_nodes import HWNode, IPNode, DMANode, ProcessorNode, MemoryNode, ExternalNode
+from ..model.hw_nodes import (
+    HWNode, ExternalNode, SensorNode, DisplayNode,
+    IPNode, DMANode, ProcessorNode, MemoryNode
+)
 from ..model.modules import Module, ScalerModule, CropModule
 from ..model.scenario import ScenarioGraph, ConnectionType
 
@@ -69,9 +72,19 @@ class TextViewer:
         node_type = node.__class__.__name__
         clock_mhz = node.clock_freq / 1e6
         
-        if isinstance(node, ExternalNode):
+        if isinstance(node, SensorNode):
+            # SensorNode with vValid timing info
+            v_valid_ms = node.effective_v_valid_time * 1000
             return (f"{node.name} ({node_type}, {node.frame_width}x{node.frame_height}@{node.fps:.0f}fps, "
-                    f"mode={node.sensor_mode})")
+                    f"mode={node.sensor_mode}, vValid={v_valid_ms:.2f}ms)")
+        elif isinstance(node, DisplayNode):
+            # DisplayNode with display timing info
+            pclk_mhz = node.pixel_clock / 1e6
+            return (f"{node.name} ({node_type}, {node.frame_width}x{node.frame_height}@{node.fps:.0f}Hz, "
+                    f"mode={node.display_mode}, pclk={pclk_mhz:.1f}MHz)")
+        elif isinstance(node, ExternalNode):
+            # Generic ExternalNode
+            return (f"{node.name} ({node_type}, {node.frame_width}x{node.frame_height}@{node.fps:.0f}fps)")
         elif isinstance(node, IPNode):
             return f"{node.name} ({node_type}, {clock_mhz:.0f}MHz, PPC={node.ppc})"
         elif isinstance(node, DMANode):

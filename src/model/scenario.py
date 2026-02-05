@@ -325,6 +325,85 @@ class ScenarioGraph:
         
         return len(errors) == 0, errors
     
+    def validate_otf_timing(self, hw_nodes: Dict[str, 'HWNode']) -> Tuple[bool, List[str]]:
+        """
+        Validate that OTF-connected HW can process pixels within vValid time.
+        
+        For each OTF group starting from a SensorNode:
+        - Calculate required throughput from vValid constraint
+        - Check if all connected IPs can meet the throughput
+        
+        Args:
+            hw_nodes: Dictionary mapping HW names to HWNode instances
+            
+        Returns:
+            (is_valid, list of warning/error messages)
+        """
+        from .hw_nodes import SensorNode, IPNode
+        
+        messages = []
+        is_valid = True
+        
+        # Find OTF groups
+        otf_groups = self.get_otf_groups()
+        
+        for group in otf_groups:
+            # Find the sensor node in this group (entry point)
+            sensor_task = None
+            sensor_node = None
+            
+            for task_id in group:
+                task = self._tasks.get(task_id)
+                if task:
+                    hw = hw_nodes.get(task.mapped_hw)
+                    if isinstance(hw, SensorNode):
+                        sensor_task = task
+                        sensor_node = hw
+                        break
+            
+            if not sensor_node:
+                # No sensor in this OTF group, skip
+                continue
+            
+            # Get required throughput from sensor
+            required_throughput = sensor_node.get_required_throughput()
+            v_valid_ms = sensor_node.effective_v_valid_time * 1000
+            
+            messages.append(
+                f"OTF Group [{', '.join(group)}]: "
+                f"vValid={v_valid_ms:.2f}ms, "
+                f"Required throughput={required_throughput/1e6:.2f} Mpps"
+            )
+            
+            # Check each IP in the group
+            for task_id in group:
+                task = self._tasks.get(task_id)
+                if not task:
+                    continue
+                
+                hw = hw_nodes.get(task.mapped_hw)
+                if not isinstance(hw, IPNode):
+                    continue
+                
+                # Calculate IP throughput: clock * ppc * efficiency
+                ip_throughput = hw.clock_freq * hw.ppc * hw.efficiency
+                
+                # Check if IP can meet the requirement
+                if ip_throughput < required_throughput:
+                    is_valid = False
+                    messages.append(
+                        f"  [FAIL] {hw.name}: {ip_throughput/1e6:.2f} Mpps < "
+                        f"{required_throughput/1e6:.2f} Mpps required"
+                    )
+                else:
+                    margin = (ip_throughput / required_throughput - 1) * 100
+                    messages.append(
+                        f"  [OK] {hw.name}: {ip_throughput/1e6:.2f} Mpps "
+                        f"(+{margin:.1f}% margin)"
+                    )
+        
+        return is_valid, messages
+    
     def topological_order(self) -> List[str]:
         """
         Get tasks in topological order.

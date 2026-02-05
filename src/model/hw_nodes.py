@@ -90,22 +90,21 @@ class HWNode(ABC):
 @dataclass
 class ExternalNode(HWNode):
     """
-    External Node for SoC external interfaces (Sensor, PHY, etc.).
+    Base class for SoC external interfaces (Sensor, Display, PHY, etc.).
     
-    External modules provide input to the SoC but are not part of the
-    SoC itself. They are excluded from timing/performance calculations.
+    External modules provide input to or receive output from the SoC 
+    but are not part of the SoC itself. They are excluded from 
+    timing/performance calculations.
     
     Attributes:
         frame_width: Frame width in pixels
         frame_height: Frame height in pixels
         fps: Frames per second
-        sensor_mode: Sensor operating mode string
         is_external: Always True for external nodes
     """
     frame_width: int = 3840
     frame_height: int = 2160
     fps: float = 30.0
-    sensor_mode: str = "4K_30fps"
     is_external: bool = True
     
     @property
@@ -143,6 +142,118 @@ class ExternalNode(HWNode):
 
 
 @dataclass
+class SensorNode(ExternalNode):
+    """
+    Sensor Node for camera/image sensor interfaces.
+    
+    Includes vValid/vBlank timing for accurate frame timing simulation.
+    Sensor outputs data during vValid period and is idle during vBlank.
+    
+    Attributes:
+        supported_sensor_modes: List of supported sensor modes (HW capability)
+        sensor_mode: Sensor operating mode string (e.g., "4K_30fps") - set by scenario
+        v_valid_time: Vertical valid time in seconds (pixel data transfer period)
+                      None = auto (equals frame_interval, i.e., no vBlank)
+    """
+    supported_sensor_modes: List[str] = field(default_factory=list)
+    sensor_mode: str = ""
+    v_valid_time: Optional[float] = None
+    
+    @property
+    def effective_v_valid_time(self) -> float:
+        """
+        Get effective vValid time.
+        
+        If v_valid_time is not set, defaults to frame_interval (no vBlank).
+        """
+        if self.v_valid_time is not None:
+            return self.v_valid_time
+        return self.frame_interval
+    
+    @property
+    def v_blank_time(self) -> float:
+        """Calculate vBlank time from frame interval and vValid."""
+        return max(0.0, self.frame_interval - self.effective_v_valid_time)
+    
+    def get_required_throughput(self) -> float:
+        """
+        Get required throughput (pixels/sec) to process within vValid time.
+        
+        OTF-connected IPs must be able to process at this rate.
+        
+        Returns:
+            Required throughput in pixels per second
+        """
+        if self.effective_v_valid_time <= 0:
+            return float('inf')
+        return self.frame_size / self.effective_v_valid_time
+    
+    def get_frame_timing(self) -> Dict[str, float]:
+        """Get detailed timing information for sensor interface."""
+        return {
+            'frame_interval_ms': self.frame_interval * 1000,
+            'v_valid_time_ms': self.effective_v_valid_time * 1000,
+            'v_blank_time_ms': self.v_blank_time * 1000,
+            'fps': self.fps,
+            'pixels_per_frame': self.frame_size,
+            'required_throughput_mpps': self.get_required_throughput() / 1e6,
+        }
+
+
+@dataclass
+class DisplayNode(ExternalNode):
+    """
+    Display Node for display panel interfaces.
+    
+    Includes display-specific timing parameters such as blanking intervals.
+    
+    Attributes:
+        display_mode: Display operating mode (e.g., "FHD_60Hz")
+        h_total: Horizontal total pixels (active + blanking)
+        v_total: Vertical total lines (active + blanking)
+    """
+    display_mode: str = "FHD_60Hz"
+    h_total: Optional[int] = None
+    v_total: Optional[int] = None
+    
+    @property
+    def pixel_clock(self) -> float:
+        """
+        Calculate pixel clock in Hz.
+        
+        Uses h_total/v_total if set, otherwise uses active resolution.
+        """
+        h = self.h_total if self.h_total else self.frame_width
+        v = self.v_total if self.v_total else self.frame_height
+        return h * v * self.fps
+    
+    @property
+    def h_blank(self) -> int:
+        """Horizontal blanking pixels."""
+        if self.h_total:
+            return max(0, self.h_total - self.frame_width)
+        return 0
+    
+    @property
+    def v_blank(self) -> int:
+        """Vertical blanking lines."""
+        if self.v_total:
+            return max(0, self.v_total - self.frame_height)
+        return 0
+    
+    def get_frame_timing(self) -> Dict[str, float]:
+        """Get timing information for display interface."""
+        return {
+            'frame_interval_ms': self.frame_interval * 1000,
+            'fps': self.fps,
+            'pixels_per_frame': self.frame_size,
+            'pixel_clock_mhz': self.pixel_clock / 1e6,
+            'h_blank': self.h_blank,
+            'v_blank': self.v_blank,
+        }
+
+
+@dataclass
 class IPNode(HWNode):
     """
     IP Node for pixel-based processing (ISP, Codec, DPU).
@@ -152,15 +263,25 @@ class IPNode(HWNode):
     Attributes:
         ppc: Pixels Per Clock
         efficiency: Processing efficiency (0.0 ~ 1.0)
+        max_clock: Maximum clock frequency (for exploration)
+        clock_table: Available clock frequencies
+        min_size: Minimum supported resolution (width, height)
+        max_size: Maximum supported resolution (width, height)
         modules: List of child modules (optional)
         supported_modes: List of supported IP modes (e.g., ['default', 'power_saving'])
         supports_crop: Whether this IP supports crop functionality
+        supports_scale: Whether this IP supports scaling functionality
     """
     ppc: float = 1.0
     efficiency: float = 1.0
+    max_clock: Optional[float] = None
+    clock_table: List[float] = field(default_factory=list)
+    min_size: Tuple[int, int] = (1, 1)
+    max_size: Tuple[int, int] = (65535, 65535)
     modules: List[Any] = field(default_factory=list)  # List[Module]
     supported_modes: List[str] = field(default_factory=lambda: ['default'])
     supports_crop: bool = False
+    supports_scale: bool = False
     
     def add_module(self, module: 'Module') -> 'IPNode':
         """
@@ -184,12 +305,19 @@ class IPNode(HWNode):
         Formula: pixels / (clock_freq * ppc * efficiency)
         
         Args:
-            workload: Dict with 'pixels' key
+            workload: Dict with 'pixels' key or 'width'/'height' keys
             
         Returns:
             Processing time in seconds
         """
+        # Get pixels from workload - support both 'pixels' and 'width/height' formats
         pixels = workload.get('pixels', 0)
+        if pixels <= 0:
+            # Try to calculate from width and height
+            width = workload.get('width', 0)
+            height = workload.get('height', 0)
+            pixels = width * height
+        
         if pixels <= 0 or self.clock_freq <= 0:
             return 0.0
         return pixels / (self.clock_freq * self.ppc * self.efficiency)

@@ -1,15 +1,41 @@
 # 4K Recording Scenario
 # Sensor -> ISP_FE (OTF) -> ISP_BE (M2M) -> VENC (M2M)
+#
+# This file defines runtime configuration that varies per scenario:
+# - Sensor settings (resolution, fps, mode, vValid time)
+# - Module settings (scaler input/output size, crop region)
+# - Task workloads and IP mode selection
 
 scenario:
   name: "4K_Recording"
   
+  # Sensor configuration for this scenario
+  sensor:
+    hw: "Sensor_Ext"
+    frame_width: 3840
+    frame_height: 2160
+    fps: 30.0
+    sensor_mode: "4K_30fps"
+    v_valid_time: 0.0118      # 11.8ms vValid (vBlank = 21.53ms)
+
+  # Module runtime settings (scaler sizes, crop regions)
+  module_settings:
+    # Scaler: define input/output size (scale_factor auto-calculated)
+    - hw: "ISP_FE"
+      module: "Scaler0"
+      input_size: [3840, 2160]
+      output_size: [1920, 1080]   # 0.5x scale
+    
+    # Crop: define crop region
+    - hw: "ISP_BE"
+      module: "Crop0"
+      crop_region: [0, 0, 1920, 1080]
+
   tasks:
     # Sensor capture - 4K resolution
     - id: "t_sensor"
       hw: "Sensor_Ext"
-      width: 3840
-      height: 2160
+      # Width/height from sensor config, or override here
       description: "4K sensor capture"
 
     # ISP Front-End processing
@@ -17,25 +43,23 @@ scenario:
       hw: "ISP_FE"
       width: 3840
       height: 2160
-      ip_mode: "default"  # Optional: power_saving, high_performance
-      description: "ISP front-end (BPC, LSC)"
+      ip_mode: "default"
+      description: "ISP front-end (BPC, LSC, Scaler)"
 
     # ISP Back-End processing with crop
     - id: "t_isp_be"
       hw: "ISP_BE"
       width: 3840
       height: 2160
-      crop_width: 1920   # Crop to 1080p output
-      crop_height: 1080
       ip_mode: "default"
-      description: "ISP back-end (TNR, crop)"
+      description: "ISP back-end (TNR, Crop)"
 
     # Video encoding (receives cropped output)
     - id: "t_venc"
       hw: "VENC"
       width: 1920     # Uses cropped size from ISP_BE
       height: 1080
-      ip_mode: "power_saving"  # Encode at lower power
+      ip_mode: "power_saving"
       description: "H.264/HEVC encoding"
 
   edges:

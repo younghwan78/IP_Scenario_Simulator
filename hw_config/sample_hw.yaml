@@ -1,23 +1,36 @@
+# Hardware Configuration (Static HW Capabilities)
+# This file defines HW specs and constraints that remain constant per project.
+# Dynamic values (size, fps, mode selection) are defined in scenario config.
+
 hardware:
-  # Sensor External Interface (excluded from SoC timing simulation)
+  # Sensor Module (SensorNode) - HW constraints only
   - name: "Sensor_Ext"
-    type: "External"
-    frame_width: 3840
-    frame_height: 2160
-    fps: 30.0
-    sensor_mode: "4K_30fps"
+    type: "Sensor"
     power_static: 10.0
     power_dynamic: 50.0
+    # Supported sensor modes (for validation)
+    supported_sensor_modes:
+      - "4K_30fps"
+      - "4K_60fps"
+      - "1080p_120fps"
+    # frame_width, frame_height, fps, sensor_mode, v_valid_time -> scenario config
 
   # ISP Front-End with modules
   - name: "ISP_FE"
     type: "IP"
-    clock: 600000000  # 600 MHz
+    max_clock: 600000000  # 600 MHz max
+    clock_table:          # Available clock steps
+      - 600000000
+      - 400000000
+      - 200000000
     ppc: 4
     efficiency: 0.95
     power_static: 15.0
     power_dynamic: 80.0
+    min_size: [64, 64]
+    max_size: [8192, 8192]
     supports_crop: false
+    supports_scale: true
     supported_modes:
       - "default"
       - "power_saving"
@@ -31,17 +44,26 @@ hardware:
         ppc: 4
       - name: "Scaler0"
         type: "Scaler"
-        scale_factor: [0.5, 0.5]
+        ppc: 4
+        min_scale: [0.25, 0.25]
+        max_scale: [4.0, 4.0]
+        # scale_factor, input/output size -> scenario config
 
   # ISP Back-End (supports crop)
   - name: "ISP_BE"
     type: "IP"
-    clock: 600000000
+    max_clock: 600000000
+    clock_table:
+      - 600000000
+      - 400000000
     ppc: 2
     efficiency: 0.90
     power_static: 12.0
     power_dynamic: 60.0
-    supports_crop: true   # This IP supports crop
+    min_size: [64, 64]
+    max_size: [8192, 8192]
+    supports_crop: true
+    supports_scale: false
     supported_modes:
       - "default"
       - "power_saving"
@@ -51,17 +73,25 @@ hardware:
         ppc: 2
       - name: "Crop0"
         type: "Crop"
-        crop_region: [0, 0, 1920, 1080]
+        ppc: 2
+        # crop_region -> scenario config
 
   # Video Encoder
   - name: "VENC"
     type: "IP"
-    clock: 400000000  # 400 MHz
+    max_clock: 400000000  # 400 MHz max
+    clock_table:
+      - 400000000
+      - 266000000
+      - 200000000
     ppc: 1
     efficiency: 0.85
     power_static: 20.0
     power_dynamic: 100.0
+    min_size: [128, 128]
+    max_size: [4096, 2160]
     supports_crop: false
+    supports_scale: false
     supported_modes:
       - "default"
       - "power_saving"
@@ -85,7 +115,7 @@ hardware:
   # CPU Cluster
   - name: "CPU_Cluster"
     type: "Processor"
-    clock: 2000000000  # 2.0 GHz
+    clock: 2000000000  # 2.0 GHz (current clock, not max)
     cycles_per_op: 1.0
     num_cores: 8
     power_static: 50.0

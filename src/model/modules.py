@@ -121,9 +121,35 @@ class ScalerModule(Module):
     Supports arbitrary scale factors for width and height.
     
     Attributes:
-        scale_factor: (x_scale, y_scale) tuple
+        scale_factor: (x_scale, y_scale) tuple - can be set via set_sizes()
+        min_scale: Minimum scale ratio constraint (HW capability)
+        max_scale: Maximum scale ratio constraint (HW capability)
     """
     scale_factor: Tuple[float, float] = (1.0, 1.0)
+    min_scale: Tuple[float, float] = (0.0625, 0.0625)  # 1/16x
+    max_scale: Tuple[float, float] = (16.0, 16.0)       # 16x
+    
+    def set_sizes(self, input_size: Tuple[int, int], 
+                  output_size: Tuple[int, int]) -> 'ScalerModule':
+        """
+        Set input/output size and auto-calculate scale_factor.
+        
+        Args:
+            input_size: (width, height) input dimensions
+            output_size: (width, height) output dimensions
+            
+        Returns:
+            self for method chaining
+        """
+        self.input_size = input_size
+        self.output_size = output_size
+        
+        # Calculate scale factor from sizes
+        scale_x = output_size[0] / input_size[0] if input_size[0] > 0 else 1.0
+        scale_y = output_size[1] / input_size[1] if input_size[1] > 0 else 1.0
+        self.scale_factor = (scale_x, scale_y)
+        
+        return self
     
     def calculate_output_size(self, input_size: Tuple[int, int]) -> Tuple[int, int]:
         """
