@@ -20,9 +20,9 @@ if TYPE_CHECKING:
 class Module(ABC):
     """
     Base class for IP internal modules.
-    
+
     Modules inherit clock_freq from their parent IP.
-    
+
     Attributes:
         name: Module identifier
         parent_ip: Reference to parent IPNode (for clock inheritance)
@@ -37,40 +37,40 @@ class Module(ABC):
     output_size: Tuple[int, int] = (0, 0)
     ppc: float = 1.0
     efficiency: float = 1.0
-    
+
     def get_clock_freq(self) -> float:
         """
         Get clock frequency from parent IP.
-        
+
         Returns:
             Clock frequency in Hz, or 1 GHz if no parent
         """
         if self.parent_ip is not None:
             return self.parent_ip.clock_freq
         return 1e9  # Default 1 GHz
-    
+
     @abstractmethod
     def calculate_output_size(self, input_size: Tuple[int, int]) -> Tuple[int, int]:
         """
         Calculate output size based on input size.
-        
+
         Args:
             input_size: (width, height) tuple
-            
+
         Returns:
             (output_width, output_height) tuple
         """
         pass
-    
+
     def get_processing_time(self, workload: Dict[str, Any]) -> float:
         """
         Calculate processing time for given workload.
-        
+
         Default implementation uses pixel count and module's ppc.
-        
+
         Args:
             workload: Dictionary with 'pixels' or input dimensions
-            
+
         Returns:
             Processing time in seconds
         """
@@ -79,35 +79,35 @@ class Module(ABC):
             # Try to calculate from input_size if available
             w, h = workload.get('input_size', self.input_size)
             pixels = w * h
-        
+
         if pixels <= 0:
             return 0.0
-            
+
         clock = self.get_clock_freq()
         if clock <= 0:
             return 0.0
-            
+
         return pixels / (clock * self.ppc * self.efficiency)
-    
+
     def set_input_size(self, width: int, height: int) -> 'Module':
         """
         Set input size and auto-calculate output size.
-        
+
         Args:
             width: Input width in pixels
             height: Input height in pixels
-            
+
         Returns:
             self for method chaining
         """
         self.input_size = (width, height)
         self.output_size = self.calculate_output_size(self.input_size)
         return self
-    
+
     def get_input_pixels(self) -> int:
         """Get total input pixel count."""
         return self.input_size[0] * self.input_size[1]
-    
+
     def get_output_pixels(self) -> int:
         """Get total output pixel count."""
         return self.output_size[0] * self.output_size[1]
@@ -117,9 +117,9 @@ class Module(ABC):
 class ScalerModule(Module):
     """
     Scaler module for image resizing.
-    
+
     Supports arbitrary scale factors for width and height.
-    
+
     Attributes:
         scale_factor: (x_scale, y_scale) tuple - can be set via set_sizes()
         min_scale: Minimum scale ratio constraint (HW capability)
@@ -128,36 +128,36 @@ class ScalerModule(Module):
     scale_factor: Tuple[float, float] = (1.0, 1.0)
     min_scale: Tuple[float, float] = (0.0625, 0.0625)  # 1/16x
     max_scale: Tuple[float, float] = (16.0, 16.0)       # 16x
-    
-    def set_sizes(self, input_size: Tuple[int, int], 
+
+    def set_sizes(self, input_size: Tuple[int, int],
                   output_size: Tuple[int, int]) -> 'ScalerModule':
         """
         Set input/output size and auto-calculate scale_factor.
-        
+
         Args:
             input_size: (width, height) input dimensions
             output_size: (width, height) output dimensions
-            
+
         Returns:
             self for method chaining
         """
         self.input_size = input_size
         self.output_size = output_size
-        
+
         # Calculate scale factor from sizes
         scale_x = output_size[0] / input_size[0] if input_size[0] > 0 else 1.0
         scale_y = output_size[1] / input_size[1] if input_size[1] > 0 else 1.0
         self.scale_factor = (scale_x, scale_y)
-        
+
         return self
-    
+
     def calculate_output_size(self, input_size: Tuple[int, int]) -> Tuple[int, int]:
         """
         Calculate scaled output size.
-        
+
         Args:
             input_size: (width, height) tuple
-            
+
         Returns:
             Scaled (width, height) tuple
         """
@@ -165,30 +165,30 @@ class ScalerModule(Module):
         out_w = int(in_w * self.scale_factor[0])
         out_h = int(in_h * self.scale_factor[1])
         return (max(1, out_w), max(1, out_h))
-    
+
     def get_processing_time(self, workload: Dict[str, Any]) -> float:
         """
         Calculate processing time considering both input and output pixels.
-        
+
         Scaler processing time is typically based on output pixels.
         """
         # Update sizes if input provided
         if 'input_size' in workload:
             w, h = workload['input_size']
             self.set_input_size(w, h)
-        
+
         # Use output pixels for processing time (scaler writes output)
         output_pixels = self.get_output_pixels()
         if output_pixels <= 0:
             output_pixels = workload.get('pixels', 0)
-        
+
         if output_pixels <= 0:
             return 0.0
-            
+
         clock = self.get_clock_freq()
         if clock <= 0:
             return 0.0
-            
+
         return output_pixels / (clock * self.ppc * self.efficiency)
 
 
@@ -196,37 +196,37 @@ class ScalerModule(Module):
 class CropModule(Module):
     """
     Crop module for extracting image regions.
-    
+
     Attributes:
         crop_region: (x, y, width, height) defining the crop area
     """
     crop_region: Tuple[int, int, int, int] = (0, 0, 0, 0)  # x, y, w, h
-    
+
     def calculate_output_size(self, input_size: Tuple[int, int]) -> Tuple[int, int]:
         """
         Calculate cropped output size.
-        
+
         Output size is limited by crop_region and input boundaries.
-        
+
         Args:
             input_size: (width, height) tuple
-            
+
         Returns:
             Cropped (width, height) tuple
         """
         in_w, in_h = input_size
         x, y, crop_w, crop_h = self.crop_region
-        
+
         # Ensure crop doesn't exceed input bounds
         actual_w = min(crop_w, in_w - x) if x < in_w else 0
         actual_h = min(crop_h, in_h - y) if y < in_h else 0
-        
+
         return (max(0, actual_w), max(0, actual_h))
-    
+
     def set_crop_region(self, x: int, y: int, width: int, height: int) -> 'CropModule':
         """
         Set crop region and recalculate output size.
-        
+
         Returns:
             self for method chaining
         """
@@ -240,17 +240,17 @@ class CropModule(Module):
 class GenericModule(Module):
     """
     Generic processing module for custom operations.
-    
+
     Uses standard pixel-based processing time calculation.
     """
-    
+
     def calculate_output_size(self, input_size: Tuple[int, int]) -> Tuple[int, int]:
         """
         Generic modules don't change size by default.
-        
+
         Args:
             input_size: (width, height) tuple
-            
+
         Returns:
             Same as input size
         """
@@ -261,14 +261,14 @@ class GenericModule(Module):
 class BypassModule(Module):
     """
     Bypass module that passes through without processing.
-    
+
     Used for modeling pass-through paths in IP blocks.
     """
-    
+
     def calculate_output_size(self, input_size: Tuple[int, int]) -> Tuple[int, int]:
         """Output equals input (pass-through)."""
         return input_size
-    
+
     def get_processing_time(self, workload: Dict[str, Any]) -> float:
         """Bypass has zero processing time."""
         return 0.0

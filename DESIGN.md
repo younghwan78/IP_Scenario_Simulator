@@ -50,20 +50,20 @@ flowchart TB
         MOD[Module System]
         SC[ScenarioGraph]
     end
-    
+
     subgraph Controller["Controller Layer"]
         SIM[SoCSimulator]
         PERF[PerformanceAnalyzer]
         PWR[PowerAnalyzer]
         TIM[TimingAnalyzer]
     end
-    
+
     subgraph View["View Layer"]
         TXT[TextViewer]
         MON[Monitor]
         VIZ[Visualizer]
     end
-    
+
     HW --> SIM
     MOD --> HW
     SC --> SIM
@@ -86,20 +86,20 @@ sequenceDiagram
     participant SimPy
     participant Analyzer
     participant View
-    
+
     User->>Main: Run with config
     Main->>Loader: Load YAML files
     Loader->>Main: HWNodes + Scenario
     Main->>Simulator: register_hw() + load_scenario()
     Main->>Simulator: run()
-    
+
     loop For each Task
         Simulator->>SimPy: Create process
         SimPy->>SimPy: Wait for dependencies
         SimPy->>SimPy: Execute (timeout)
         SimPy->>Simulator: Record result
     end
-    
+
     Simulator->>Main: SimulationResults
     Main->>Analyzer: analyze()
     Analyzer->>Main: Report
@@ -128,7 +128,7 @@ classDiagram
         +get_attr(key) Any
         +set_attr(key, value)
     }
-    
+
     class ExternalNode {
         +frame_width: int
         +frame_height: int
@@ -138,7 +138,7 @@ classDiagram
         +get_processing_time() float "Always 0.0"
         +get_frame_timing() Dict
     }
-    
+
     class IPNode {
         +ppc: float
         +efficiency: float
@@ -148,7 +148,7 @@ classDiagram
         +add_module(module) IPNode
         +get_processing_time(workload) float
     }
-    
+
     class DMANode {
         +bandwidth: float
         +multiple_outstanding: int
@@ -156,19 +156,19 @@ classDiagram
         +latency: float
         +get_transfer_time(data_size) float
     }
-    
+
     class ProcessorNode {
         +cycles_per_op: float
         +num_cores: int
         +get_processing_time(workload) float
     }
-    
+
     class MemoryNode {
         +bandwidth: float
         +capacity: int
         +access_latency: float
     }
-    
+
     HWNode <|-- ExternalNode
     HWNode <|-- IPNode
     HWNode <|-- DMANode
@@ -215,26 +215,26 @@ classDiagram
         +calculate_output_size(input)* Tuple
         +get_processing_time(workload) float
     }
-    
+
     class ScalerModule {
         +scale_factor: Tuple~float, float~
         +calculate_output_size(input) Tuple
     }
-    
+
     class CropModule {
         +crop_region: Tuple~int, int, int, int~
         +calculate_output_size(input) Tuple
         +set_crop_region(x, y, w, h)
     }
-    
+
     class GenericModule {
         +calculate_output_size(input) Tuple
     }
-    
+
     Module <|-- ScalerModule
     Module <|-- CropModule
     Module <|-- GenericModule
-    
+
     IPNode "1" *-- "*" Module : contains
 ```
 
@@ -270,7 +270,7 @@ classDiagram
         +validate() Tuple~bool, List~
         +topological_order() List
     }
-    
+
     class Task {
         +task_id: str
         +mapped_hw: str
@@ -284,13 +284,13 @@ classDiagram
         +get_crop_size() Tuple
         +requires_crop() bool
     }
-    
+
     class ConnectionType {
         <<enumeration>>
         M2M
         OTF
     }
-    
+
     ScenarioGraph "1" *-- "*" Task
     ScenarioGraph ..> ConnectionType
 ```
@@ -325,7 +325,7 @@ classDiagram
         -_run_task_process(task) Generator
         -_run_otf_group_process(group) Generator
     }
-    
+
     class SimulationResults {
         +scenario_name: str
         +total_time: float
@@ -334,7 +334,7 @@ classDiagram
         +get_by_task(id) TaskResult
         +get_total_power() float
     }
-    
+
     class TaskResult {
         +task_id: str
         +hw_name: str
@@ -344,7 +344,7 @@ classDiagram
         +power_consumed: float
         +workload: Dict
     }
-    
+
     SoCSimulator --> SimulationResults
     SimulationResults *-- TaskResult
 ```
@@ -357,33 +357,33 @@ flowchart TD
     VALIDATE --> INIT[Initialize SimPy Environment]
     INIT --> EVENTS[Create Task Events]
     EVENTS --> FIND_OTF[Find OTF Groups]
-    
+
     FIND_OTF --> SCHEDULE_OTF[Schedule OTF Groups]
     FIND_OTF --> SCHEDULE_TASKS[Schedule Non-OTF Tasks]
-    
+
     SCHEDULE_OTF --> RUN[env.run()]
     SCHEDULE_TASKS --> RUN
-    
+
     RUN --> COLLECT[Collect Results]
     COLLECT --> RETURN([Return SimulationResults])
-    
+
     subgraph "OTF Group Process"
         OTF_WAIT[Wait for M2M predecessors]
         OTF_START[Start all tasks simultaneously]
         OTF_CALC[Calculate max processing time]
         OTF_TIMEOUT[Timeout for max time]
         OTF_RECORD[Record all results]
-        
+
         OTF_WAIT --> OTF_START --> OTF_CALC --> OTF_TIMEOUT --> OTF_RECORD
     end
-    
+
     subgraph "Task Process"
         TASK_WAIT[Wait for predecessor events]
         TASK_REQUEST[Request HW resource]
         TASK_PROCESS[Process workload]
         TASK_RELEASE[Release resource]
         TASK_SIGNAL[Signal completion]
-        
+
         TASK_WAIT --> TASK_REQUEST --> TASK_PROCESS --> TASK_RELEASE --> TASK_SIGNAL
     end
 ```
@@ -398,22 +398,22 @@ classDiagram
         <<abstract>>
         +analyze(results)* Dict
     }
-    
+
     class PerformanceAnalyzer {
         +analyze(results) Dict
         +format_report(report) str
     }
-    
+
     class PowerAnalyzer {
         +analyze(results) Dict
         +format_report(report) str
     }
-    
+
     class TimingAnalyzer {
         +analyze(results) Dict
         +format_report(report) str
     }
-    
+
     BaseAnalyzer <|-- PerformanceAnalyzer
     BaseAnalyzer <|-- PowerAnalyzer
     BaseAnalyzer <|-- TimingAnalyzer
@@ -471,14 +471,14 @@ classDiagram
         +from_simulation_results(results)
         +export_csv(path)
     }
-    
+
     class Visualizer {
         +create_gantt_chart(df) Figure
         +create_gantt_chart_ms(df) Figure
         +save_gantt(fig, path)
         +show(fig)
     }
-    
+
     Monitor --> Visualizer : provides data
 ```
 
@@ -537,19 +537,19 @@ hardware:
 ```yaml
 scenario:
   name: "4K_Recording"
-  
+
   tasks:
     - id: "t_sensor"
       hw: "Sensor_Ext"
       width: 3840           # New: width/height format
       height: 2160
-      
+
     - id: "t_isp_fe"
       hw: "ISP_FE"
       width: 3840
       height: 2160
       ip_mode: "default"   # Optional: power_saving, high_performance
-      
+
     - id: "t_isp_be"
       hw: "ISP_BE"
       width: 3840
@@ -562,7 +562,7 @@ scenario:
     - src: "t_sensor"
       dst: "t_isp_fe"
       type: "OTF"         # Pipelined
-      
+
     - src: "t_isp_fe"
       dst: "t_isp_be"
       type: "M2M"         # Sequential
@@ -592,14 +592,14 @@ def get_otf_groups(self) -> List[List[str]]:
     # 1. OTF 엣지만 추출
     otf_edges = [(u, v) for u, v, d in self.graph.edges(data=True)
                  if d.get('conn_type') == ConnectionType.OTF]
-    
+
     # 2. OTF 서브그래프 생성
     otf_subgraph = nx.DiGraph()
     otf_subgraph.add_edges_from(otf_edges)
-    
+
     # 3. Weakly Connected Components 찾기
     groups = list(nx.weakly_connected_components(otf_subgraph))
-    
+
     return [list(g) for g in groups]
 ```
 
@@ -610,20 +610,20 @@ def _run_otf_group_process(self, group: List[str]) -> Generator:
     # 1. M2M predecessors 대기
     for pred_id in all_m2m_predecessors:
         yield self._task_events[pred_id]
-    
+
     # 2. 모든 task의 처리 시간 계산
     processing_times = []
     for task in tasks:
         hw = self._get_hw(task.mapped_hw)
         pt = hw.get_processing_time(task.workload)
         processing_times.append(pt)
-    
+
     # 3. Bottleneck: 가장 느린 시간으로 동기화
     max_time = max(processing_times)
-    
+
     # 4. 동시에 종료
     yield self.env.timeout(max_time)
-    
+
     # 5. 결과 기록 (모두 같은 start/end time)
     for task in tasks:
         self._task_events[task.task_id].succeed()
@@ -655,14 +655,14 @@ with hw.resource.request() as req:
 class GPUNode(HWNode):
     shader_units: int = 128
     texture_units: int = 8
-    
+
     def get_processing_time(self, workload: Dict[str, Any]) -> float:
         triangles = workload.get('triangles', 0)
         texels = workload.get('texels', 0)
-        
+
         shader_time = triangles / (self.clock_freq * self.shader_units)
         texture_time = texels / (self.clock_freq * self.texture_units)
-        
+
         return max(shader_time, texture_time)
 ```
 
@@ -686,7 +686,7 @@ class BandwidthAnalyzer(BaseAnalyzer):
 @dataclass
 class RotatorModule(Module):
     rotation_angle: int = 0  # 0, 90, 180, 270
-    
+
     def calculate_output_size(self, input_size: Tuple[int, int]) -> Tuple[int, int]:
         w, h = input_size
         if self.rotation_angle in [90, 270]:

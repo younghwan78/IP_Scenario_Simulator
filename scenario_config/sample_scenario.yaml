@@ -8,7 +8,7 @@
 
 scenario:
   name: "4K_Recording"
-  
+
   # Sensor configuration for this scenario
   sensor:
     hw: "Sensor_Ext"
@@ -25,7 +25,7 @@ scenario:
       module: "Scaler0"
       input_size: [3840, 2160]
       output_size: [1920, 1080]   # 0.5x scale
-    
+
     # Crop: define crop region
     - hw: "ISP_BE"
       module: "Crop0"

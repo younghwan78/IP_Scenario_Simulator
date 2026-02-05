@@ -48,7 +48,7 @@ def create_hw_node(config: dict) -> HWNode:
     clock = config.get('clock', config.get('max_clock', 1e9))  # Use max_clock if clock not set
     power_static = config.get('power_static', 0.0)
     power_dynamic = config.get('power_dynamic', 0.0)
-    
+
     if node_type == 'Sensor':
         # SensorNode - static HW config only, runtime values set by scenario
         supported_modes = config.get('supported_sensor_modes', [])
@@ -64,7 +64,7 @@ def create_hw_node(config: dict) -> HWNode:
             power_static=power_static,
             power_dynamic=power_dynamic
         )
-    
+
     elif node_type == 'Display':
         # DisplayNode with display timing parameters
         return DisplayNode(
@@ -78,7 +78,7 @@ def create_hw_node(config: dict) -> HWNode:
             power_static=power_static,
             power_dynamic=power_dynamic
         )
-    
+
     elif node_type == 'External':
         # Generic ExternalNode (backward compatibility)
         return ExternalNode(
@@ -89,7 +89,7 @@ def create_hw_node(config: dict) -> HWNode:
             power_static=power_static,
             power_dynamic=power_dynamic
         )
-    
+
     elif node_type == 'IP':
         # Parse new fields for HW constraints
         supported_modes = config.get('supported_modes', ['default'])
@@ -99,7 +99,7 @@ def create_hw_node(config: dict) -> HWNode:
         clock_table = config.get('clock_table', [])
         min_size = tuple(config.get('min_size', [1, 1]))
         max_size = tuple(config.get('max_size', [65535, 65535]))
-        
+
         node = IPNode(
             name=name,
             clock_freq=clock,
@@ -115,14 +115,14 @@ def create_hw_node(config: dict) -> HWNode:
             supports_crop=supports_crop,
             supports_scale=supports_scale
         )
-        
+
         # Add modules if present
         for mod_config in config.get('modules', []):
             module = create_module(mod_config)
             node.add_module(module)
-        
+
         return node
-    
+
     elif node_type == 'DMA':
         return DMANode(
             name=name,
@@ -134,7 +134,7 @@ def create_hw_node(config: dict) -> HWNode:
             power_static=power_static,
             power_dynamic=power_dynamic
         )
-    
+
     elif node_type == 'Processor':
         return ProcessorNode(
             name=name,
@@ -144,7 +144,7 @@ def create_hw_node(config: dict) -> HWNode:
             power_static=power_static,
             power_dynamic=power_dynamic
         )
-    
+
     elif node_type == 'Memory':
         return MemoryNode(
             name=name,
@@ -155,7 +155,7 @@ def create_hw_node(config: dict) -> HWNode:
             power_static=power_static,
             power_dynamic=power_dynamic
         )
-    
+
     else:
         # Default to IPNode
         return IPNode(
@@ -171,7 +171,7 @@ def create_module(config: dict) -> Module:
     """Create Module from configuration dictionary."""
     mod_type = config.get('type', 'Generic')
     name = config['name']
-    
+
     if mod_type == 'Scaler':
         scale = config.get('scale_factor', [1.0, 1.0])
         min_scale = config.get('min_scale', [0.0625, 0.0625])
@@ -184,7 +184,7 @@ def create_module(config: dict) -> Module:
             ppc=config.get('ppc', 1.0),
             efficiency=config.get('efficiency', 1.0)
         )
-    
+
     elif mod_type == 'Crop':
         region = config.get('crop_region', [0, 0, 0, 0])
         return CropModule(
@@ -193,7 +193,7 @@ def create_module(config: dict) -> Module:
             ppc=config.get('ppc', 1.0),
             efficiency=config.get('efficiency', 1.0)
         )
-    
+
     else:
         return GenericModule(
             name=name,
@@ -206,13 +206,13 @@ def create_scenario(config: dict) -> ScenarioGraph:
     """Create ScenarioGraph from configuration dictionary."""
     scenario_data = config.get('scenario', config)
     name = scenario_data.get('name', 'Unnamed')
-    
+
     scenario = ScenarioGraph(name=name)
-    
+
     # Add tasks
     for task_config in scenario_data.get('tasks', []):
         workload = {}
-        
+
         # Support both 'pixels' and 'width/height' formats
         if 'pixels' in task_config:
             workload['pixels'] = task_config['pixels']
@@ -224,15 +224,15 @@ def create_scenario(config: dict) -> ScenarioGraph:
             workload['ops'] = task_config['ops']
         if 'data_size' in task_config:
             workload['data_size'] = task_config['data_size']
-        
+
         # Parse crop_size from separate width/height fields
         crop_size = None
         if 'crop_width' in task_config and 'crop_height' in task_config:
             crop_size = (task_config['crop_width'], task_config['crop_height'])
-        
+
         # Get optional ip_mode
         ip_mode = task_config.get('ip_mode', None)
-        
+
         scenario.add_task(
             task_id=task_config['id'],
             mapped_hw=task_config['hw'],
@@ -240,7 +240,7 @@ def create_scenario(config: dict) -> ScenarioGraph:
             ip_mode=ip_mode,
             crop_size=crop_size
         )
-    
+
     # Add edges
     for edge_config in scenario_data.get('edges', []):
         scenario.add_dependency(
@@ -249,25 +249,25 @@ def create_scenario(config: dict) -> ScenarioGraph:
             conn_type=edge_config.get('type', 'M2M'),
             buffer_size=edge_config.get('buffer_size')
         )
-    
+
     return scenario
 
 
-def apply_scenario_settings(hw_nodes: Dict[str, HWNode], 
+def apply_scenario_settings(hw_nodes: Dict[str, HWNode],
                             scenario_config: dict) -> None:
     """
     Apply scenario-specific settings to HW nodes.
-    
+
     This function applies runtime configuration from the scenario to HW nodes:
     - Sensor settings: frame_width, frame_height, fps, sensor_mode, v_valid_time
     - Module settings: scaler input/output sizes, crop regions
-    
+
     Args:
         hw_nodes: Dictionary mapping HW names to HWNode instances
         scenario_config: Scenario configuration dictionary
     """
     scenario_data = scenario_config.get('scenario', scenario_config)
-    
+
     # Apply sensor settings
     sensor_cfg = scenario_data.get('sensor', {})
     if sensor_cfg:
@@ -285,23 +285,23 @@ def apply_scenario_settings(hw_nodes: Dict[str, HWNode],
                     sensor.sensor_mode = sensor_cfg['sensor_mode']
                 if 'v_valid_time' in sensor_cfg:
                     sensor.v_valid_time = sensor_cfg['v_valid_time']
-    
+
     # Apply module settings
     for mod_setting in scenario_data.get('module_settings', []):
         hw_name = mod_setting.get('hw')
         mod_name = mod_setting.get('module')
-        
+
         if not hw_name or not mod_name or hw_name not in hw_nodes:
             continue
-        
+
         hw = hw_nodes[hw_name]
         if not isinstance(hw, IPNode):
             continue
-        
+
         module = hw.get_module(mod_name)
         if module is None:
             continue
-        
+
         # Scaler settings: input/output size -> auto-calculate scale_factor
         if isinstance(module, ScalerModule):
             input_size = mod_setting.get('input_size')
@@ -310,11 +310,23 @@ def apply_scenario_settings(hw_nodes: Dict[str, HWNode],
                 module.set_sizes(tuple(input_size), tuple(output_size))
             elif 'scale_factor' in mod_setting:
                 module.scale_factor = tuple(mod_setting['scale_factor'])
-        
+
         # Crop settings: crop_region
         elif isinstance(module, CropModule):
             if 'crop_region' in mod_setting:
                 module.crop_region = tuple(mod_setting['crop_region'])
+
+    # Apply IP settings (e.g. manual clock override)
+    for ip_setting in scenario_data.get('ip_settings', []):
+        hw_name = ip_setting.get('hw')
+        clock = ip_setting.get('clock')
+
+        if hw_name and hw_name in hw_nodes:
+            hw = hw_nodes[hw_name]
+            if isinstance(hw, IPNode) and clock:
+                hw.clock_freq = float(clock)
+                hw.target_freq = float(clock)  # Mark as manually set
+                print(f"[Config] Manual clock set for {hw_name}: {clock/1e6:.1f} MHz")
 
 
 def run_demo():
@@ -322,11 +334,11 @@ def run_demo():
     print("=" * 60)
     print("SoC Multimedia Architecture Simulator - Demo")
     print("=" * 60)
-    
+
     # Create hardware nodes with STATIC HW config only (no sensor settings)
     hw_nodes = [
         # SensorNode - static config only, runtime values applied from scenario
-        SensorNode(name="Sensor_Ext", 
+        SensorNode(name="Sensor_Ext",
                    supported_sensor_modes=["4K_30fps", "4K_60fps", "1080p_120fps"],
                    power_static=10.0, power_dynamic=50.0),
         IPNode(name="ISP_FE", clock_freq=600e6, ppc=4, efficiency=0.95,
@@ -340,14 +352,14 @@ def run_demo():
                max_clock=400e6, min_size=(128, 128), max_size=(4096, 2160),
                power_static=20.0, power_dynamic=100.0),
     ]
-    
+
     # Add modules to ISP_FE (HW config: constraints only)
     hw_nodes[1].add_module(ScalerModule(name="Scaler0", ppc=4,
                                         min_scale=(0.25, 0.25), max_scale=(4.0, 4.0)))
-    
+
     # Build HW registry
     hw_registry = {node.name: node for node in hw_nodes}
-    
+
     # Simulate scenario config (normally loaded from YAML)
     scenario_config = {
         'sensor': {
@@ -367,38 +379,45 @@ def run_demo():
             }
         ]
     }
-    
+
     # Apply scenario settings to HW nodes
     apply_scenario_settings(hw_registry, scenario_config)
-    
+
     # Create scenario
     scenario = ScenarioGraph(name="4K_Recording")
     pixels_4k = 3840 * 2160  # 8,294,400
-    
+
     scenario.add_task("t_sensor", "Sensor_Ext", pixels=pixels_4k)
     scenario.add_task("t_isp_fe", "ISP_FE", pixels=pixels_4k)
     scenario.add_task("t_isp_be", "ISP_BE", pixels=pixels_4k)
     scenario.add_task("t_venc", "VENC", pixels=pixels_4k)
-    
+
     scenario.add_dependency("t_sensor", "t_isp_fe", "OTF")
     scenario.add_dependency("t_isp_fe", "t_isp_be", "M2M")
     scenario.add_dependency("t_isp_be", "t_venc", "M2M")
-    
+
+    # Check and align OTF/Sensor timing (Clock Optimization)
+    print("\n[Clock Optimization]")
+    opt_messages = scenario.optimize_otf_clocks(hw_registry)
+    for msg in opt_messages:
+        print(msg)
+    print()
+
     # Create simulator
     simulator = SoCSimulator()
     for node in hw_registry.values():
         simulator.register_hw(node)
     simulator.load_scenario(scenario)
-    
+
     # Add analyzers
     perf_analyzer = PerformanceAnalyzer()
     power_analyzer = PowerAnalyzer()
     timing_analyzer = TimingAnalyzer()
-    
+
     simulator.add_analyzer(perf_analyzer)
     simulator.add_analyzer(power_analyzer)
     simulator.add_analyzer(timing_analyzer)
-    
+
     # Text view before simulation
     text_viewer = TextViewer()
     print()
@@ -406,24 +425,24 @@ def run_demo():
     print()
     print(text_viewer.print_scenario_graph(scenario))
     print()
-    
+
     # Run simulation
     print("Running simulation...")
     output = simulator.run_with_analysis()
     results = output['results']
-    
+
     # Print results
     print()
     print(text_viewer.print_simulation_summary(results))
     print()
-    
+
     # Print analysis reports
     print(perf_analyzer.format_report(output['analysis']['PerformanceAnalyzer']))
     print()
     print(power_analyzer.format_report(output['analysis']['PowerAnalyzer']))
     print()
     print(timing_analyzer.format_report(output['analysis']['TimingAnalyzer']))
-    
+
     return results
 
 
@@ -461,22 +480,22 @@ def main():
         default=None,
         help='Output path for Gantt chart (HTML)'
     )
-    
+
     args = parser.parse_args()
-    
+
     if args.demo or (args.hw_config is None and args.scenario_config is None):
         # Run demo mode
         results = run_demo()
-        
+
         # Export if requested
         if args.output_csv or args.output_gantt:
             monitor = Monitor()
             monitor.from_simulation_results(results)
-            
+
             if args.output_csv:
                 monitor.export_csv(args.output_csv)
                 print(f"\nResults exported to: {args.output_csv}")
-            
+
             if args.output_gantt:
                 visualizer = Visualizer()
                 df = monitor.to_dataframe()
@@ -484,9 +503,9 @@ def main():
                 if fig:
                     visualizer.save_gantt(fig, args.output_gantt)
                     print(f"Gantt chart saved to: {args.output_gantt}")
-        
+
         return
-    
+
     # Load configurations
     if args.hw_config:
         hw_config = load_hw_config(args.hw_config)
@@ -494,18 +513,25 @@ def main():
     else:
         print("Error: --hw-config required when not in demo mode")
         return
-    
+
     if args.scenario_config:
         scenario_config = load_scenario_config(args.scenario_config)
         scenario = create_scenario(scenario_config)
     else:
         print("Error: --scenario-config required when not in demo mode")
         return
-    
+
     # Build HW registry and apply scenario settings
     hw_registry = {node.name: node for node in hw_nodes}
     apply_scenario_settings(hw_registry, scenario_config)
-    
+
+    # Check and align OTF/Sensor timing (Clock Optimization)
+    print("\n[Clock Optimization]")
+    opt_messages = scenario.optimize_otf_clocks(hw_registry)
+    for msg in opt_messages:
+        print(msg)
+    print()
+
     # Run simulation
     simulator = SoCSimulator()
     for node in hw_registry.values():
@@ -514,27 +540,27 @@ def main():
     simulator.add_analyzer(PerformanceAnalyzer())
     simulator.add_analyzer(PowerAnalyzer())
     simulator.add_analyzer(TimingAnalyzer())
-    
+
     text_viewer = TextViewer()
     print(text_viewer.print_hw_hierarchy(simulator.hw_registry))
     print()
     print(text_viewer.print_scenario_graph(scenario))
     print()
-    
+
     output = simulator.run_with_analysis()
     results = output['results']
-    
+
     print(text_viewer.print_simulation_summary(results))
-    
+
     # Export results
     if args.output_csv or args.output_gantt:
         monitor = Monitor()
         monitor.from_simulation_results(results)
-        
+
         if args.output_csv:
             monitor.export_csv(args.output_csv)
             print(f"\nResults exported to: {args.output_csv}")
-        
+
         if args.output_gantt:
             visualizer = Visualizer()
             df = monitor.to_dataframe()

@@ -24,7 +24,7 @@ class ConnectionType(Enum):
 class Task:
     """
     Represents a processing task in the scenario.
-    
+
     Attributes:
         task_id: Unique task identifier
         mapped_hw: Name of the hardware node to execute on
@@ -37,7 +37,7 @@ class Task:
     workload: Dict[str, Any] = field(default_factory=dict)
     ip_mode: Optional[str] = None
     crop_size: Optional[Tuple[int, int]] = None
-    
+
     def get_pixels(self) -> int:
         """Get pixel count from workload (width * height or direct pixels)."""
         if 'pixels' in self.workload:
@@ -45,31 +45,31 @@ class Task:
         width = self.workload.get('width', 0)
         height = self.workload.get('height', 0)
         return width * height
-    
+
     def get_width(self) -> int:
         """Get frame width."""
         return self.workload.get('width', 0)
-    
+
     def get_height(self) -> int:
         """Get frame height."""
         return self.workload.get('height', 0)
-    
+
     def get_size(self) -> Tuple[int, int]:
         """Get frame size as (width, height)."""
         return (self.get_width(), self.get_height())
-    
+
     def get_crop_size(self) -> Optional[Tuple[int, int]]:
         """Get crop output size if specified."""
         return self.crop_size
-    
+
     def requires_crop(self) -> bool:
         """Check if task requires crop functionality."""
         return self.crop_size is not None
-    
+
     def get_ops(self) -> int:
         """Get operation count from workload."""
         return self.workload.get('ops', 0)
-    
+
     def get_data_size(self) -> int:
         """Get data size from workload."""
         return self.workload.get('data_size', 0)
@@ -79,7 +79,7 @@ class Task:
 class Dependency:
     """
     Represents a dependency edge between tasks.
-    
+
     Attributes:
         src: Source task ID
         dst: Destination task ID
@@ -95,29 +95,29 @@ class Dependency:
 class ScenarioGraph:
     """
     Manages the scenario as a directed acyclic graph (DAG).
-    
+
     Tasks are nodes, dependencies are edges.
     """
-    
+
     def __init__(self, name: str = "Scenario"):
         """
         Initialize scenario graph.
-        
+
         Args:
             name: Scenario name
         """
         self.name = name
         self.graph = nx.DiGraph()
         self._tasks: Dict[str, Task] = {}
-    
-    def add_task(self, task_id: str, mapped_hw: str, 
+
+    def add_task(self, task_id: str, mapped_hw: str,
                  workload: Optional[Dict[str, Any]] = None,
                  ip_mode: Optional[str] = None,
                  crop_size: Optional[Tuple[int, int]] = None,
                  **kwargs) -> 'ScenarioGraph':
         """
         Add a task to the scenario.
-        
+
         Args:
             task_id: Unique task identifier
             mapped_hw: Hardware node name to execute on
@@ -125,17 +125,17 @@ class ScenarioGraph:
             ip_mode: Optional IP mode (e.g., 'power_saving', 'high_performance')
             crop_size: Optional crop output size (width, height)
             **kwargs: Additional workload parameters (width, height, pixels, etc.)
-            
+
         Returns:
             self for method chaining
         """
         if workload is None:
             workload = {}
         workload.update(kwargs)
-        
+
         task = Task(
-            task_id=task_id, 
-            mapped_hw=mapped_hw, 
+            task_id=task_id,
+            mapped_hw=mapped_hw,
             workload=workload,
             ip_mode=ip_mode,
             crop_size=crop_size
@@ -143,22 +143,22 @@ class ScenarioGraph:
         self._tasks[task_id] = task
         self.graph.add_node(task_id, task=task)
         return self
-    
-    def add_dependency(self, src: str, dst: str, 
+
+    def add_dependency(self, src: str, dst: str,
                        conn_type: str | ConnectionType = ConnectionType.M2M,
                        buffer_size: Optional[int] = None) -> 'ScenarioGraph':
         """
         Add a dependency between tasks.
-        
+
         Args:
             src: Source task ID
             dst: Destination task ID
             conn_type: 'M2M' or 'OTF' or ConnectionType enum
             buffer_size: Optional buffer size for M2M
-            
+
         Returns:
             self for method chaining
-            
+
         Raises:
             ValueError: If source or destination task doesn't exist
         """
@@ -166,95 +166,95 @@ class ScenarioGraph:
             raise ValueError(f"Source task '{src}' not found in scenario")
         if dst not in self._tasks:
             raise ValueError(f"Destination task '{dst}' not found in scenario")
-        
+
         if isinstance(conn_type, str):
             conn_type = ConnectionType(conn_type.upper())
-        
+
         self.graph.add_edge(
             src, dst,
             conn_type=conn_type,
             buffer_size=buffer_size
         )
         return self
-    
+
     def get_task(self, task_id: str) -> Optional[Task]:
         """Get task by ID."""
         return self._tasks.get(task_id)
-    
+
     def get_tasks(self) -> List[Task]:
         """Get all tasks in the scenario."""
         return list(self._tasks.values())
-    
+
     def get_predecessors(self, task_id: str) -> List[str]:
         """
         Get predecessor task IDs.
-        
+
         Args:
             task_id: Task to find predecessors for
-            
+
         Returns:
             List of predecessor task IDs
         """
         return list(self.graph.predecessors(task_id))
-    
+
     def get_successors(self, task_id: str) -> List[str]:
         """
         Get successor task IDs.
-        
+
         Args:
             task_id: Task to find successors for
-            
+
         Returns:
             List of successor task IDs
         """
         return list(self.graph.successors(task_id))
-    
+
     def get_dependency(self, src: str, dst: str) -> Optional[Dict[str, Any]]:
         """
         Get dependency edge attributes.
-        
+
         Args:
             src: Source task ID
             dst: Destination task ID
-            
+
         Returns:
             Edge attributes dict or None
         """
         if self.graph.has_edge(src, dst):
             return dict(self.graph.edges[src, dst])
         return None
-    
+
     def get_edge_type(self, src: str, dst: str) -> Optional[ConnectionType]:
         """Get connection type for an edge."""
         dep = self.get_dependency(src, dst)
         if dep:
             return dep.get('conn_type')
         return None
-    
+
     def get_root_tasks(self) -> List[str]:
         """
         Get tasks with no predecessors (entry points).
-        
+
         Returns:
             List of root task IDs
         """
         return [n for n in self.graph.nodes() if self.graph.in_degree(n) == 0]
-    
+
     def get_leaf_tasks(self) -> List[str]:
         """
         Get tasks with no successors (exit points).
-        
+
         Returns:
             List of leaf task IDs
         """
         return [n for n in self.graph.nodes() if self.graph.out_degree(n) == 0]
-    
+
     def get_otf_groups(self) -> List[List[str]]:
         """
         Find groups of tasks connected by OTF edges.
-        
+
         OTF-connected tasks execute synchronously with shared timing.
-        
+
         Returns:
             List of task ID lists (each list is an OTF group)
         """
@@ -263,24 +263,24 @@ class ScenarioGraph:
             (u, v) for u, v, data in self.graph.edges(data=True)
             if data.get('conn_type') == ConnectionType.OTF
         ]
-        
+
         if not otf_edges:
             return []
-        
+
         otf_subgraph = nx.DiGraph()
         otf_subgraph.add_edges_from(otf_edges)
-        
+
         # Find weakly connected components (groups)
         groups = []
         for component in nx.weakly_connected_components(otf_subgraph):
             groups.append(list(component))
-        
+
         return groups
-    
+
     def get_m2m_dependencies(self) -> List[Tuple[str, str]]:
         """
         Get all M2M dependency edges.
-        
+
         Returns:
             List of (src, dst) tuples
         """
@@ -288,11 +288,11 @@ class ScenarioGraph:
             (u, v) for u, v, data in self.graph.edges(data=True)
             if data.get('conn_type') == ConnectionType.M2M
         ]
-    
+
     def get_otf_dependencies(self) -> List[Tuple[str, str]]:
         """
         Get all OTF dependency edges.
-        
+
         Returns:
             List of (src, dst) tuples
         """
@@ -300,58 +300,58 @@ class ScenarioGraph:
             (u, v) for u, v, data in self.graph.edges(data=True)
             if data.get('conn_type') == ConnectionType.OTF
         ]
-    
+
     def validate(self) -> Tuple[bool, List[str]]:
         """
         Validate the scenario graph.
-        
+
         Checks:
         - Graph is a DAG (no cycles)
         - All edges reference valid tasks
-        
+
         Returns:
             (is_valid, list of error messages)
         """
         errors = []
-        
+
         # Check for cycles
         if not nx.is_directed_acyclic_graph(self.graph):
             errors.append("Scenario graph contains cycles")
-        
+
         # Check that all tasks have mappings
         for task_id, task in self._tasks.items():
             if not task.mapped_hw:
                 errors.append(f"Task '{task_id}' has no hardware mapping")
-        
+
         return len(errors) == 0, errors
-    
+
     def validate_otf_timing(self, hw_nodes: Dict[str, 'HWNode']) -> Tuple[bool, List[str]]:
         """
         Validate that OTF-connected HW can process pixels within vValid time.
-        
+
         For each OTF group starting from a SensorNode:
         - Calculate required throughput from vValid constraint
         - Check if all connected IPs can meet the throughput
-        
+
         Args:
             hw_nodes: Dictionary mapping HW names to HWNode instances
-            
+
         Returns:
             (is_valid, list of warning/error messages)
         """
         from .hw_nodes import SensorNode, IPNode
-        
+
         messages = []
         is_valid = True
-        
+
         # Find OTF groups
         otf_groups = self.get_otf_groups()
-        
+
         for group in otf_groups:
             # Find the sensor node in this group (entry point)
             sensor_task = None
             sensor_node = None
-            
+
             for task_id in group:
                 task = self._tasks.get(task_id)
                 if task:
@@ -360,34 +360,34 @@ class ScenarioGraph:
                         sensor_task = task
                         sensor_node = hw
                         break
-            
+
             if not sensor_node:
                 # No sensor in this OTF group, skip
                 continue
-            
+
             # Get required throughput from sensor
             required_throughput = sensor_node.get_required_throughput()
             v_valid_ms = sensor_node.effective_v_valid_time * 1000
-            
+
             messages.append(
                 f"OTF Group [{', '.join(group)}]: "
                 f"vValid={v_valid_ms:.2f}ms, "
                 f"Required throughput={required_throughput/1e6:.2f} Mpps"
             )
-            
+
             # Check each IP in the group
             for task_id in group:
                 task = self._tasks.get(task_id)
                 if not task:
                     continue
-                
+
                 hw = hw_nodes.get(task.mapped_hw)
                 if not isinstance(hw, IPNode):
                     continue
-                
+
                 # Calculate IP throughput: clock * ppc * efficiency
                 ip_throughput = hw.clock_freq * hw.ppc * hw.efficiency
-                
+
                 # Check if IP can meet the requirement
                 if ip_throughput < required_throughput:
                     is_valid = False
@@ -401,22 +401,143 @@ class ScenarioGraph:
                         f"  [OK] {hw.name}: {ip_throughput/1e6:.2f} Mpps "
                         f"(+{margin:.1f}% margin)"
                     )
-        
+
         return is_valid, messages
-    
+
+    def _calculate_required_freq(self, required_throughput: float,
+                               ip_node: 'IPNode') -> float:
+        """
+        Calculate required frequency for an IP to meet throughput.
+
+        Args:
+            required_throughput: Required throughput in pixels/sec
+            ip_node: IPNode instance
+
+        Returns:
+            Required frequency in Hz
+        """
+        # Frequency = Throughput / (PPC * Efficiency)
+        # TODO: Add margin or other factors here for scalability
+        if ip_node.ppc <= 0 or ip_node.efficiency <= 0:
+            return float('inf')
+
+        return required_throughput / (ip_node.ppc * ip_node.efficiency)
+
+    def optimize_otf_clocks(self, hw_nodes: Dict[str, 'HWNode']) -> List[str]:
+        """
+        Optimize clock frequencies for OTF-connected IPs.
+
+        Finds optimal clock from clock_table to meet sensor vValid constraint.
+        Prioritizes scenario-configured clock if set.
+
+        Args:
+            hw_nodes: Dictionary mapping HW names to HWNode instances
+
+        Returns:
+            List of optimization messages
+        """
+        from .hw_nodes import SensorNode, IPNode
+
+        messages = []
+        otf_groups = self.get_otf_groups()
+
+        for group in otf_groups:
+            # 1. Find Sensor (Source of constraint)
+            sensor_node = None
+            for task_id in group:
+                task = self._tasks.get(task_id)
+                if task:
+                    hw = hw_nodes.get(task.mapped_hw)
+                    if isinstance(hw, SensorNode):
+                        sensor_node = hw
+                        break
+
+            if not sensor_node:
+                continue
+
+            # 2. Calculate Required Throughput
+            # Effective vValid time handles default case (no blanking)
+            required_throughput = sensor_node.get_required_throughput()
+            v_valid_ms = sensor_node.effective_v_valid_time * 1000
+
+            messages.append(f"Optimizing OTF Group [{', '.join(group)}]")
+            messages.append(f"  Constraint: vValid={v_valid_ms:.2f}ms, "
+                            f"Req Throughput={required_throughput/1e6:.2f}Mpps")
+
+            # 3. Optimize IOs in group
+            for task_id in group:
+                task = self._tasks.get(task_id)
+                if not task: continue
+
+                hw = hw_nodes.get(task.mapped_hw)
+                if not isinstance(hw, IPNode): continue
+
+                # Calculate required freq
+                req_freq = self._calculate_required_freq(required_throughput, hw)
+                hw.required_freq = req_freq
+
+                # Check if clock was already set by scenario (target_freq > 0)
+                # In main.py, apply_scenario_settings sets target_freq if clock is specified
+                if hw.target_freq > 0:
+                     messages.append(f"  [INFO] {hw.name}: Using Manual Clock "
+                                     f"{hw.target_freq/1e6:.1f}MHz (Req: {req_freq/1e6:.1f}MHz)")
+                     # Ensure current clock is reflected
+                     hw.clock_freq = hw.target_freq
+                     continue
+
+                # Find minimum clock in table >= req_freq
+                target_freq = hw.max_clock if hw.max_clock else req_freq
+
+                if hw.clock_table:
+                    # Sort table ascending
+                    sorted_clocks = sorted(hw.clock_table)
+                    found = False
+                    for clk in sorted_clocks:
+                        if clk >= req_freq:
+                            target_freq = clk
+                            found = True
+                            break
+
+                    if not found:
+                        messages.append(f"  [WARN] {hw.name}: Req {req_freq/1e6:.1f}MHz "
+                                        f"> Max {sorted_clocks[-1]/1e6:.1f}MHz")
+                        target_freq = sorted_clocks[-1] # Use max available
+                else:
+                    # No table, use max_clock if available and less than req
+                    if hw.max_clock and req_freq > hw.max_clock:
+                         messages.append(f"  [WARN] {hw.name}: Req {req_freq/1e6:.1f}MHz "
+                                        f"> Max {hw.max_clock/1e6:.1f}MHz")
+                         target_freq = hw.max_clock
+                    elif hw.max_clock:
+                         # If max_clock exists but req is lower, optimize to req?
+                         # Or stick to max? Logic: "Find minimum clock... based on table"
+                         # Without table, continuous.
+                         target_freq = req_freq
+                    else:
+                         target_freq = req_freq
+
+                # Update HW
+                hw.target_freq = target_freq
+                hw.clock_freq = target_freq
+
+                messages.append(f"  {hw.name}: Req={req_freq/1e6:.1f}MHz "
+                                f"-> Set={target_freq/1e6:.1f}MHz")
+
+        return messages
+
     def topological_order(self) -> List[str]:
         """
         Get tasks in topological order.
-        
+
         Returns:
             List of task IDs in execution order
         """
         return list(nx.topological_sort(self.graph))
-    
+
     def __len__(self) -> int:
         """Return number of tasks."""
         return len(self._tasks)
-    
+
     def __contains__(self, task_id: str) -> bool:
         """Check if task exists."""
         return task_id in self._tasks
