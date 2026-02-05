@@ -113,7 +113,8 @@ def create_hw_node(config: dict) -> HWNode:
             power_dynamic=power_dynamic,
             supported_modes=supported_modes,
             supports_crop=supports_crop,
-            supports_scale=supports_scale
+            supports_scale=supports_scale,
+            latency=config.get('latency', 0.0)
         )
 
         # Add modules if present
@@ -131,6 +132,8 @@ def create_hw_node(config: dict) -> HWNode:
             multiple_outstanding=config.get('multiple_outstanding', 16),
             burst_length=config.get('burst_length', 256),
             latency=config.get('latency', 0.0),
+            supported_compressions=config.get('supported_compressions', []),
+            compression_ratios=config.get('compression_ratios', {}),
             power_static=power_static,
             power_dynamic=power_dynamic
         )
@@ -163,7 +166,8 @@ def create_hw_node(config: dict) -> HWNode:
             clock_freq=clock,
             ppc=config.get('ppc', 1.0),
             power_static=power_static,
-            power_dynamic=power_dynamic
+            power_dynamic=power_dynamic,
+            latency=config.get('latency', 0.0)
         )
 
 
@@ -247,7 +251,9 @@ def create_scenario(config: dict) -> ScenarioGraph:
             src=edge_config['src'],
             dst=edge_config['dst'],
             conn_type=edge_config.get('type', 'M2M'),
-            buffer_size=edge_config.get('buffer_size')
+            buffer_size=edge_config.get('buffer_size'),
+            data=edge_config.get('data'),
+            transfer=edge_config.get('transfer')
         )
 
     return scenario
@@ -403,6 +409,15 @@ def run_demo():
         print(msg)
     print()
 
+    # Constraint Validation
+    print("[Validation]")
+    errors = scenario.validate_constraints(hw_registry)
+    if errors:
+        print("Error: Scenario validation failed:")
+        for err in errors:
+            print(f"  - {err}")
+        sys.exit(1)
+
     # Create simulator
     simulator = SoCSimulator()
     for node in hw_registry.values():
@@ -541,6 +556,15 @@ def main():
     for msg in opt_messages:
         print(msg)
     print()
+
+    # Constraint Validation
+    print("[Validation]")
+    errors = scenario.validate_constraints(hw_registry)
+    if errors:
+        print("Error: Scenario validation failed:")
+        for err in errors:
+            print(f"  - {err}")
+        sys.exit(1)
 
     # Run simulation
     simulator = SoCSimulator()

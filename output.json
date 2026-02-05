@@ -1,0 +1,162 @@
+{
+  "traceEvents": [
+    {
+      "name": "thread_name",
+      "ph": "M",
+      "pid": 1,
+      "tid": 1,
+      "args": {
+        "name": "DMA_Read"
+      }
+    },
+    {
+      "name": "thread_name",
+      "ph": "M",
+      "pid": 1,
+      "tid": 2,
+      "args": {
+        "name": "DMA_Write"
+      }
+    },
+    {
+      "name": "thread_name",
+      "ph": "M",
+      "pid": 1,
+      "tid": 3,
+      "args": {
+        "name": "ISP_BE"
+      }
+    },
+    {
+      "name": "thread_name",
+      "ph": "M",
+      "pid": 1,
+      "tid": 4,
+      "args": {
+        "name": "ISP_FE"
+      }
+    },
+    {
+      "name": "thread_name",
+      "ph": "M",
+      "pid": 1,
+      "tid": 5,
+      "args": {
+        "name": "Sensor_Ext"
+      }
+    },
+    {
+      "name": "thread_name",
+      "ph": "M",
+      "pid": 1,
+      "tid": 6,
+      "args": {
+        "name": "VENC"
+      }
+    },
+    {
+      "name": "t_sensor",
+      "cat": "task",
+      "ph": "X",
+      "ts": 0,
+      "dur": 10913,
+      "pid": 1,
+      "tid": 5,
+      "args": {
+        "hw": "Sensor_Ext",
+        "power": 0.10913684210526314
+      }
+    },
+    {
+      "name": "t_isp_fe",
+      "cat": "task",
+      "ph": "X",
+      "ts": 5,
+      "dur": 10913,
+      "pid": 1,
+      "tid": 4,
+      "args": {
+        "hw": "ISP_FE",
+        "power": 1.0368
+      }
+    },
+    {
+      "name": "dma_w_t_isp_fe_t_isp_be",
+      "cat": "task",
+      "ph": "X",
+      "ts": 10913,
+      "dur": 291,
+      "pid": 1,
+      "tid": 2,
+      "args": {
+        "hw": "DMA_Write",
+        "power": 0.0
+      }
+    },
+    {
+      "name": "dma_r_t_isp_fe_t_isp_be",
+      "cat": "task",
+      "ph": "X",
+      "ts": 11205,
+      "dur": 291,
+      "pid": 1,
+      "tid": 1,
+      "args": {
+        "hw": "DMA_Read",
+        "power": 0.0
+      }
+    },
+    {
+      "name": "t_isp_be",
+      "cat": "task",
+      "ph": "X",
+      "ts": 11497,
+      "dur": 7679,
+      "pid": 1,
+      "tid": 3,
+      "args": {
+        "hw": "ISP_BE",
+        "power": 0.5529599999999999
+      }
+    },
+    {
+      "name": "dma_w_t_isp_be_t_venc",
+      "cat": "task",
+      "ph": "X",
+      "ts": 19177,
+      "dur": 486,
+      "pid": 1,
+      "tid": 2,
+      "args": {
+        "hw": "DMA_Write",
+        "power": 0.0
+      }
+    },
+    {
+      "name": "dma_r_t_isp_be_t_venc",
+      "cat": "task",
+      "ph": "X",
+      "ts": 19663,
+      "dur": 486,
+      "pid": 1,
+      "tid": 1,
+      "args": {
+        "hw": "DMA_Read",
+        "power": 0.0
+      }
+    },
+    {
+      "name": "t_venc",
+      "cat": "task",
+      "ph": "X",
+      "ts": 20149,
+      "dur": 6098,
+      "pid": 1,
+      "tid": 6,
+      "args": {
+        "hw": "VENC",
+        "power": 0.7318588235294117
+      }
+    }
+  ]
+}

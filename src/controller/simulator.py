@@ -18,6 +18,19 @@ from ..model.hw_nodes import HWNode, IPNode, DMANode, ProcessorNode, MemoryNode
 from ..model.scenario import ScenarioGraph, ConnectionType, Task
 
 
+BPP_MAP = {
+    "NV12": 1.5,
+    "YUV420": 1.5,
+    "RGB888": 3.0,
+    "RGB": 3.0,
+    "RAW10": 1.25,
+    "RAW12": 1.5,
+    "RAW14": 1.75,
+    "RAW16": 2.0,
+    "P010": 2.0
+}
+
+
 @dataclass
 class TaskResult:
     """Result of a single task execution."""
@@ -207,6 +220,96 @@ class SoCSimulator:
         for hw in self.hw_registry.values():
             hw.resource = simpy.Resource(self.env, capacity=1)
 
+    def _calculate_transfer_size(self, width: int, height: int, fmt: str, 
+                               compression: str, dma_node: DMANode) -> int:
+        """Calculate transfer size based on resolution, format, and compression."""
+        bpp = BPP_MAP.get(fmt, 1.0)
+        base_size = width * height * bpp
+        
+        # Apply compression ratio if supported
+        if compression in dma_node.supported_compressions:
+            ratio = dma_node.compression_ratios.get(compression, 1.0)
+            return int(base_size * ratio)
+        return int(base_size)
+
+    def _simulate_dma_transfer(self, src_task_id: str, dst_task_id: str, 
+                             transfer_config: Dict, data_config: Dict) -> Generator:
+        """Simulate Write DMA -> Memory -> Read DMA chain."""
+        # 1. Parse config
+        write_dma_name = transfer_config.get('write_dma')
+        read_dma_name = transfer_config.get('read_dma')
+        
+        # Resolve Data Size
+        # Try to get from data config, else defaults
+        fmt = data_config.get('format', 'NV12')
+        comp = data_config.get('compression', 'Linear')
+        # Resolution: try data config first, then try to get from src task output?
+        # For simplicity, if not in data, try to query task workload
+        width = 0
+        height = 0
+        src_task = self.scenario.get_task(src_task_id)
+        if src_task:
+             # Try task workload or output crop size
+             if src_task.crop_size:
+                 width, height = src_task.crop_size
+             else:
+                 width = src_task.workload.get('width', 0)
+                 height = src_task.workload.get('height', 0)
+        
+        # If still 0, try data config
+        if width == 0:
+            # Fallback or error? defaulting to 0 means 0 transfer time
+            pass 
+
+        # 2. Write DMA
+        if write_dma_name:
+            dma = self._get_hw(write_dma_name)
+            if isinstance(dma, DMANode):
+                size = self._calculate_transfer_size(width, height, fmt, comp, dma)
+                
+                # Create dynamic task result entry
+                dma_task_id = f"dma_w_{src_task_id}_{dst_task_id}"
+                start = self.env.now
+                dma_time = dma.get_transfer_time(size)
+                
+                with dma.resource.request() as req:
+                    yield req
+                    yield self.env.timeout(dma_time)
+                
+                end = self.env.now
+                dma.utilization = 1.0
+                power = dma.get_power_consumption(end - start)
+                
+                self._task_results.append(TaskResult(
+                    task_id=dma_task_id, hw_name=dma.name,
+                    start_time=start, end_time=end, duration=end-start,
+                    power_consumed=power, workload={'size': size, 'fmt': fmt}
+                ))
+
+        # 3. Read DMA
+        if read_dma_name:
+            dma = self._get_hw(read_dma_name)
+            if isinstance(dma, DMANode):
+                size = self._calculate_transfer_size(width, height, fmt, comp, dma)
+                
+                dma_task_id = f"dma_r_{src_task_id}_{dst_task_id}"
+                start = self.env.now
+                dma_time = dma.get_transfer_time(size)
+                
+                with dma.resource.request() as req:
+                    yield req
+                    yield self.env.timeout(dma_time)
+                    
+                end = self.env.now
+                dma.utilization = 1.0
+                power = dma.get_power_consumption(end - start)
+                
+                self._task_results.append(TaskResult(
+                    task_id=dma_task_id, hw_name=dma.name,
+                    start_time=start, end_time=end, duration=end-start,
+                    power_consumed=power, workload={'size': size, 'fmt': fmt}
+                ))
+
     def _run_task_process(self, task: Task) -> Generator:
         """
         SimPy process for executing a single task.
@@ -232,6 +335,12 @@ class SoCSimulator:
         for pred_id in m2m_preds:
             if pred_id in self._task_events:
                 yield self._task_events[pred_id]
+                
+            # Check for Explicit DMA Transfer
+            edge_transfer = self.scenario.graph.edges[pred_id, task_id].get('transfer')
+            if edge_transfer:
+                edge_data = self.scenario.graph.edges[pred_id, task_id].get('data', {})
+                yield from self._simulate_dma_transfer(pred_id, task_id, edge_transfer, edge_data)
 
         # For OTF: wait for all OTF group members to be ready
         # (handled by _run_otf_group separately)
@@ -312,24 +421,48 @@ class SoCSimulator:
 
         # OTF: throughput limited by slowest (bottleneck)
         max_time = max(pt for _, _, pt in processing_times)
-
-        # Simulate processing (all complete at same time)
+        
+        # Calculate Latency Staggering
+        # To determine start offsets, we conceptually need the path order.
+        # Simplification: Assume tasks are listed in pipeline order or just use latency of each relative to start.
+        # But 'tasks' list order is arbitrary. dependency graph is truth.
+        # For simulation simplicty in 'OTF Group' (which implies synchronized running):
+        # We'll use the IP's 'latency' attribute as an offset from the group start.
+        
+        # 1. Determine base start time (when all inputs are ready)
+        base_start = start_time
+        
+        # 2. Execute
         yield self.env.timeout(max_time)
+        
+        # 3. Determine base end time
+        base_end = self.env.now
 
-        # Record end time
-        end_time = self.env.now
-
-        # Store results for all tasks
+        # Store results with Latency Offsets
         for task, hw, individual_time in processing_times:
-            duration = end_time - start_time
+            # Get IP latency
+            latency_us = hw.latency if hasattr(hw, 'latency') else 0.0
+            latency_s = latency_us / 1e6
+            
+            # Apply offset
+            # Note: In a real pipeline, the downstream IP starts 'latency' after upstream.
+            # But here we treat them as a group. We'll simply shift the Gantt bar by latency.
+            # If there are multiple stages, this simple 'hw.latency' lookup might not capture cumulative latency.
+            # But for "Sensor -> ISP_FE", Sensor has 0 latency, ISP_FE has 5us.
+            # So Sensor: 0~10ms, ISP_FE: 5us~10ms+5us. Correct.
+            
+            adjusted_start = base_start + latency_s
+            adjusted_end = base_end + latency_s
+            duration = adjusted_end - adjusted_start
+            
             hw.utilization = individual_time / max_time if max_time > 0 else 1.0
-            power = hw.get_power_consumption(duration)
+            power = hw.get_power_consumption(duration)  # Active power for duration
 
             result = TaskResult(
                 task_id=task.task_id,
                 hw_name=hw.name,
-                start_time=start_time,
-                end_time=end_time,
+                start_time=adjusted_start,
+                end_time=adjusted_end,
                 duration=duration,
                 power_consumed=power,
                 workload=task.workload

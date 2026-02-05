@@ -281,7 +281,11 @@ class IPNode(HWNode):
     modules: List[Any] = field(default_factory=list)  # List[Module]
     supported_modes: List[str] = field(default_factory=lambda: ['default'])
     supports_crop: bool = False
+
     supports_scale: bool = False
+    
+    # Latency for OTF pipeline (microseconds)
+    latency: float = 0.0
 
     # Clock optimization results
     required_freq: float = 0.0  # Calculated required frequency
@@ -346,11 +350,15 @@ class DMANode(HWNode):
         multiple_outstanding: Number of outstanding transactions (MO)
         burst_length: Burst length in bytes
         latency: Base latency in seconds
+        supported_compressions: List of supported compression modes
+        compression_ratios: Dict mapping compression mode to size ratio (e.g. {'AFBC': 0.6})
     """
     bandwidth: float = 25.6e9  # 25.6 GB/s default
     multiple_outstanding: int = 16
     burst_length: int = 256
     latency: float = 0.0
+    supported_compressions: List[str] = field(default_factory=list)
+    compression_ratios: Dict[str, float] = field(default_factory=dict)
 
     def get_processing_time(self, workload: Dict[str, Any]) -> float:
         """

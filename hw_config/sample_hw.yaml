@@ -29,8 +29,9 @@ hardware:
     power_dynamic: 80.0
     min_size: [64, 64]
     max_size: [8192, 8192]
-    supports_crop: false
+    supports_crop: true
     supports_scale: true
+    latency: 5.0 # microseconds
     supported_modes:
       - "default"
       - "power_saving"
@@ -63,7 +64,7 @@ hardware:
     min_size: [64, 64]
     max_size: [8192, 8192]
     supports_crop: true
-    supports_scale: false
+    supports_scale: true
     supported_modes:
       - "default"
       - "power_saving"
@@ -104,6 +105,12 @@ hardware:
     multiple_outstanding: 16
     burst_length: 256
     latency: 0.0000001  # 100ns
+    supported_compressions:
+      - "AFBC"
+      - "Linear"
+    compression_ratios:
+      AFBC: 0.6
+      Linear: 1.0
 
   - name: "DMA_Write"
     type: "DMA"
@@ -111,6 +118,12 @@ hardware:
     multiple_outstanding: 16
     burst_length: 256
     latency: 0.0000001
+    supported_compressions:
+      - "AFBC"
+      - "Linear"
+    compression_ratios:
+      AFBC: 0.6
+      Linear: 1.0
 
   # CPU Cluster
   - name: "CPU_Cluster"

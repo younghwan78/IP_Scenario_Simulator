@@ -13,6 +13,9 @@ from enum import Enum
 
 import networkx as nx
 
+from src.model.hw_nodes import HWNode, IPNode
+from src.model.modules import ScalerModule, CropModule
+
 
 class ConnectionType(Enum):
     """Types of connections between tasks."""
@@ -146,7 +149,9 @@ class ScenarioGraph:
 
     def add_dependency(self, src: str, dst: str,
                        conn_type: str | ConnectionType = ConnectionType.M2M,
-                       buffer_size: Optional[int] = None) -> 'ScenarioGraph':
+                       buffer_size: Optional[int] = None,
+                       data: Optional[Dict[str, Any]] = None,
+                       transfer: Optional[Dict[str, Any]] = None) -> 'ScenarioGraph':
         """
         Add a dependency between tasks.
 
@@ -155,6 +160,8 @@ class ScenarioGraph:
             dst: Destination task ID
             conn_type: 'M2M' or 'OTF' or ConnectionType enum
             buffer_size: Optional buffer size for M2M
+            data: Optional data attributes (format, compression, resolution)
+            transfer: Optional transfer attributes (dma nodes, memory)
 
         Returns:
             self for method chaining
@@ -173,7 +180,9 @@ class ScenarioGraph:
         self.graph.add_edge(
             src, dst,
             conn_type=conn_type,
-            buffer_size=buffer_size
+            buffer_size=buffer_size,
+            data=data,
+            transfer=transfer
         )
         return self
 
@@ -184,6 +193,75 @@ class ScenarioGraph:
     def get_tasks(self) -> List[Task]:
         """Get all tasks in the scenario."""
         return list(self._tasks.values())
+
+    def validate_constraints(self, hw_registry: Dict[str, HWNode]) -> List[str]:
+        """
+        Validate scenario requirements against hardware capabilities.
+
+        Checks:
+        1. IP Mode support (defaults to 'default' if unspecified)
+        2. Scaling support (if ScalerModule used with scaling)
+        3. Cropping support (if CropModule used or crop_size set)
+
+        Args:
+            hw_registry: Dictionary of available hardware nodes
+
+        Returns:
+            List of error messages. Empty list if valid.
+        """
+        errors = []
+
+        for task in self._tasks.values():
+            if task.mapped_hw not in hw_registry:
+                errors.append(f"Task '{task.task_id}' maps to unknown HW '{task.mapped_hw}'")
+                continue
+
+            hw = hw_registry[task.mapped_hw]
+
+            # Only IPNodes have specific constraints like modes/scale/crop
+            if not isinstance(hw, IPNode):
+                continue
+
+            # 1. IP Mode Validation
+            # Default to "default" mode if not specified in task
+            mode = task.ip_mode if task.ip_mode else "default"
+
+            if mode not in hw.supported_modes:
+                errors.append(f"Task '{task.task_id}': IP '{hw.name}' does not support mode '{mode}'. "
+                              f"Supported: {hw.supported_modes}")
+
+            # 2. Scaling Validation
+            # Check if any ScalerModule in this IP is effectively scaling
+            is_scaling = False
+            for module in hw.modules:
+                if isinstance(module, ScalerModule):
+                    sx, sy = module.scale_factor
+                    # Check if scale factor is significantly different from 1.0
+                    if abs(sx - 1.0) > 1e-6 or abs(sy - 1.0) > 1e-6:
+                        is_scaling = True
+                        break
+            
+            if is_scaling and not hw.supports_scale:
+                errors.append(f"Task '{task.task_id}': IP '{hw.name}' performs scaling "
+                              f"(Scaler used) but 'supports_scale' is False.")
+
+            # 3. Cropping Validation
+            is_cropping = False
+            # Condition A: Task explicitly requests crop output size
+            if task.crop_size is not None:
+                is_cropping = True
+            # Condition B: CropModule is present (implies capability usage)
+            else:
+                for module in hw.modules:
+                    if isinstance(module, CropModule):
+                        is_cropping = True
+                        break
+            
+            if is_cropping and not hw.supports_crop:
+                errors.append(f"Task '{task.task_id}': IP '{hw.name}' requires cropping "
+                              f"but 'supports_crop' is False.")
+
+        return errors
 
     def get_predecessors(self, task_id: str) -> List[str]:
         """

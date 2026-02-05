@@ -68,14 +68,26 @@ scenario:
       dst: "t_isp_fe"
       type: "OTF"
 
-    # ISP_FE to ISP_BE: Memory-to-Memory
+    # ISP_FE to ISP_BE: Memory-to-Memory (Explicit DMA)
     - src: "t_isp_fe"
       dst: "t_isp_be"
       type: "M2M"
-      buffer_size: 33177600  # 4 bytes/pixel * 8.3MP
+      data:
+        format: "NV12"
+        compression: "AFBC"
+      transfer:
+        write_dma: "DMA_Write"
+        read_dma: "DMA_Read"
+        memory: "DRAM"
 
-    # ISP_BE to VENC: Memory-to-Memory
+    # ISP_BE to VENC: Memory-to-Memory (Explicit DMA)
     - src: "t_isp_be"
       dst: "t_venc"
       type: "M2M"
-      buffer_size: 8294400   # 4 bytes/pixel * 2MP (cropped)
+      data:
+        format: "NV12"
+        compression: "Linear"
+      transfer:
+        write_dma: "DMA_Write"
+        read_dma: "DMA_Read"
+        memory: "DRAM"
