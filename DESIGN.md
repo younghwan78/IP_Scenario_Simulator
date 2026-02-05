@@ -353,7 +353,7 @@ classDiagram
 
 ```mermaid
 flowchart TD
-    START([run()]) --> VALIDATE[Validate Scenario]
+    START(["run()"]) --> VALIDATE[Validate Scenario]
     VALIDATE --> INIT[Initialize SimPy Environment]
     INIT --> EVENTS[Create Task Events]
     EVENTS --> FIND_OTF[Find OTF Groups]
@@ -361,11 +361,11 @@ flowchart TD
     FIND_OTF --> SCHEDULE_OTF[Schedule OTF Groups]
     FIND_OTF --> SCHEDULE_TASKS[Schedule Non-OTF Tasks]
 
-    SCHEDULE_OTF --> RUN[env.run()]
+    SCHEDULE_OTF --> RUN["env.run()"]
     SCHEDULE_TASKS --> RUN
 
     RUN --> COLLECT[Collect Results]
-    COLLECT --> RETURN([Return SimulationResults])
+    COLLECT --> RETURN(["Return SimulationResults"])
 
     subgraph "OTF Group Process"
         OTF_WAIT[Wait for M2M predecessors]
