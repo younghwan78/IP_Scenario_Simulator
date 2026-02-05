@@ -455,36 +455,36 @@ def main():
         '--hw-config', '-hw',
         type=str,
         default=None,
-        help='Path to hardware configuration YAML file'
+        help='Path to hardware configuration YAML file (e.g., hw_config/sample_hw.yaml)'
     )
     parser.add_argument(
         '--scenario-config', '-sc',
         type=str,
         default=None,
-        help='Path to scenario configuration YAML file'
+        help='Path to scenario configuration YAML file (e.g., scenario_config/sample_scenario.yaml)'
     )
     parser.add_argument(
         '--demo',
         action='store_true',
-        help='Run demonstration with sample configuration'
+        help='Run demonstration with built-in sample configuration'
     )
     parser.add_argument(
         '--output-csv',
         type=str,
         default=None,
-        help='Output path for CSV results'
+        help='Export simulation results to CSV file'
     )
     parser.add_argument(
         '--output-gantt',
         type=str,
         default=None,
-        help='Output path for Gantt chart (HTML)'
+        help='Export Gantt chart visualization to HTML file (requires Plotly)'
     )
     parser.add_argument(
         '--output-json',
         type=str,
         default=None,
-        help='Output path for Perfetto JSON trace'
+        help='Export trace data to Perfetto JSON format for detailed analysis'
     )
 
     args = parser.parse_args()

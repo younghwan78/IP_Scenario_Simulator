@@ -45,8 +45,21 @@ python main.py --hw-config hw_config/sample_hw.yaml \
 ### Export Results
 
 ```bash
-python main.py --demo --output-csv results.csv --output-gantt gantt.html
+```bash
+python main.py --demo --output-csv results.csv --output-gantt gantt.html --output-json trace.json
 ```
+
+## Command Line Options
+
+| Option | Shorthand | Description |
+|--------|-----------|-------------|
+| `--hw-config` | `-hw` | **Required.** Path to hardware configuration YAML file. |
+| `--scenario-config` | `-sc` | **Required.** Path to scenario configuration YAML file. |
+| `--demo` | | Run demonstration with built-in sample configuration. |
+| `--output-csv` | | Export simulation results to CSV file. |
+| `--output-gantt` | | Export Gantt chart to HTML (requires Plotly). |
+| `--output-json` | | Export trace data to Perfetto JSON format for detailed analysis. |
+| `--help` | `-h` | Show help message and exit. |
 
 ## Project Structure
 
@@ -81,17 +94,42 @@ python main.py --demo --output-csv results.csv --output-gantt gantt.html
 
 ## Example Output
 
-```
+```text
+[Clock Optimization]
+Optimizing OTF Group [t_isp_fe, t_sensor]
+  Constraint: vValid=11.80ms, Req Throughput=702.92Mpps
+  ISP_FE: Req=185.0MHz -> Set=200.0MHz
+
 [SoC Hardware Hierarchy]
-├── Sensor_Ext (IPNode, 600MHz, PPC=4)
-├── ISP_FE (IPNode, 600MHz, PPC=4)
-│   └── Scaler0 (ScalerModule, scale=0.50x0.50)
-├── ISP_BE (IPNode, 600MHz, PPC=2)
-└── VENC (IPNode, 400MHz, PPC=1)
+├── Sensor_Ext (SensorNode, 3840x2160@30fps, mode=4K_30fps, vValid=11.80ms)
+├── ISP_FE (IPNode, Tar: 200MHz [Req: 185MHz], PPC=4)
+│   ├── Scaler0 (ScalerModule, scale=0.50x0.50, 3840x2160 → 1920x1080)
+│   └── ...
+├── VENC (IPNode, 400MHz, PPC=1)
+
+[Scenario: 4K_Recording]
+Topological Order:
+  t_sensor ══► t_isp_fe[Scaler0] ──→ t_isp_be[Crop0] ──→ t_venc
 
 [Simulation Results: 4K_Recording]
-Total Time: 35.713 ms
-Bottleneck: VENC (68.3% utilized)
+Total Time: 24.693 ms
+Total Tasks: 4
+
+Task Execution Timeline:
+--------------------------------------------------------------------------------
+Task ID              Hardware        Start (ms)   End (ms)     Duration (ms)
+--------------------------------------------------------------------------------
+t_isp_fe             ISP_FE          0.000        10.914       10.914
+...
+
+Timing Diagram (ASCII Gantt):
+--------------------------------------------------------------------------------
+Scale: 62 chars = 24.7 ms (0.40 ms/char)
+                | 0.............................................24.7ms
+ISP_FE          | ####################### t_isp_fe (0.0-10.9ms)
+Sensor_Ext      | ####################### t_sensor (0.0-10.9ms)
+...
+--------------------------------------------------------------------------------
 ```
 
 ## Testing
