@@ -279,3 +279,49 @@ class Visualizer:
         """
         if fig is not None:
             fig.show()
+
+    def export_perfetto_json(self, results: 'SimulationResults', path: str) -> None:
+        """
+        Export simulation results to Perfetto JSON format.
+        
+        Args:
+            results: SimulationResults object
+            path: Output file path (.json)
+        """
+        import json
+        
+        trace_events = []
+        
+        # Map unique HW names to Thread IDs
+        hw_names = sorted(list(set(r.hw_name for r in results.task_results)))
+        hw_to_tid = {name: i+1 for i, name in enumerate(hw_names)}
+        
+        # Metadata: Set Thread Names
+        for name, tid in hw_to_tid.items():
+            trace_events.append({
+                "name": "thread_name",
+                "ph": "M",
+                "pid": 1,
+                "tid": tid,
+                "args": {"name": name}
+            })
+            
+        # Task Events
+        for r in results.task_results:
+            trace_events.append({
+                "name": r.task_id,
+                "cat": "task",
+                "ph": "X", # Complete event
+                "ts": int(r.start_time * 1e6), # us
+                "dur": int(r.duration * 1e6),  # us
+                "pid": 1,
+                "tid": hw_to_tid[r.hw_name],
+                "args": {
+                    "hw": r.hw_name,
+                    "power": r.power_consumed
+                }
+            })
+            
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({"traceEvents": trace_events}, f, indent=2)
+        print(f"Exported Perfetto trace to {path}")

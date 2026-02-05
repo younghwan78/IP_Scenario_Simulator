@@ -423,7 +423,7 @@ def run_demo():
     print()
     print(text_viewer.print_hw_hierarchy(simulator.hw_registry))
     print()
-    print(text_viewer.print_scenario_graph(scenario))
+    print(text_viewer.print_scenario_graph(scenario, hw_registry=hw_registry))
     print()
 
     # Run simulation
@@ -480,6 +480,12 @@ def main():
         default=None,
         help='Output path for Gantt chart (HTML)'
     )
+    parser.add_argument(
+        '--output-json',
+        type=str,
+        default=None,
+        help='Output path for Perfetto JSON trace'
+    )
 
     args = parser.parse_args()
 
@@ -503,6 +509,10 @@ def main():
                 if fig:
                     visualizer.save_gantt(fig, args.output_gantt)
                     print(f"Gantt chart saved to: {args.output_gantt}")
+
+            if args.output_json:
+                visualizer = Visualizer()
+                visualizer.export_perfetto_json(results, args.output_json)
 
         return
 
@@ -544,7 +554,7 @@ def main():
     text_viewer = TextViewer()
     print(text_viewer.print_hw_hierarchy(simulator.hw_registry))
     print()
-    print(text_viewer.print_scenario_graph(scenario))
+    print(text_viewer.print_scenario_graph(scenario, hw_registry=simulator.hw_registry))
     print()
 
     output = simulator.run_with_analysis()
@@ -568,6 +578,10 @@ def main():
             if fig:
                 visualizer.save_gantt(fig, args.output_gantt)
                 print(f"Gantt chart saved to: {args.output_gantt}")
+
+        if args.output_json:
+            visualizer = Visualizer()
+            visualizer.export_perfetto_json(results, args.output_json)
 
 
 if __name__ == "__main__":

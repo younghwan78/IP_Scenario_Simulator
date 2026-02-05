@@ -124,12 +124,14 @@ class TextViewer:
         else:
             return f"{module.name} ({mod_type})"
 
-    def print_scenario_graph(self, scenario: ScenarioGraph) -> str:
+    def print_scenario_graph(self, scenario: ScenarioGraph, 
+                           hw_registry: Optional[Dict[str, HWNode]] = None) -> str:
         """
         Generate text representation of scenario graph.
 
         Args:
             scenario: ScenarioGraph instance
+            hw_registry: Optional HW registry to show module info
 
         Returns:
             Formatted string representation
@@ -172,7 +174,34 @@ class TextViewer:
         lines.append("")
         lines.append("Topological Order:")
         order = scenario.topological_order()
-        lines.append(f"  {' → '.join(order)}")
+        
+        path_str = ""
+        for i, task_id in enumerate(order):
+            # Task ID
+            task_str = task_id
+            
+            # Module Info (if hw_registry provided)
+            if hw_registry:
+                task = scenario.get_task(task_id)
+                if task and task.mapped_hw in hw_registry:
+                    hw = hw_registry[task.mapped_hw]
+                    if isinstance(hw, IPNode) and hw.modules:
+                        mod_names = ",".join(m.name for m in hw.modules)
+                        task_str += f"[{mod_names}]"
+            
+            path_str += task_str
+            
+            # Connection arrow to next task
+            if i < len(order) - 1:
+                next_task = order[i+1]
+                edge_type = scenario.get_edge_type(task_id, next_task)
+                
+                if edge_type == ConnectionType.OTF:
+                    path_str += " ══► "
+                else: # M2M or None (default to M2M arrow)
+                    path_str += " ──→ "
+                    
+        lines.append(f"  {path_str}")
 
         return "\n".join(lines)
 
@@ -213,6 +242,61 @@ class TextViewer:
                 f"{result.duration*1000:<12.3f}"
             )
 
+        lines.append("-" * 80)
+        
+        # ASCII Gantt Chart
+        lines.append("")
+        lines.append("Timing Diagram (ASCII Gantt):")
+        lines.append("-" * 80)
+        
+        if results.total_time > 0:
+            chart_width = 80
+            # Reserve space for HW name (e.g. 15 chars)
+            MAX_HW_LEN = 15
+            bar_width = chart_width - MAX_HW_LEN - 3 # 3 for " | "
+            time_scale = bar_width / results.total_time
+            
+            # Time Scale
+            total_ms = results.total_time * 1000
+            scale_label = f"Scale: {bar_width} chars = {total_ms:.1f} ms ({total_ms/bar_width:.2f} ms/char)"
+            lines.append(scale_label)
+            
+            # Ruler
+            ruler = " " * (MAX_HW_LEN + 3)
+            tick_vals = [0.0, total_ms * 0.25, total_ms * 0.5, total_ms * 0.75, total_ms]
+            tick_pos  = [0, int(bar_width * 0.25), int(bar_width * 0.5), int(bar_width * 0.75), bar_width-1]
+            
+            # Simple fixed ruler line
+            lines.append(f"{'':<{MAX_HW_LEN}} | 0" + "." * (bar_width-2) + f"{total_ms:.1f}ms")
+            
+            # Group tasks by HW
+            hw_tasks: Dict[str, List[Any]] = {}
+            for r in results.task_results:
+                if r.hw_name not in hw_tasks:
+                    hw_tasks[r.hw_name] = []
+                hw_tasks[r.hw_name].append(r)
+            
+            # Print chart
+            for hw_name, tasks in hw_tasks.items():
+                # HW Name Header
+                lines.append(f"{hw_name:<{MAX_HW_LEN}} |")
+                
+                for task in tasks:
+                    start_pos = int(task.start_time * time_scale)
+                    duration_len = max(1, int(task.duration * time_scale))
+                    
+                    # Create bar line
+                    bar = " " * start_pos + "#" * duration_len
+                    
+                    # Add task info
+                    info = f"{task.task_id} ({task.start_time*1000:.1f}-{task.end_time*1000:.1f}ms)"
+                    
+                    lines.append(f"{'':<{MAX_HW_LEN}} | {bar} {info}")
+            
+            lines.append("-" * 80)
+        else:
+             lines.append("No simulation data to display.")
+        
         lines.append("-" * 80)
 
         return "\n".join(lines)
