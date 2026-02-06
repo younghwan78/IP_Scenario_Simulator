@@ -15,6 +15,7 @@ import networkx as nx
 
 from src.model.hw_nodes import HWNode, IPNode
 from src.model.modules import ScalerModule, CropModule
+from src.model.tokens import JoinPolicy, DEFAULT_QUEUE_CAPACITY
 
 
 class ConnectionType(Enum):
@@ -34,12 +35,21 @@ class Task:
         workload: Workload parameters (pixels, width, height, ops, data_size, etc.)
         ip_mode: Optional IP operating mode (e.g., 'power_saving', 'high_performance')
         crop_size: Optional crop region (width, height) - requires HW crop support
+        join_policy: Multi-input join policy (AND/OR/WINDOW) - default AND_JOIN
+        window_size: Window size for WINDOW_BASED join policy
+        input_ports: Named input ports for token queues
+        output_ports: Named output ports for token distribution
     """
     task_id: str
     mapped_hw: str
     workload: Dict[str, Any] = field(default_factory=dict)
     ip_mode: Optional[str] = None
     crop_size: Optional[Tuple[int, int]] = None
+    # Token-based additions
+    join_policy: JoinPolicy = JoinPolicy.AND_JOIN
+    window_size: int = 1
+    input_ports: List[str] = field(default_factory=list)
+    output_ports: List[str] = field(default_factory=list)
 
     def get_pixels(self) -> int:
         """Get pixel count from workload (width * height or direct pixels)."""
@@ -87,12 +97,17 @@ class Dependency:
         src: Source task ID
         dst: Destination task ID
         conn_type: Connection type (M2M or OTF)
-        buffer_size: Optional buffer size for M2M connections
+        buffer_size: Optional buffer size for M2M token queue
+        src_port: Source task output port name (default: "output")
+        dst_port: Destination task input port name (default: "input")
     """
     src: str
     dst: str
     conn_type: ConnectionType = ConnectionType.M2M
     buffer_size: Optional[int] = None
+    # Token port specification
+    src_port: str = "output"
+    dst_port: str = "input"
 
 
 class ScenarioGraph:
@@ -117,6 +132,10 @@ class ScenarioGraph:
                  workload: Optional[Dict[str, Any]] = None,
                  ip_mode: Optional[str] = None,
                  crop_size: Optional[Tuple[int, int]] = None,
+                 join_policy: JoinPolicy = JoinPolicy.AND_JOIN,
+                 window_size: int = 1,
+                 input_ports: Optional[List[str]] = None,
+                 output_ports: Optional[List[str]] = None,
                  **kwargs) -> 'ScenarioGraph':
         """
         Add a task to the scenario.
@@ -127,6 +146,10 @@ class ScenarioGraph:
             workload: Workload parameters dict
             ip_mode: Optional IP mode (e.g., 'power_saving', 'high_performance')
             crop_size: Optional crop output size (width, height)
+            join_policy: Multi-input join policy (AND/OR/WINDOW)
+            window_size: Window size for WINDOW_BASED join
+            input_ports: Named input ports for token queues
+            output_ports: Named output ports for token distribution
             **kwargs: Additional workload parameters (width, height, pixels, etc.)
 
         Returns:
@@ -141,7 +164,11 @@ class ScenarioGraph:
             mapped_hw=mapped_hw,
             workload=workload,
             ip_mode=ip_mode,
-            crop_size=crop_size
+            crop_size=crop_size,
+            join_policy=join_policy,
+            window_size=window_size,
+            input_ports=input_ports if input_ports else [],
+            output_ports=output_ports if output_ports else []
         )
         self._tasks[task_id] = task
         self.graph.add_node(task_id, task=task)
@@ -151,7 +178,9 @@ class ScenarioGraph:
                        conn_type: str | ConnectionType = ConnectionType.M2M,
                        buffer_size: Optional[int] = None,
                        data: Optional[Dict[str, Any]] = None,
-                       transfer: Optional[Dict[str, Any]] = None) -> 'ScenarioGraph':
+                       transfer: Optional[Dict[str, Any]] = None,
+                       src_port: str = "output",
+                       dst_port: str = "input") -> 'ScenarioGraph':
         """
         Add a dependency between tasks.
 
@@ -159,9 +188,11 @@ class ScenarioGraph:
             src: Source task ID
             dst: Destination task ID
             conn_type: 'M2M' or 'OTF' or ConnectionType enum
-            buffer_size: Optional buffer size for M2M
+            buffer_size: Optional buffer size for M2M token queue
             data: Optional data attributes (format, compression, resolution)
             transfer: Optional transfer attributes (dma nodes, memory)
+            src_port: Source task output port name (default: "output")
+            dst_port: Destination task input port name (default: "input")
 
         Returns:
             self for method chaining
@@ -182,7 +213,9 @@ class ScenarioGraph:
             conn_type=conn_type,
             buffer_size=buffer_size,
             data=data,
-            transfer=transfer
+            transfer=transfer,
+            src_port=src_port,
+            dst_port=dst_port
         )
         return self
 

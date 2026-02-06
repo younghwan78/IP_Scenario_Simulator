@@ -497,6 +497,12 @@ def main():
         default=None,
         help='Export trace data to Perfetto JSON format for detailed analysis'
     )
+    parser.add_argument(
+        '--num-frames', '-n',
+        type=int,
+        default=None,
+        help='Number of frames to simulate (overrides scenario config, default: 1)'
+    )
 
     args = parser.parse_args()
 
@@ -577,7 +583,14 @@ def main():
     print(text_viewer.print_scenario_graph(scenario, hw_registry=simulator.hw_registry))
     print()
 
-    output = simulator.run_with_analysis()
+    # Determine num_frames: CLI arg > scenario config > default (1)
+    scenario_data = scenario_config.get('scenario', scenario_config)
+    num_frames = args.num_frames or scenario_data.get('num_frames', 1)
+    
+    if num_frames > 1:
+        print(f"[Multi-Frame Simulation] Running {num_frames} frames...")
+    
+    output = simulator.run_with_analysis(num_frames=num_frames)
     results = output['results']
 
     print(text_viewer.print_simulation_summary(results))

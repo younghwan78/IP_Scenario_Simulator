@@ -8,13 +8,14 @@
 
 scenario:
   name: "4K_Recording"
+  num_frames: 3  # Multi-frame simulation (default: 1)
 
   # Sensor configuration for this scenario
   sensor:
     hw: "Sensor_Ext"
     frame_width: 3840
     frame_height: 2160
-    fps: 30.0
+    fps: 60.0
     sensor_mode: "4K_30fps"
     v_valid_time: 0.0118      # 11.8ms vValid (vBlank = 21.53ms)
 

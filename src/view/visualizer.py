@@ -175,8 +175,10 @@ class Visualizer:
             labels={'HW': 'Hardware', 'TaskID': 'Task'}
         )
 
-        # Improve layout
-        fig.update_yaxes(categoryorder='category ascending')
+        # Improve layout - order by start time (scenario execution order)
+        # Reversed so first task appears at the top
+        hw_order = df_plot.sort_values('StartTime')['HW'].unique().tolist()
+        fig.update_yaxes(categoryorder='array', categoryarray=hw_order[::-1])
         fig.update_layout(
             xaxis_title='Time',
             yaxis_title='Hardware',
@@ -207,9 +209,9 @@ class Visualizer:
 
         fig = go.Figure()
 
-        # Get unique HW names for Y-axis
-        hw_names = df['HW'].unique().tolist()
-        hw_indices = {hw: i for i, hw in enumerate(hw_names)}
+        # Get unique HW names ordered by start time (scenario execution order)
+        df_sorted = df.sort_values('StartTime')
+        hw_names = df_sorted['HW'].unique().tolist()
 
         # Color palette
         colors = px.colors.qualitative.Set2
@@ -236,12 +238,14 @@ class Visualizer:
                 showlegend=task_id not in [t.name for t in fig.data[:-1]] if fig.data else True
             ))
 
+        # Order Y-axis by start time (first task at top)
         fig.update_layout(
             title=title,
             xaxis_title='Time (ms)',
             yaxis_title='Hardware',
             barmode='overlay',
-            height=300 + len(hw_names) * 40
+            height=300 + len(hw_names) * 40,
+            yaxis={'categoryorder': 'array', 'categoryarray': hw_names[::-1]}
         )
 
         return fig
