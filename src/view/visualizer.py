@@ -27,6 +27,7 @@ class TaskRecord:
     end_time: float
     duration: float
     power_consumed: float
+    frame_id: int = 0
 
 
 class Monitor:
@@ -42,7 +43,7 @@ class Monitor:
 
     def record(self, task_id: str, hw_name: str,
                start_time: float, end_time: float,
-               power: float = 0.0) -> None:
+               power: float = 0.0, frame_id: int = 0) -> None:
         """
         Record a task execution.
 
@@ -52,6 +53,7 @@ class Monitor:
             start_time: Start timestamp (seconds)
             end_time: End timestamp (seconds)
             power: Power consumed (mJ)
+            frame_id: Frame index for multi-frame simulation
         """
         record = TaskRecord(
             task_id=task_id,
@@ -59,7 +61,8 @@ class Monitor:
             start_time=start_time,
             end_time=end_time,
             duration=end_time - start_time,
-            power_consumed=power
+            power_consumed=power,
+            frame_id=frame_id
         )
         self.records.append(record)
 
@@ -72,11 +75,11 @@ class Monitor:
         Convert records to pandas DataFrame.
 
         Returns:
-            DataFrame with columns: TaskID, HW, StartTime, EndTime, Duration, PowerConsumed
+            DataFrame with columns: TaskID, HW, StartTime, EndTime, Duration, PowerConsumed, FrameID
         """
         if not self.records:
             return pd.DataFrame(columns=[
-                'TaskID', 'HW', 'StartTime', 'EndTime', 'Duration', 'PowerConsumed'
+                'TaskID', 'HW', 'StartTime', 'EndTime', 'Duration', 'PowerConsumed', 'FrameID'
             ])
 
         data = [{
@@ -85,7 +88,8 @@ class Monitor:
             'StartTime': r.start_time,
             'EndTime': r.end_time,
             'Duration': r.duration,
-            'PowerConsumed': r.power_consumed
+            'PowerConsumed': r.power_consumed,
+            'FrameID': r.frame_id
         } for r in self.records]
 
         return pd.DataFrame(data)
@@ -109,7 +113,8 @@ class Monitor:
                 hw_name=task_result.hw_name,
                 start_time=task_result.start_time,
                 end_time=task_result.end_time,
-                power=task_result.power_consumed
+                power=task_result.power_consumed,
+                frame_id=task_result.frame_id
             )
         return self
 
@@ -238,6 +243,10 @@ class Visualizer:
                 showlegend=task_id not in [t.name for t in fig.data[:-1]] if fig.data else True
             ))
 
+        # Add frame interval annotations for the last task (periodicity check)
+        if 'FrameID' in df.columns:
+            self._add_frame_interval_annotations(fig, df, hw_names)
+
         # Order Y-axis by start time (first task at top)
         fig.update_layout(
             title=title,
@@ -249,6 +258,73 @@ class Visualizer:
         )
 
         return fig
+
+    def _add_frame_interval_annotations(self, fig: 'go.Figure', df: pd.DataFrame, hw_names: list) -> None:
+        """
+        Add annotations showing frame-to-frame intervals for the last task.
+        
+        This helps verify periodicity in multi-frame simulations.
+        """
+        num_frames = df['FrameID'].nunique()
+        if num_frames < 2:
+            return
+
+        # Find the last task in execution order (latest end time in frame 0)
+        frame0_df = df[df['FrameID'] == 0]
+        if frame0_df.empty:
+            return
+        
+        last_task_row = frame0_df.loc[frame0_df['EndTime'].idxmax()]
+        last_task_id = last_task_row['TaskID']
+        last_task_hw = last_task_row['HW']
+
+        # Get all instances of this task across frames
+        task_df = df[df['TaskID'] == last_task_id].sort_values('FrameID')
+        
+        if len(task_df) < 2:
+            return
+
+        # Calculate and display intervals between consecutive frames
+        end_times = task_df['EndTime'].values * 1000  # Convert to ms
+        
+        annotations = []
+        shapes = []
+        
+        for i in range(len(end_times) - 1):
+            interval = end_times[i + 1] - end_times[i]
+            mid_x = (end_times[i] + end_times[i + 1]) / 2
+            
+            # Add annotation
+            annotations.append(dict(
+                x=mid_x,
+                y=last_task_hw,
+                text=f"Δ{i}→{i+1}: {interval:.1f}ms",
+                showarrow=True,
+                arrowhead=0,
+                arrowwidth=1,
+                arrowcolor='rgba(100,100,100,0.6)',
+                ax=0,
+                ay=-30 - (i * 15),  # Stagger annotations vertically
+                font=dict(size=10, color='darkblue'),
+                bgcolor='rgba(255,255,255,0.8)',
+                bordercolor='rgba(100,100,100,0.5)',
+                borderwidth=1,
+                borderpad=2
+            ))
+            
+            # Add connecting line between frames
+            shapes.append(dict(
+                type='line',
+                x0=end_times[i],
+                x1=end_times[i + 1],
+                y0=last_task_hw,
+                y1=last_task_hw,
+                line=dict(color='rgba(0,100,200,0.4)', width=2, dash='dot'),
+                yref='y',
+                xref='x'
+            ))
+
+        fig.update_layout(annotations=annotations, shapes=shapes)
 
     def save_gantt(self, fig: 'go.Figure', path: str) -> None:
         """

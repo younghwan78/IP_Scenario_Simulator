@@ -117,7 +117,7 @@ class TestMonitor:
         df = monitor.to_dataframe()
 
         assert len(df) == 2
-        assert list(df.columns) == ['TaskID', 'HW', 'StartTime', 'EndTime', 'Duration', 'PowerConsumed']
+        assert list(df.columns) == ['TaskID', 'HW', 'StartTime', 'EndTime', 'Duration', 'PowerConsumed', 'FrameID']
         assert df.iloc[0]['TaskID'] == 't1'
         assert df.iloc[1]['TaskID'] == 't2'
 
