@@ -13,6 +13,7 @@ import pandas as pd
 try:
     import plotly.express as px
     import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
     PLOTLY_AVAILABLE = True
 except ImportError:
     PLOTLY_AVAILABLE = False
@@ -325,6 +326,173 @@ class Visualizer:
             ))
 
         fig.update_layout(annotations=annotations, shapes=shapes)
+
+    def create_bw_chart(self, results: 'SimulationResults',
+                        scenario: 'ScenarioGraph',
+                        title: str = "Bandwidth Timeline") -> Optional['go.Figure']:
+        """
+        Create a bandwidth timeline chart from simulation results.
+
+        Shows read/write bandwidth over time:
+        - Top row: Total Read BW + Total Write BW
+        - Subsequent rows: Per-IP Read/Write BW
+
+        Args:
+            results: SimulationResults containing DMA task results
+            scenario: ScenarioGraph for mapping DMA tasks to parent IPs
+            title: Chart title
+
+        Returns:
+            Plotly Figure object, or None if Plotly unavailable
+        """
+        if not PLOTLY_AVAILABLE:
+            print("Plotly not available. Cannot create BW chart.")
+            return None
+
+        # 1. Extract DMA transfers and compute BW
+        dma_records = []
+        for r in results.task_results:
+            if not r.task_id.startswith('dma_'):
+                continue
+            size = r.workload.get('size', 0)
+            if r.duration <= 0 or size <= 0:
+                continue
+
+            bw_gbps = (size / r.duration) / 1e9  # GB/s
+
+            # Determine direction from hw_name: e.g. "WDMA_FE(Write)" or "RDMA_BE(Read)"
+            if '(Write)' in r.hw_name:
+                direction = 'Write'
+            elif '(Read)' in r.hw_name:
+                direction = 'Read'
+            else:
+                direction = 'Unknown'
+
+            # Find parent IP: task_id = "dma_{owner_task_id}_{hw_name}"
+            # Parse owner_task_id from task_id
+            # Format: dma_{owner_task_id}_{DMAName}(Direction)
+            parts = r.task_id.split('_', 1)  # ['dma', '{owner_task_id}_{DMAName}(Dir)']
+            if len(parts) > 1:
+                remainder = parts[1]
+                # Try to find the owner task by matching known task IDs
+                parent_ip = 'Unknown'
+                for task in scenario.get_tasks():
+                    if remainder.startswith(task.task_id + '_'):
+                        parent_ip = task.mapped_hw
+                        break
+            else:
+                parent_ip = 'Unknown'
+
+            dma_records.append({
+                'start': r.start_time,
+                'end': r.end_time,
+                'bw_gbps': bw_gbps,
+                'direction': direction,
+                'parent_ip': parent_ip,
+                'dma_name': r.hw_name,
+                'frame_id': r.frame_id,
+            })
+
+        if not dma_records:
+            print("No DMA transfer data found for BW chart.")
+            return None
+
+        # 2. Identify unique IPs that have DMA transfers (ordered by first appearance)
+        seen_ips = []
+        for rec in sorted(dma_records, key=lambda x: x['start']):
+            if rec['parent_ip'] not in seen_ips:
+                seen_ips.append(rec['parent_ip'])
+
+        # 3. Create subplots: 1 for total + 1 per IP
+        num_rows = 1 + len(seen_ips)
+        subplot_titles = ["Total BW"] + [f"{ip} BW" for ip in seen_ips]
+        fig = make_subplots(
+            rows=num_rows, cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.05,
+            subplot_titles=subplot_titles
+        )
+
+        # Color scheme
+        read_color = 'rgba(55, 126, 184, 0.7)'   # Blue for Read
+        write_color = 'rgba(228, 26, 28, 0.7)'    # Red for Write
+        read_line = 'rgba(55, 126, 184, 1.0)'
+        write_line = 'rgba(228, 26, 28, 1.0)'
+
+        def _add_bw_traces(fig, records, row, show_legend=False):
+            """Add read/write BW bar traces for a set of DMA records."""
+            read_recs = [r for r in records if r['direction'] == 'Read']
+            write_recs = [r for r in records if r['direction'] == 'Write']
+
+            # Add rectangular shapes for each DMA transfer
+            for rec in read_recs:
+                start_ms = rec['start'] * 1000
+                end_ms = rec['end'] * 1000
+                fig.add_trace(go.Bar(
+                    x=[(start_ms + end_ms) / 2],
+                    y=[rec['bw_gbps']],
+                    width=[end_ms - start_ms],
+                    name='Read BW',
+                    marker_color=read_color,
+                    marker_line=dict(color=read_line, width=1),
+                    showlegend=show_legend and rec == read_recs[0],
+                    legendgroup='read',
+                    hovertemplate=(
+                        f"{rec['dma_name']}<br>"
+                        f"BW: {rec['bw_gbps']:.2f} GB/s<br>"
+                        f"Time: {start_ms:.3f} ~ {end_ms:.3f} ms<br>"
+                        f"Frame: {rec['frame_id']}"
+                        "<extra></extra>"
+                    ),
+                ), row=row, col=1)
+
+            for rec in write_recs:
+                start_ms = rec['start'] * 1000
+                end_ms = rec['end'] * 1000
+                fig.add_trace(go.Bar(
+                    x=[(start_ms + end_ms) / 2],
+                    y=[rec['bw_gbps']],
+                    width=[end_ms - start_ms],
+                    name='Write BW',
+                    marker_color=write_color,
+                    marker_line=dict(color=write_line, width=1),
+                    showlegend=show_legend and rec == write_recs[0],
+                    legendgroup='write',
+                    hovertemplate=(
+                        f"{rec['dma_name']}<br>"
+                        f"BW: {rec['bw_gbps']:.2f} GB/s<br>"
+                        f"Time: {start_ms:.3f} ~ {end_ms:.3f} ms<br>"
+                        f"Frame: {rec['frame_id']}"
+                        "<extra></extra>"
+                    ),
+                ), row=row, col=1)
+
+        # 4. Add total BW traces (row 1)
+        _add_bw_traces(fig, dma_records, row=1, show_legend=True)
+
+        # 5. Add per-IP BW traces
+        for i, ip_name in enumerate(seen_ips):
+            ip_records = [r for r in dma_records if r['parent_ip'] == ip_name]
+            _add_bw_traces(fig, ip_records, row=2 + i, show_legend=False)
+
+        # 6. Layout
+        fig.update_layout(
+            title=title,
+            barmode='stack',
+            height=200 + num_rows * 150,
+            showlegend=True,
+            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+        )
+
+        # Set y-axis labels
+        fig.update_yaxes(title_text='GB/s', row=1, col=1)
+        for i in range(len(seen_ips)):
+            fig.update_yaxes(title_text='GB/s', row=2 + i, col=1)
+
+        # Set x-axis label on bottom subplot only
+        fig.update_xaxes(title_text='Time (ms)', row=num_rows, col=1)
+
+        return fig
 
     def save_gantt(self, fig: 'go.Figure', path: str) -> None:
         """

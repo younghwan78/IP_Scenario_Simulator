@@ -498,6 +498,12 @@ def main():
         help='Export trace data to Perfetto JSON format for detailed analysis'
     )
     parser.add_argument(
+        '--output-bw',
+        type=str,
+        default=None,
+        help='Export Bandwidth timeline chart to HTML file (requires Plotly)'
+    )
+    parser.add_argument(
         '--num-frames', '-n',
         type=int,
         default=None,
@@ -530,6 +536,10 @@ def main():
         if args.output_json:
             visualizer = Visualizer()
             visualizer.export_perfetto_json(results, args.output_json)
+
+        # Note: BW chart not available in demo mode (no scenario object)
+        if args.output_bw:
+            print("Warning: BW chart export is not available in demo mode. Use --hw-config and --scenario-config.")
 
         return
 
@@ -615,6 +625,14 @@ def main():
     if args.output_json:
         visualizer = Visualizer()
         visualizer.export_perfetto_json(results, args.output_json)
+
+    if args.output_bw:
+        visualizer = Visualizer()
+        bw_fig = visualizer.create_bw_chart(results, scenario,
+                                            title=f"{scenario.name} - Bandwidth Timeline")
+        if bw_fig:
+            visualizer.save_gantt(bw_fig, args.output_bw)
+            print(f"BW chart saved to: {args.output_bw}")
 
 
 if __name__ == "__main__":
