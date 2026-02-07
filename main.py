@@ -546,7 +546,12 @@ def main():
     # Load configurations
     if args.hw_config:
         hw_config = load_hw_config(args.hw_config)
-        hw_nodes = [create_hw_node(cfg) for cfg in hw_config.get('hardware', [])]
+        # Support both formats: direct list or wrapped in 'hardware' key
+        if isinstance(hw_config, list):
+            hw_list = hw_config
+        else:
+            hw_list = hw_config.get('hardware', [])
+        hw_nodes = [create_hw_node(cfg) for cfg in hw_list]
     else:
         print("Error: --hw-config required when not in demo mode")
         return
