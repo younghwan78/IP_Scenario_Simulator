@@ -184,6 +184,10 @@ class ScenarioGraph:
         """
         Add a dependency between tasks.
 
+        If an edge already exists between src and dst, the new port pair
+        is appended to the existing edge's port_pairs list (supporting
+        multiple DMA channels between the same two tasks).
+
         Args:
             src: Source task ID
             dst: Destination task ID
@@ -208,15 +212,27 @@ class ScenarioGraph:
         if isinstance(conn_type, str):
             conn_type = ConnectionType(conn_type.upper())
 
-        self.graph.add_edge(
-            src, dst,
-            conn_type=conn_type,
-            buffer_size=buffer_size,
-            data=data,
-            transfer=transfer,
-            src_port=src_port,
-            dst_port=dst_port
-        )
+        # Check if edge already exists (parallel edges for different ports)
+        if self.graph.has_edge(src, dst):
+            existing = self.graph[src][dst]
+            # Append port pair to existing edge
+            if 'port_pairs' not in existing:
+                # Migrate existing single port pair to list
+                existing['port_pairs'] = [
+                    (existing.get('src_port', 'output'), existing.get('dst_port', 'input'))
+                ]
+            existing['port_pairs'].append((src_port, dst_port))
+        else:
+            self.graph.add_edge(
+                src, dst,
+                conn_type=conn_type,
+                buffer_size=buffer_size,
+                data=data,
+                transfer=transfer,
+                src_port=src_port,
+                dst_port=dst_port,
+                port_pairs=[(src_port, dst_port)]
+            )
         return self
 
     def get_task(self, task_id: str) -> Optional[Task]:

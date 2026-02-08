@@ -1,0 +1,560 @@
+# FHD30 Recording Scenario
+# HP2 -> CSIS_LINK -> CSIS -> PDP (OTF)
+#                          -> PREP -> CSTAT (OTF)
+#                          -> BYRP (M2M) -> RGBP -> YUVSC -> MLSC (OTF)
+#                             MLSC -> MTNR0 -> MSNR -> MCSC (M2M+OTF)
+#                             MLSC -> MTNR1 -> MSNR (M2M+OTF)
+#                                              MCSC -> MFC (M2M)
+#                                              MCSC -> DPU (M2M)
+#
+# This file defines runtime configuration that varies per scenario:
+# - Sensor settings (resolution, fps, mode, vValid time)
+# - IP settings (input/output port, size, format, bitwidth, compression)
+# - Task workloads and IP mode selection
+
+name: "FHD30_Recording"
+num_frames: 1  # Multi-frame simulation (default: 1)
+
+# Sensor configuration for this scenario
+sensor:
+  hw: "HP2"
+  output_size: [0, 0, 4000, 3000]
+  fps: 30.0
+  sensor_mode: "LN2"
+  v_valid_time: 0.0118      # 11.8ms vValid (vBlank = 21.53ms)
+
+# Sensor task
+tasks:
+  - id: "t_sensor"
+    hw: "HP2"
+    description: "FHD30 LN2"
+
+# Each IP block defines ip_settings, tasks, and edges
+ip_blocks:
+  # 1. CSIS_LINK
+  - ip_settings:
+      hw: "CSIS_LINK"
+      mode: "Normal"
+      inputs:
+        - port: "DC_PHY"
+          size: [0, 0, 4000, 3000]
+      outputs:
+        - port: "LINK"
+          size: [0, 0, 4000, 3000]
+    tasks:
+      - id: "t_csislink"
+        hw: "CSIS_LINK"
+        description: "CPHY"
+    edges:
+      # Sensor to CSIS_LINK
+      - src: "t_sensor"
+        dst: "t_csislink"
+        type: "OTF"
+
+  # 2. CSIS
+  - ip_settings:
+      hw: "CSIS"
+      mode: "Normal"
+      inputs:
+        - port: "NFI_DEC"
+          size: [0, 0, 4000, 3000]
+      outputs:
+        - port: "COUTFIFO"
+          size: [0, 0, 4000, 3000]
+        - port: "CSIS_WDMA"
+          size: [0, 0, 4000, 3000]
+          format: "BAYER_PACKED"
+          bitwidth: 12
+          comp: "enable"
+          comp_ratio: 0.5
+    tasks:
+      - id: "t_csis"
+        hw: "CSIS"
+        description: "CSIS"
+    edges:
+      # CSIS_LINK to CSIS
+      - src: "t_csislink"
+        src_port: "LINK"
+        dst: "t_csis"
+        dst_port: "NFI_DEC"
+        type: "OTF"
+
+  # 3. PDP
+  - ip_settings:
+      hw: "PDP"
+      mode: "Normal"
+      inputs:
+        - port: "REORDER"
+          size: [0, 0, 4000, 3000]
+      outputs:
+        - port: "STAT_WDMA"
+          size: [0, 0, 4000, 128]
+          format: "STAT"
+          bitwidth: 8
+        - port: "HPD_WDMA"
+          size: [0, 0, 4000, 1500]
+          format: "STAT"
+          bitwidth: 8
+        - port: "VPD_WDMA"
+          size: [0, 0, 2000, 3000]
+          format: "STAT"
+          bitwidth: 8
+    tasks:
+      - id: "t_pdp"
+        hw: "PDP"
+        description: "PDP"
+    edges:
+      # CSIS to PDP
+      - src: "t_csis"
+        src_port: "COUTFIFO"
+        dst: "t_pdp"
+        dst_port: "REORDER"
+        type: "OTF"
+
+  # 4. PREP
+  - ip_settings:
+      hw: "PREP"
+      mode: "Normal"
+      inputs:
+        - port: "CINFIFO"
+          size: [0, 0, 4000, 3000]
+      outputs:
+        - port: "COUTFIFO"
+          size: [0, 0, 4000, 3000]
+    tasks:
+      - id: "t_prep"
+        hw: "PREP"
+        description: "PREP"
+    edges:
+      # CSIS to PREP
+      - src: "t_csis"
+        src_port: "COUTFIFO"
+        dst: "t_prep"
+        dst_port: "CINFIFO"
+        type: "OTF"
+
+  # 5. CSTAT
+  - ip_settings:
+      hw: "CSTAT"
+      mode: "Normal"
+      inputs:
+        - port: "CINFIFO"
+          size: [0, 0, 4000, 3000]
+      outputs:
+        - port: "CDAF_WDMA"
+          size: [0, 0, 300, 200]
+          format: "STAT"
+          bitwidth: 8
+        - port: "RGBHIST_WDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+        - port: "THSTAT_AE_WDMA"
+          size: [0, 0, 500, 300]
+          format: "STAT"
+          bitwidth: 8
+        - port: "THSTAT_AWB_WDMA"
+          size: [0, 0, 500, 300]
+          format: "STAT"
+          bitwidth: 8
+        - port: "DRC_CLCT_WDMA"
+          size: [0, 0, 500, 200]
+          format: "STAT"
+          bitwidth: 8
+        - port: "SPE_RGB_STAT_WDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+        - port: "SPE_Y_HIST_WDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+        - port: "DS_FDPIG_WDMA"
+          size: [0, 0, 512, 288]
+          format: "RGB"
+          bitwidth: 8
+        - port: "DS_CAV_WDMA"
+          size: [0, 0, 512, 288]
+          format: "RGB"
+          bitwidth: 8
+        - port: "SAT_Y_WDMA"
+          size: [0, 0, 1920, 1080]
+          format: "Y8"
+          bitwidth: 8
+        - port: "SAT_UV_WDMA"
+          size: [0, 0, 1920, 1080]
+          format: "UV8"
+          bitwidth: 8
+        - port: "DS_LME0_WDMA"
+          size: [0, 0, 1024, 768]
+          format: "Y8"
+          bitwidth: 8
+        - port: "DS_LME1_WDMA"
+          size: [0, 0, 1024, 768]
+          format: "Y8"
+          bitwidth: 8
+    tasks:
+      - id: "t_cstat"
+        hw: "CSTAT"
+        description: "CSTAT"
+    edges:
+      # PREP to CSTAT
+      - src: "t_prep"
+        src_port: "COUTFIFO"
+        dst: "t_cstat"
+        dst_port: "CINFIFO"
+        type: "OTF"
+
+  # 6. BYRP
+  - ip_settings:
+      hw: "BYRP"
+      mode: "Normal"
+      inputs:
+        - port: "COMP_RD0_RDMA"
+          size: [0, 0, 4000, 3000]
+          format: "BAYER_PACKED"
+          bitwidth: 12
+          comp: "enable"
+          comp_ratio: 0.5
+        - port: "SPE_Y_HIST_RDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+        - port: "SPE_AI_STAT_RDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+        - port: "SPE_GRID_STAT_RDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+        - port: "SPE_FRAME_STAT_RDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+      outputs:
+        - port: "COUTFIFO"
+          size: [0, 0, 4000, 3000]
+        - port: "CROP_DNG_WDMA"
+          size: [0, 0, 4000, 3000]
+          format: "BAYER_UNPACKED"
+          bitwidth: 12
+          comp: "disable"
+        - port: "SPE_GRID_STAT_WDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+        - port: "SPE_FRAME_STAT_WDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+    tasks:
+      - id: "t_byrp"
+        hw: "BYRP"
+        description: "BYRP"
+    edges:
+      # CSIS to BYRP (M2M via WDMA->RDMA)
+      - src: "t_csis"
+        src_port: "CSIS_WDMA"
+        dst: "t_byrp"
+        dst_port: "COMP_RD0_RDMA"
+        type: "M2M"
+
+  # 7. RGBP
+  - ip_settings:
+      hw: "RGBP"
+      mode: "Normal"
+      inputs:
+        - port: "CINFIFO"
+          size: [0, 0, 4000, 3000]
+      outputs:
+        - port: "COUTFIFO"
+          size: [0, 0, 4000, 3000]
+        - port: "CROP_DNG_WDMA"
+          size: [0, 0, 4000, 3000]
+          format: "BAYER_UNPACKED"
+          bitwidth: 12
+          comp: "disable"
+    tasks:
+      - id: "t_rgbp"
+        hw: "RGBP"
+        description: "RGBP"
+    edges:
+      # BYRP to RGBP
+      - src: "t_byrp"
+        src_port: "COUTFIFO"
+        dst: "t_rgbp"
+        dst_port: "CINFIFO"
+        type: "OTF"
+
+  # 8. YUVSC
+  - ip_settings:
+      hw: "YUVSC"
+      mode: "Normal"
+      inputs:
+        - port: "CINFIFO"
+          size: [0, 0, 4000, 3000]
+      outputs:
+        - port: "COUTFIFO"
+          size: [0, 0, 1920, 1080]
+    tasks:
+      - id: "t_yuvsc"
+        hw: "YUVSC"
+        description: "YUVSC"
+    edges:
+      # RGBP to YUVSC
+      - src: "t_rgbp"
+        src_port: "COUTFIFO"
+        dst: "t_yuvsc"
+        dst_port: "CINFIFO"
+        type: "OTF"
+
+  # 9. MLSC
+  - ip_settings:
+      hw: "MLSC"
+      mode: "Normal"
+      inputs:
+        - port: "CINFIFO"
+          size: [0, 0, 1920, 1080]
+      outputs:
+        - port: "L0_WDMA"
+          size: [0, 0, 1920, 1080]
+          format: "YUV444"
+          bitwidth: 14
+        - port: "L1_WDMA"
+          size: [0, 0, 960, 540]
+          format: "YUV444"
+          bitwidth: 14
+        - port: "L2_WDMA"
+          size: [0, 0, 480, 270]
+          format: "YUV444"
+          bitwidth: 14
+        - port: "L3_WDMA"
+          size: [0, 0, 240, 135]
+          format: "YUV444"
+          bitwidth: 14
+        - port: "G4_WDMA"
+          size: [0, 0, 120, 68]
+          format: "YUV444"
+          bitwidth: 14
+    tasks:
+      - id: "t_mlsc"
+        hw: "MLSC"
+        description: "MLSC"
+    edges:
+      # YUVSC to MLSC
+      - src: "t_yuvsc"
+        src_port: "COUTFIFO"
+        dst: "t_mlsc"
+        dst_port: "CINFIFO"
+        type: "OTF"
+
+  # 10. MTNR0
+  - ip_settings:
+      hw: "MTNR0"
+      mode: "Normal"
+      inputs:
+        - port: "L0_RDMA"
+          size: [0, 0, 1920, 1080]
+          format: "YUV444"
+          bitwidth: 14
+      outputs:
+        - port: "L0_COUTFIFO"
+          size: [0, 0, 1920, 1080]
+    tasks:
+      - id: "t_mtnr0"
+        hw: "MTNR0"
+        description: "MTNR0"
+    edges:
+      # MLSC to MTNR0
+      - src: "t_mlsc"
+        src_port: "L0_WDMA"
+        dst: "t_mtnr0"
+        dst_port: "L0_RDMA"
+        type: "M2M"
+
+  # 11. MTNR1
+  - ip_settings:
+      hw: "MTNR1"
+      mode: "Normal"
+      inputs:
+        - port: "L1_RDMA"
+          size: [0, 0, 960, 540]
+          format: "YUV444"
+          bitwidth: 14
+        - port: "L2_RDMA"
+          size: [0, 0, 480, 270]
+          format: "YUV444"
+          bitwidth: 14
+        - port: "L3_RDMA"
+          size: [0, 0, 240, 135]
+          format: "YUV444"
+          bitwidth: 14
+        - port: "G4_RDMA"
+          size: [0, 0, 120, 68]
+          format: "YUV444"
+          bitwidth: 14
+      outputs:
+        - port: "L1_COUTFIFO"
+          size: [0, 0, 960, 540]
+        - port: "L2_COUTFIFO"
+          size: [0, 0, 480, 270]
+        - port: "L3_COUTFIFO"
+          size: [0, 0, 240, 135]
+        - port: "G4_COUTFIFO"
+          size: [0, 0, 120, 68]
+    tasks:
+      - id: "t_mtnr1"
+        hw: "MTNR1"
+        description: "MTNR1"
+    edges:
+      # MLSC to MTNR1 (multiple M2M)
+      - src: "t_mlsc"
+        src_port: "L1_WDMA"
+        dst: "t_mtnr1"
+        dst_port: "L1_RDMA"
+        type: "M2M"
+      - src: "t_mlsc"
+        src_port: "L2_WDMA"
+        dst: "t_mtnr1"
+        dst_port: "L2_RDMA"
+        type: "M2M"
+      - src: "t_mlsc"
+        src_port: "L3_WDMA"
+        dst: "t_mtnr1"
+        dst_port: "L3_RDMA"
+        type: "M2M"
+      - src: "t_mlsc"
+        src_port: "G4_WDMA"
+        dst: "t_mtnr1"
+        dst_port: "G4_RDMA"
+        type: "M2M"
+
+  # 12. MSNR
+  - ip_settings:
+      hw: "MSNR"
+      mode: "Normal"
+      inputs:
+        - port: "L0_CINFIFO"
+          size: [0, 0, 1920, 1080]
+        - port: "L1_CINFIFO"
+          size: [0, 0, 960, 540]
+        - port: "L2_CINFIFO"
+          size: [0, 0, 480, 270]
+        - port: "L3_CINFIFO"
+          size: [0, 0, 240, 135]
+        - port: "G4_CINFIFO"
+          size: [0, 0, 120, 68]
+      outputs:
+        - port: "COUTFIFO"
+          size: [0, 0, 1920, 1080]
+    tasks:
+      - id: "t_msnr"
+        hw: "MSNR"
+        description: "MSNR"
+    edges:
+      # MTNR0 to MSNR
+      - src: "t_mtnr0"
+        src_port: "L0_COUTFIFO"
+        dst: "t_msnr"
+        dst_port: "L0_CINFIFO"
+        type: "OTF"
+      # MTNR1 to MSNR
+      - src: "t_mtnr1"
+        src_port: "L1_COUTFIFO"
+        dst: "t_msnr"
+        dst_port: "L1_CINFIFO"
+        type: "OTF"
+      - src: "t_mtnr1"
+        src_port: "L2_COUTFIFO"
+        dst: "t_msnr"
+        dst_port: "L2_CINFIFO"
+        type: "OTF"
+      - src: "t_mtnr1"
+        src_port: "L3_COUTFIFO"
+        dst: "t_msnr"
+        dst_port: "L3_CINFIFO"
+        type: "OTF"
+      - src: "t_mtnr1"
+        src_port: "G4_COUTFIFO"
+        dst: "t_msnr"
+        dst_port: "G4_CINFIFO"
+        type: "OTF"
+
+  # 13. MCSC
+  - ip_settings:
+      hw: "MCSC"
+      mode: "Normal"
+      inputs:
+        - port: "CINFIFO"
+          size: [0, 0, 1920, 1080]
+      outputs:
+        - port: "P0_WDMA"
+          size: [0, 0, 1920, 1080]
+          format: "YUV420"
+          bitwidth: 10
+        - port: "P1_WDMA"
+          size: [0, 0, 1920, 1080]
+          format: "YUV420"
+          bitwidth: 10
+    tasks:
+      - id: "t_mcsc"
+        hw: "MCSC"
+        description: "MCSC"
+    edges:
+      # MSNR to MCSC
+      - src: "t_msnr"
+        src_port: "COUTFIFO"
+        dst: "t_mcsc"
+        dst_port: "CINFIFO"
+        type: "OTF"
+
+  # 14. MFC (Video Encoder)
+  - ip_settings:
+      hw: "MFC"
+      mode: "Normal"
+      inputs:
+        - port: "MFC_RDMA"
+          size: [0, 0, 1920, 1080]
+          format: "YUV420"
+          bitwidth: 10
+      outputs:
+        - port: "MFC_WDMA"
+          size: [0, 0, 40000, 1000]
+          format: "STAT"
+          bitwidth: 10
+    tasks:
+      - id: "t_mfc"
+        hw: "MFC"
+        description: "MFC"
+    edges:
+      # MCSC to MFC
+      - src: "t_mcsc"
+        src_port: "P0_WDMA"
+        dst: "t_mfc"
+        dst_port: "MFC_RDMA"
+        type: "M2M"
+
+  # 15. DPU (Display)
+  - ip_settings:
+      hw: "DPU"
+      mode: "Normal"
+      inputs:
+        - port: "DPU_RDMA"
+          size: [0, 0, 1920, 1080]
+          format: "YUV420"
+          bitwidth: 10
+      outputs:
+        - port: "COUTFIFO"
+          size: [0, 0, 1920, 1080]
+    tasks:
+      - id: "t_dpu"
+        hw: "DPU"
+        description: "DPU"
+    edges:
+      # MCSC to DPU
+      - src: "t_mcsc"
+        src_port: "P1_WDMA"
+        dst: "t_dpu"
+        dst_port: "DPU_RDMA"
+        type: "M2M"

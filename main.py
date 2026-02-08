@@ -6,11 +6,18 @@ Usage:
 """
 
 import argparse
+import io
 import sys
 from pathlib import Path
 from typing import Dict
 
 import yaml
+
+# Fix encoding for Windows console (cp949/Korean locale can't handle Unicode box-drawing chars)
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.stderr.encoding != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
@@ -114,13 +121,19 @@ def create_hw_node(config: dict) -> HWNode:
             supported_modes=supported_modes,
             supports_crop=supports_crop,
             supports_scale=supports_scale,
-            latency=config.get('latency', 0.0)
+            latency=config.get('latency', 0.0),
+            ip_group=config.get('ip_group', ''),
+            hierarchy_group=config.get('hierarchy_group', ''),
         )
 
         # Add modules if present
         for mod_config in config.get('modules', []):
             module = create_module(mod_config)
             node.add_module(module)
+
+        # Parse intra-IP module edges
+        for edge_cfg in config.get('edges', []):
+            node.module_edges.append((edge_cfg['src'], edge_cfg['dst']))
 
         return node
 
@@ -194,6 +207,14 @@ def create_module(config: dict) -> Module:
             compression_ratios=config.get('compression_ratios', {})
         )
 
+    elif mod_type in ('CIN', 'COUT'):
+        # CIN (OTF input) and COUT (OTF output) are treated as Generic modules
+        return GenericModule(
+            name=name,
+            ppc=config.get('ppc', 1.0),
+            efficiency=config.get('efficiency', 1.0)
+        )
+
     else:
         return GenericModule(
             name=name,
@@ -203,7 +224,15 @@ def create_module(config: dict) -> Module:
 
 
 def create_scenario(config: dict) -> ScenarioGraph:
-    """Create ScenarioGraph from configuration dictionary."""
+    """Create ScenarioGraph from configuration dictionary.
+    
+    Supports both old format (scenario.tasks/edges) and new format (ip_blocks).
+    """
+    # Auto-detect format
+    if 'ip_blocks' in config or ('ip_blocks' not in config and 'scenario' not in config and 'tasks' in config):
+        return create_scenario_from_blocks(config)
+    
+    # Old format
     scenario_data = config.get('scenario', config)
     name = scenario_data.get('name', 'Unnamed')
 
@@ -255,6 +284,105 @@ def create_scenario(config: dict) -> ScenarioGraph:
     return scenario
 
 
+def _build_workload_from_ip_settings(ip_settings: dict) -> dict:
+    """
+    Build workload dict from ip_settings inputs.
+    
+    Uses the first (primary) input's size as the workload dimensions.
+    Size format: [x, y, width, height] (crop-aware).
+    """
+    workload = {}
+    inputs = ip_settings.get('inputs', [])
+    if inputs:
+        primary_input = inputs[0]
+        size = primary_input.get('size', [0, 0, 0, 0])
+        if len(size) == 4:
+            workload['width'] = size[2]   # width from [x, y, w, h]
+            workload['height'] = size[3]  # height from [x, y, w, h]
+        elif len(size) == 2:
+            workload['width'] = size[0]
+            workload['height'] = size[1]
+    return workload
+
+
+def create_scenario_from_blocks(config: dict) -> ScenarioGraph:
+    """
+    Create ScenarioGraph from new ip_blocks-based configuration.
+    
+    Format:
+        name: "..."
+        sensor: { hw, output_size, fps, ... }
+        tasks: [{ id, hw, description }]  # sensor task
+        ip_blocks:
+          - ip_settings: { hw, mode, inputs, outputs }
+            tasks: [{ id, hw, description }]
+            edges: [{ src, dst, type, src_port, dst_port }]
+    """
+    name = config.get('name', 'Unnamed')
+    scenario = ScenarioGraph(name=name)
+    
+    # Store ip_settings per task for later reference (text view etc.)
+    scenario._ip_settings = {}  # task_id -> ip_settings dict
+    
+    # Add sensor task(s)
+    sensor_cfg = config.get('sensor', {})
+    for task_cfg in config.get('tasks', []):
+        workload = {}
+        if sensor_cfg and sensor_cfg.get('hw') == task_cfg.get('hw'):
+            output_size = sensor_cfg.get('output_size', [0, 0, 0, 0])
+            if len(output_size) == 4:
+                workload['width'] = output_size[2]
+                workload['height'] = output_size[3]
+        
+        scenario.add_task(
+            task_id=task_cfg['id'],
+            mapped_hw=task_cfg['hw'],
+            workload=workload
+        )
+    
+    # Process each IP block
+    for block in config.get('ip_blocks', []):
+        ip_settings = block.get('ip_settings', {})
+        hw_name = ip_settings.get('hw', '')
+        
+        # Build workload from primary input size
+        workload = _build_workload_from_ip_settings(ip_settings)
+        
+        # Collect input/output port names for the task
+        input_ports = [inp.get('port', '') for inp in ip_settings.get('inputs', [])]
+        output_ports = [out.get('port', '') for out in ip_settings.get('outputs', [])]
+        
+        # Add tasks
+        for task_cfg in block.get('tasks', []):
+            task_id = task_cfg['id']
+            task_hw = task_cfg.get('hw', hw_name)
+            ip_mode = ip_settings.get('mode', None)
+            
+            scenario.add_task(
+                task_id=task_id,
+                mapped_hw=task_hw,
+                workload=workload.copy(),
+                ip_mode=ip_mode,
+                input_ports=input_ports,
+                output_ports=output_ports
+            )
+            
+            # Store ip_settings for this task (for text view)
+            scenario._ip_settings[task_id] = ip_settings
+        
+        # Add edges
+        for edge_cfg in block.get('edges', []):
+            scenario.add_dependency(
+                src=edge_cfg['src'],
+                dst=edge_cfg['dst'],
+                conn_type=edge_cfg.get('type', 'M2M'),
+                src_port=edge_cfg.get('src_port', 'output'),
+                dst_port=edge_cfg.get('dst_port', 'input'),
+            )
+    
+    return scenario
+
+
 def apply_scenario_settings(hw_nodes: Dict[str, HWNode],
                             scenario_config: dict) -> None:
     """
@@ -277,6 +405,15 @@ def apply_scenario_settings(hw_nodes: Dict[str, HWNode],
         if hw_name and hw_name in hw_nodes:
             sensor = hw_nodes[hw_name]
             if isinstance(sensor, SensorNode):
+                # Support output_size format: [x, y, width, height]
+                if 'output_size' in sensor_cfg:
+                    output_size = sensor_cfg['output_size']
+                    if len(output_size) == 4:
+                        sensor.frame_width = output_size[2]
+                        sensor.frame_height = output_size[3]
+                    elif len(output_size) == 2:
+                        sensor.frame_width = output_size[0]
+                        sensor.frame_height = output_size[1]
                 if 'frame_width' in sensor_cfg:
                     sensor.frame_width = sensor_cfg['frame_width']
                 if 'frame_height' in sensor_cfg:
@@ -288,7 +425,7 @@ def apply_scenario_settings(hw_nodes: Dict[str, HWNode],
                 if 'v_valid_time' in sensor_cfg:
                     sensor.v_valid_time = sensor_cfg['v_valid_time']
 
-    # Apply module settings
+    # Apply module settings (old format)
     for mod_setting in scenario_data.get('module_settings', []):
         hw_name = mod_setting.get('hw')
         mod_name = mod_setting.get('module')
@@ -318,17 +455,18 @@ def apply_scenario_settings(hw_nodes: Dict[str, HWNode],
             if 'crop_region' in mod_setting:
                 module.crop_region = tuple(mod_setting['crop_region'])
 
-    # Apply IP settings (e.g. manual clock override)
-    for ip_setting in scenario_data.get('ip_settings', []):
-        hw_name = ip_setting.get('hw')
-        clock = ip_setting.get('clock')
+    # Apply IP settings (old format: list of ip_settings for clock override)
+    if isinstance(scenario_data.get('ip_settings'), list):
+        for ip_setting in scenario_data.get('ip_settings', []):
+            hw_name = ip_setting.get('hw')
+            clock = ip_setting.get('clock')
 
-        if hw_name and hw_name in hw_nodes:
-            hw = hw_nodes[hw_name]
-            if isinstance(hw, IPNode) and clock:
-                hw.clock_freq = float(clock)
-                hw.target_freq = float(clock)  # Mark as manually set
-                print(f"[Config] Manual clock set for {hw_name}: {clock/1e6:.1f} MHz")
+            if hw_name and hw_name in hw_nodes:
+                hw = hw_nodes[hw_name]
+                if isinstance(hw, IPNode) and clock:
+                    hw.clock_freq = float(clock)
+                    hw.target_freq = float(clock)  # Mark as manually set
+                    print(f"[Config] Manual clock set for {hw_name}: {clock/1e6:.1f} MHz")
 
 
 def run_demo():
@@ -466,18 +604,23 @@ def main():
         '--hw-config', '-hw',
         type=str,
         default=None,
-        help='Path to hardware configuration YAML file (e.g., hw_config/sample_hw.yaml)'
+        help='Path to hardware configuration YAML file (e.g., hw_config/projectA_hw.yaml)'
     )
     parser.add_argument(
         '--scenario-config', '-sc',
         type=str,
         default=None,
-        help='Path to scenario configuration YAML file (e.g., scenario_config/sample_scenario.yaml)'
+        help='Path to scenario configuration YAML file (e.g., scenario_config/projectA_FHD30_recording_scenario.yaml)'
     )
     parser.add_argument(
         '--demo',
         action='store_true',
         help='Run demonstration with built-in sample configuration'
+    )
+    parser.add_argument(
+        '--graph-only',
+        action='store_true',
+        help='Only build and display graph structure (no simulation)'
     )
     parser.add_argument(
         '--output-csv',
@@ -567,6 +710,21 @@ def main():
     hw_registry = {node.name: node for node in hw_nodes}
     apply_scenario_settings(hw_registry, scenario_config)
 
+    text_viewer = TextViewer()
+
+    # Graph-only mode: show structure and exit
+    if args.graph_only:
+        print("=" * 70)
+        print(f"  Graph Structure: {scenario.name}")
+        print("=" * 70)
+        print()
+        print(text_viewer.print_hw_hierarchy(hw_registry))
+        print()
+        print(text_viewer.print_scenario_graph(scenario, hw_registry=hw_registry))
+        print()
+        print(text_viewer.print_scenario_flow(scenario, hw_registry=hw_registry))
+        return
+
     # Check and align OTF/Sensor timing (Clock Optimization)
     print("\n[Clock Optimization]")
     opt_messages = scenario.optimize_otf_clocks(hw_registry)
@@ -592,7 +750,6 @@ def main():
     simulator.add_analyzer(PowerAnalyzer())
     simulator.add_analyzer(TimingAnalyzer())
 
-    text_viewer = TextViewer()
     print(text_viewer.print_hw_hierarchy(simulator.hw_registry))
     print()
     print(text_viewer.print_scenario_graph(scenario, hw_registry=simulator.hw_registry))

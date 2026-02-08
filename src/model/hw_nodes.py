@@ -12,7 +12,7 @@ Provides base classes for modeling hardware components:
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
     import simpy
@@ -280,11 +280,17 @@ class IPNode(HWNode):
     modules: List[Any] = field(default_factory=list)  # List[Module]
     supported_modes: List[str] = field(default_factory=lambda: ['default'])
     supports_crop: bool = False
-
     supports_scale: bool = False
     
     # Latency for OTF pipeline (microseconds)
     latency: float = 0.0
+
+    # Domain/hierarchy grouping
+    ip_group: str = ""           # Clock/voltage domain group
+    hierarchy_group: str = ""    # Hierarchy-level diagram grouping
+
+    # Intra-IP module connectivity
+    module_edges: List[Tuple[str, str]] = field(default_factory=list)
 
     # Clock optimization results
     required_freq: float = 0.0  # Calculated required frequency

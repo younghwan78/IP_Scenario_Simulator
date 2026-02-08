@@ -1,0 +1,1073 @@
+# Hardware Configuration (Static HW Capabilities)
+# This file defines HW specs and constraints that remain constant per project.
+
+# Sensor Module (SensorNode)
+- name: "HP2"
+  type: "Sensor"
+  # Supported sensor modes (for validation)
+  supported_sensor_modes:
+  - "LN2"
+  - "LN4"
+  # frame_width, frame_height, fps, sensor_mode, v_valid_time -> scenario config
+
+#########################
+# Block CSIS
+#########################
+# CSIS_Wrapper
+- name: "CSIS_LINK"
+  type: "IP"
+  ip_group: "CSIS"
+  hierarchy_group: "ISP"
+  min_size: [64, 64]
+  max_size: [8192, 8192]
+  supports_crop: false
+  supports_scale: false
+  supported_modes:
+    - "Normal"
+  modules:
+    - name: "DC_PHY"
+      type: "CIN"
+      latency: 5 #cycles
+    - name: "LINK"
+      type: "COUT"
+      latency: 5 #cycles
+  edges:
+    - src: "DC_PHY"
+      dst: "LINK"
+# CSIS
+- name: "CSIS"
+  type: "IP"
+  ip_group: "CSIS"
+  hierarchy_group: "ISP"
+  min_size: [64, 64]
+  max_size: [8192, 8192]
+  supports_crop: true
+  supports_scale: false
+  supported_modes:
+    - "Normal"
+  modules:
+    - name: "NFI_DEC"
+      type: "CIN"
+      latency: 5 #cycles
+    - name: "DEGAMMA"
+      type: "Generic"
+      latency: 2 #cycles
+    - name: "sMCB"
+      type: "Generic"
+      latency: 2 #cycles
+    - name: "BNS"
+      type: "Scaler"
+      latency: 4 #cycles
+    - name: "COUTFIFO"
+      type: "COUT"
+      latency: 3 #cycles
+    - name: "CSIS_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+      supported_compressions:
+        - "COMP_BAYER_LOSSLESS"
+        - "COMP_BAYER_LOSSY"
+      compression_ratios:
+          COMP_BAYER_LOSSLESS: 1.0
+          COMP_BAYER_LOSSY: 0.5
+  edges:
+    - src: "NFI_DEC"
+      dst: "DEGAMMA"
+    - src: "DEGAMMA"
+      dst: "sMCB"
+    - src: "sMCB"
+      dst: "BNS"
+    - src: "BNS"
+      dst: "COUTFIFO"
+    - src: "BNS"
+      dst: "CSIS_WDMA"
+#PDP
+- name: "PDP"
+  type: "IP"
+  ip_group: "CSIS"
+  hierarchy_group: "ISP"
+  min_size: [64, 64]
+  max_size: [8192, 8192]
+  supports_crop: false
+  supports_scale: false
+  supported_modes:
+    - "Normal"
+  modules:
+    - name: "REORDER"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "BPC"
+      type: "Generic"
+      latency: 3 #cycles
+    - name: "CROP"
+      type: "Crop"
+      latency: 3 #cycles
+    - name: "ALC"
+      type: "Generic"
+      latency: 2 #cycles
+    - name: "GAMMA"
+      type: "Generic"
+      latency: 5 #cycles
+    - name: "PDSTAT"
+      type: "Generic"
+      latency: 5 #cycles
+    - name: "STAT_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "HPD_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "VPD_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+  edges:
+    - src: "REORDER"
+      dst: "BPC"
+    - src: "BPC"
+      dst: "CROP"
+    - src: "CROP"
+      dst: "ALC"
+    - src: "ALC"
+      dst: "GAMMA"
+    - src: "GAMMA"
+      dst: "PDSTAT"
+    - src: "PDSTAT"
+      dst: "STAT_WDMA"
+    - src: "PDSTAT"
+      dst: "HPD_WDMA"
+    - src: "PDSTAT"
+      dst: "VPD_WDMA"
+#PREP
+- name: "PREP"
+  type: "IP"
+  ip_group: "CSIS"
+  hierarchy_group: "ISP"
+  min_size: [64, 64]
+  max_size: [8192, 8192]
+  supports_crop: true
+  supports_scale: false
+  supported_modes:
+    - "Normal"
+  modules:
+    - name: "CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "PREP_RDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "read"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "DTP"
+      type: "Generic"
+      latency: 4 #cycles
+    - name: "CROPIN"
+      type: "Crop"
+      latency: 4 #cycles
+    - name: "BITMASK"
+      type: "Generic"
+      latency: 4 #cycles
+    - name: "GAMMA_SESNOR"
+      type: "Generic"
+      latency: 4 #cycles
+    - name: "BLCBYR"
+      type: "Generic"
+      latency: 4 #cycles
+    - name: "COUTFIFO"
+      type: "COUT"
+      latency: 4 #cycles
+  edges:
+    - src: "CINFIFO"
+      dst: "DTP"
+    - src: "PREP_RDMA"
+      dst: "DTP"
+    - src: "DTP"
+      dst: "CROPIN"
+    - src: "CROPIN"
+      dst: "BITMASK"
+    - src: "BITMASK"
+      dst: "GAMMA_SESNOR"
+    - src: "GAMMA_SESNOR"
+      dst: "BLCBYR"
+    - src: "BLCBYR"
+      dst: "COUTFIFO"
+
+#########################
+# Block CSTAT
+#########################
+#CSTAT
+- name: "CSTAT"
+  type: "IP"
+  ip_group: "CSIS"
+  hierarchy_group: "ISP"
+  min_size: [64, 64]
+  max_size: [8192, 8192]
+  supports_crop: true
+  supports_scale: false
+  supported_modes:
+    - "Normal"
+  modules:
+    - name: "CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "DTP"
+      type: "Generic"
+      latency: 4 #cycles
+    - name: "AF_IDENT"
+      type: "Generic"
+      latency: 4 #cycles
+    - name: "SBPC"
+      type: "Generic"
+      latency: 4 #cycles
+    - name: "CGRAS"
+      type: "Generic"
+      latency: 4 #cycles
+    - name: "CROP_DZOOM"
+      type: "Crop"
+      latency: 4 #cycles
+    - name: "WBG"
+      type: "Generic"
+      latency: 4 #cycles
+    - name: "SDNS"
+      type: "Generic"
+      latency: 4 #cycles
+    - name: "MAKERGB"
+      type: "Generic"
+      latency: 4 #cycles
+    - name: "GTM"
+      type: "Generic"
+      latency: 4 #cycles
+    - name: "BLC"
+      type: "Generic"
+      latency: 4 #cycles
+    - name: "SDRC"
+      type: "Generic"
+      latency: 4 #cycles
+    - name: "CCM9"
+      type: "Generic"
+      latency: 4 #cycles
+    - name: "GAMMA_STAT"
+      type: "Generic"
+      latency: 4 #cycle
+    - name: "RGB_TO_YUV"
+      type: "Generic"
+      latency: 4 #cycle
+    - name: "DS_LME0"
+      type: "Scaler"
+      latency: 4 #cycle
+    - name: "MENR"
+      type: "Generic"
+      latency: 4 #cycle
+    - name: "EDGE_SCORE"
+      type: "Generic"
+      latency: 4 #cycle
+    - name: "DS_LME1"
+      type: "Scaler"
+      latency: 4 #cycle
+    - name: "CDAF"
+      type: "Generic"
+      latency: 4 #cycle
+    - name: "CDAF_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "RGBHIST"
+      type: "Generic"
+      latency: 4 #cycle
+    - name: "RGBHIST_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "THSTAT_AE"
+      type: "Generic"
+      latency: 4 #cycle
+    - name: "THSTAT_AE_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "THSTAT_AWB"
+      type: "Generic"
+      latency: 4 #cycle
+    - name: "THSTAT_AWB_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "DRC_CLCT"
+      type: "Generic"
+      latency: 4 #cycle
+    - name: "DRC_CLCT_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "SPE_HIST"
+      type: "Generic"
+      latency: 4 #cycle
+    - name: "SPE_RGB_STAT_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "SPE_Y_HIST_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "DS_FDPIG"
+      type: "Scaler"
+      latency: 4 #cycle
+    - name: "DS_FDPIG_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "DS_CAV"
+      type: "Scaler"
+      latency: 4 #cycle
+    - name: "DS_CAV_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "DS_SAT"
+      type: "Scaler"
+      latency: 4 #cycle
+    - name: "SAT_Y_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "SAT_UV_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "DS_LME0_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "DS_LME1_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+  edges:
+    - src: "CINFIFO"
+      dst: "DTP"
+    - src: "DTP"
+      dst: "AF_IDENT"
+    - src: "AF_IDENT"
+      dst: "SBPC"
+    - src: "SBPC"
+      dst: "CGRAS"
+    - src: "CGRAS"
+      dst: "CROP_DZOOM"
+    - src: "CGRAS"
+      dst: "SPE_HIST"
+    - src: "SPE_HIST"
+      dst: "SPE_RGB_STAT_WDMA"
+    - src: "SPE_HIST"
+      dst: "SPE_Y_HIST_WDMA"
+    - src: "CROP_DZOOM"
+      dst: "WBG"
+    - src: "WBG"
+      dst: "SDNS"
+    - src: "SDNS"
+      dst: "MAKERGB"
+    - src: "MAKERGB"
+      dst: "GTM"
+    - src: "GTM"
+      dst: "BLC"
+    - src: "BLC"
+      dst: "SDRC"
+    - src: "SDRC"
+      dst: "CCM9"
+    - src: "CCM9"
+      dst: "GAMMA_STAT"
+    - src: "GAMMA_STAT"
+      dst: "RGB_TO_YUV"
+    - src: "RGB_TO_YUV"
+      dst: "MENR"
+    - src: "MENR"
+      dst: "EDGE_SCORE"
+    - src: "EDGE_SCORE"
+      dst: "DS_LME0"
+    - src: "DS_LME0"
+      dst: "DS_LME0_WDMA"
+    - src: "EDGE_SCORE"
+      dst: "DS_LME1"
+    - src: "DS_LME1"
+      dst: "DS_LME1_WDMA"
+    - src: "EDGE_SCORE"
+      dst: "CDAF"
+    - src: "CDAF"
+      dst: "CDAF_WDMA"
+    - src: "EDGE_SCORE"
+      dst: "RGBHIST"
+    - src: "RGBHIST"
+      dst: "RGBHIST_WDMA"
+    - src: "EDGE_SCORE"
+      dst: "DRC_CLCT"
+    - src: "DRC_CLCT"
+      dst: "DRC_CLCT_WDMA"
+    - src: "EDGE_SCORE"
+      dst: "DS_FDPIG"
+    - src: "DS_FDPIG"
+      dst: "DS_FDPIG_WDMA"
+    - src: "EDGE_SCORE"
+      dst: "DS_CAV"
+    - src: "DS_CAV"
+      dst: "DS_CAV_WDMA"
+    - src: "EDGE_SCORE"
+      dst: "DS_SAT"
+    - src: "DS_SAT"
+      dst: "SAT_Y_WDMA"
+    - src: "DS_SAT"
+      dst: "SAT_UV_WDMA"
+
+#########################
+# Block BYRP
+#########################
+#BYRP
+- name: "BYRP"
+  type: "IP"
+  ip_group: "BYRP"
+  hierarchy_group: "ISP"
+  min_size: [64, 64]
+  max_size: [8192, 8192]
+  supports_crop: true
+  supports_scale: false
+  supported_modes:
+    - "Normal"
+    - "tDMSC"
+  modules:
+    - name: "COMP_RD0_RDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "read"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "SPE_Y_HIST_RDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "read"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "SPE_AI_STAT_RDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "read"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "SPE_GRID_STAT_RDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "read"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "SPE_FRAME_STAT_RDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "read"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "CROPIN"
+      type: "Crop"
+      latency: 3 #cycles
+    - name: "COMPUTE"
+      type: "Generic"
+      latency: 3 #cycles
+    - name: "COUTFIFO"
+      type: "COUT"
+      latency: 3 #cycles
+    - name: "CROP_DNG_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "SPE_GRID_STAT_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "SPE_FRAME_STAT_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+  edges:
+    - src: "COMP_RD0_RDMA"
+      dst: "CROPIN"
+    - src: "SPE_Y_HIST_RDMA"
+      dst: "CROPIN"
+    - src: "SPE_AI_STAT_RDMA"
+      dst: "CROPIN"
+    - src: "SPE_GRID_STAT_RDMA"
+      dst: "CROPIN"
+    - src: "SPE_FRAME_STAT_RDMA"
+      dst: "CROPIN"
+    - src: "CROPIN"
+      dst: "COMPUTE"
+    - src: "COMPUTE"
+      dst: "COUTFIFO"
+    - src: "COMPUTE"
+      dst: "CROP_DNG_WDMA"
+    - src: "COMPUTE"
+      dst: "SPE_GRID_STAT_WDMA"
+    - src: "COMPUTE"
+      dst: "SPE_FRAME_STAT_WDMA"
+
+#########################
+# Block RGBP
+#########################
+#RGBP
+- name: "RGBP"
+  type: "IP"
+  ip_group: "RGBP"
+  hierarchy_group: "ISP"
+  min_size: [64, 64]
+  max_size: [8192, 8192]
+  supports_crop: true
+  supports_scale: false
+  supported_modes:
+    - "Normal"
+  modules:
+    - name: "CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "COMPUTE"
+      type: "Generic"
+      latency: 8 #cycles
+    - name: "COUTFIFO"
+      type: "COUT"
+      latency: 4 #cycles
+    - name: "CROP_DNG_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+  edges:
+    - src: "CINFIFO"
+      dst: "COMPUTE"
+    - src: "COMPUTE"
+      dst: "COUTFIFO"
+    - src: "COMPUTE"
+      dst: "CROP_DNG_WDMA"
+
+#########################
+# Block YUVSC
+#########################
+#YUVSC
+- name: "YUVSC"
+  type: "IP"
+  ip_group: "YUVSC"
+  hierarchy_group: "ISP"
+  min_size: [64, 64]
+  max_size: [8192, 8192]
+  supports_crop: true
+  supports_scale: true
+  supported_modes:
+    - "Normal"
+  modules:
+    - name: "CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "COMPUTE"
+      type: "Generic"
+      latency: 8 #cycles
+    - name: "DS_YUVSC"
+      type: "Scaler"
+      latency: 8 #cycles
+    - name: "COUTFIFO"
+      type: "COUT"
+      latency: 4 #cycles
+  edges:
+    - src: "CINFIFO"
+      dst: "COMPUTE"
+    - src: "COMPUTE"
+      dst: "DS_YUVSC"
+    - src: "DS_YUVSC"
+      dst: "COUTFIFO"
+
+#########################
+# Block MLSC
+#########################
+#MLSC
+- name: "MLSC"
+  type: "IP"
+  ip_group: "MSNR"
+  hierarchy_group: "ISP"
+  min_size: [64, 64]
+  max_size: [8192, 8192]
+  supports_crop: true
+  supports_scale: true
+  supported_modes:
+    - "Normal"
+  modules:
+    - name: "CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "COMPUTE"
+      type: "Generic"
+      latency: 8 #cycles
+    - name: "L0_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "L1_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "L2_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "L3_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "G4_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+  edges:
+    - src: "CINFIFO"
+      dst: "COMPUTE"
+    - src: "COMPUTE"
+      dst: "L0_WDMA"
+    - src: "COMPUTE"
+      dst: "L1_WDMA"
+    - src: "COMPUTE"
+      dst: "L2_WDMA"
+    - src: "COMPUTE"
+      dst: "L3_WDMA"
+    - src: "COMPUTE"
+      dst: "G4_WDMA"
+
+#########################
+# Block MTNR0
+#########################
+#MTNR0
+- name: "MTNR0"
+  type: "IP"
+  ip_group: "MCSC"
+  hierarchy_group: "ISP"
+  min_size: [64, 64]
+  max_size: [8192, 8192]
+  supports_crop: true
+  supports_scale: true
+  supported_modes:
+    - "Normal"
+  modules:
+    - name: "L0_CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "L0_RDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "read"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "COMPUTE"
+      type: "Generic"
+      latency: 8 #cycles
+    - name: "L0_COUTFIFO"
+      type: "COUT"
+      latency: 4 #cycles
+  edges:
+    - src: "L0_CINFIFO"
+      dst: "COMPUTE"
+    - src: "L0_RDMA"
+      dst: "COMPUTE"
+    - src: "COMPUTE"
+      dst: "L0_COUTFIFO"
+    
+#########################
+# Block MTNR1
+#########################
+#MTNR1
+- name: "MTNR1"
+  type: "IP"
+  ip_group: "MTNR1"
+  hierarchy_group: "ISP"
+  min_size: [64, 64]
+  max_size: [8192, 8192]
+  supports_crop: true
+  supports_scale: true
+  supported_modes:
+    - "Normal"
+  modules:
+    - name: "L1_CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "L2_CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "L3_CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "G4_CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "L1_RDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "read"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "L2_RDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "read"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "L3_RDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "read"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "G4_RDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "read"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "COMPUTE"
+      type: "Generic"
+      latency: 8 #cycles
+    - name: "L1_COUTFIFO"
+      type: "COUT"
+      latency: 4 #cycles
+    - name: "L2_COUTFIFO"
+      type: "COUT"
+      latency: 4 #cycles
+    - name: "L3_COUTFIFO"
+      type: "COUT"
+      latency: 4 #cycles
+    - name: "G4_COUTFIFO"
+      type: "COUT"
+      latency: 4 #cycles
+  edges:
+    - src: "L1_CINFIFO"
+      dst: "COMPUTE"
+    - src: "L2_CINFIFO"
+      dst: "COMPUTE"
+    - src: "L3_CINFIFO"
+      dst: "COMPUTE"
+    - src: "G4_CINFIFO"
+      dst: "COMPUTE"
+    - src: "L1_RDMA"
+      dst: "COMPUTE"
+    - src: "L2_RDMA"
+      dst: "COMPUTE"
+    - src: "L3_RDMA"
+      dst: "COMPUTE"
+    - src: "G4_RDMA"
+      dst: "COMPUTE"
+    - src: "COMPUTE"
+      dst: "L1_COUTFIFO"
+    - src: "COMPUTE"
+      dst: "L2_COUTFIFO"
+    - src: "COMPUTE"
+      dst: "L3_COUTFIFO"
+    - src: "COMPUTE"
+      dst: "G4_COUTFIFO"
+  
+#########################
+# Block MSNR
+#########################
+#MSNR
+- name: "MSNR"
+  type: "IP"
+  ip_group: "MSNR"
+  hierarchy_group: "ISP"
+  min_size: [64, 64]
+  max_size: [8192, 8192]
+  supports_crop: true
+  supports_scale: true
+  supported_modes:
+    - "Normal"
+  modules:
+    - name: "L0_CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "L1_CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "L2_CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "L3_CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "G4_CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "COMPUTE"
+      type: "Generic"
+      latency: 8 #cycles
+    - name: "COUTFIFO"
+      type: "COUT"
+      latency: 4 #cycles
+  edges:
+    - src: "L0_CINFIFO"
+      dst: "COMPUTE"
+    - src: "L1_CINFIFO"
+      dst: "COMPUTE"
+    - src: "L2_CINFIFO"
+      dst: "COMPUTE"
+    - src: "L3_CINFIFO"
+      dst: "COMPUTE"
+    - src: "G4_CINFIFO"
+      dst: "COMPUTE"
+    - src: "COMPUTE"
+      dst: "COUTFIFO"
+
+#########################
+# Block MCSC
+#########################
+#MCSC
+- name: "MCSC"
+  type: "IP"
+  ip_group: "MCSC"
+  hierarchy_group: "ISP"
+  min_size: [64, 64]
+  max_size: [8192, 8192]
+  supports_crop: true
+  supports_scale: true
+  supported_modes:
+    - "Normal"
+  modules:
+    - name: "CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "COMPUTE"
+      type: "Generic"
+      latency: 8 #cycles
+    - name: "P0_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "P1_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "P2_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "P3_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+    - name: "P4_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+  edges:
+    - src: "CINFIFO"
+      dst: "COMPUTE"
+    - src: "COMPUTE"
+      dst: "P0_WDMA"
+    - src: "COMPUTE"
+      dst: "P1_WDMA"
+    - src: "COMPUTE"
+      dst: "P2_WDMA"
+    - src: "COMPUTE"
+      dst: "P3_WDMA"
+    - src: "COMPUTE"
+      dst: "P4_WDMA"
+
+# ISP Back-End (supports crop)
+# - name: "ISP_BE"
+#   type: "IP"
+#   ip_group: "BYRP"
+#   max_clock: 200000000
+#   min_size: [64, 64]
+#   max_size: [8192, 8192]
+#   supports_crop: true
+#   supports_scale: true
+#   supported_modes:
+#     - "default"
+#     - "power_saving"
+#   modules:
+#     - name: "TNR"
+#       type: "Generic"
+#       ppc: 2
+#     - name: "Crop0"
+#       type: "Crop"
+#       ppc: 2
+#       # crop_region -> scenario config
+#     - name: "RDMA_BE"
+#       type: "DMA"
+#       direction: "read"
+#       max_bandwidth: 25600000000
+#       multiple_outstanding: 16
+#       supported_compressions:
+#         - "AFBC"
+#         - "Linear"
+#       compression_ratios:
+#         AFBC: 0.6
+#         Linear: 1.0
+#     - name: "WDMA_BE"
+#       type: "DMA"
+#       direction: "write"
+#       max_bandwidth: 25600000000
+#       multiple_outstanding: 16
+#       supported_compressions:
+#         - "AFBC"
+#         - "Linear"
+#       compression_ratios:
+#         AFBC: 0.6
+#         Linear: 1.0
+
+# Video Encoder
+- name: "MFC"
+  type: "IP"
+  ip_group: "MFC"
+  hierarchy_group: "CODEC"
+  min_size: [128, 128]
+  max_size: [4096, 2160]
+  supports_crop: false
+  supports_scale: false
+  supported_modes:
+    - "default"
+  modules:
+    - name: "MFC_RDMA"
+      type: "DMA"
+      direction: "read"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+      supported_compressions:
+        - "AFBC"
+        - "Linear"
+      compression_ratios:
+        AFBC: 0.6
+        Linear: 1.0
+    - name: "COMPUTE"
+      type: "Generic"
+      latency: 8 #cycles
+    - name: "MFC_WDMA"
+      type: "DMA"
+      latency: 3 #cycles
+      direction: "write"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+      supported_compressions:
+        - "SBWC_LOSSY"
+      compression_ratios:
+        SBWC_LOSSY: 0.5
+  edges:
+    - src: "MFC_RDMA"
+      dst: "COMPUTE"
+    - src: "COMPUTE"
+      dst: "MFC_WDMA"
+
+# Video Encoder
+- name: "DPU"
+  type: "IP"
+  ip_group: "DPU"
+  hierarchy_group: "DPU"
+  min_size: [128, 128]
+  max_size: [4096, 2160]
+  supports_crop: false
+  supports_scale: false
+  supported_modes:
+    - "default"
+  modules:
+    - name: "DPU_RDMA"
+      type: "DMA"
+      direction: "read"
+      max_bandwidth: 25600000000
+      multiple_outstanding: 16
+      supported_compressions:
+        - "AFBC"
+        - "SBWC_LOSSY"
+      compression_ratios:
+        AFBC: 0.6
+        SBWC_LOSSY: 0.5
+    - name: "COMPUTE"
+      type: "Generic"
+      latency: 8 #cycles
+    - name: "COUTFIFO"
+      type: "COUT"
+      latency: 4 #cycles
+  edges:
+    - src: "DPU_RDMA"
+      dst: "COMPUTE"
+    - src: "COMPUTE"
+      dst: "COUTFIFO"
+
+# CPU Cluster
+- name: "CPU_Cluster"
+  type: "Processor"
+  hierarchy_group: "CPU"
+  clock: 2000000000  # 2.0 GHz (current clock, not max)
+  cycles_per_op: 1.0
+  num_cores: 8
+  power_static: 50.0
+  power_dynamic: 200.0
+
+# DRAM
+- name: "DRAM"
+  type: "Memory"
+  hierarchy_group: "MEMORY"
+  bandwidth: 51200000000  # 51.2 GB/s
+  capacity: 8589934592  # 8 GB
+  access_latency: 0.0000001  # 100ns
+

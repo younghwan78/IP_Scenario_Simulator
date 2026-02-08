@@ -8,7 +8,7 @@
 
 scenario:
   name: "4K_Recording"
-  num_frames: 10  # Multi-frame simulation (default: 1)
+  num_frames: 1  # Multi-frame simulation (default: 1)
 
   # Sensor configuration for this scenario
   sensor:

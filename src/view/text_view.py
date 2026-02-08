@@ -145,7 +145,13 @@ class TextViewer:
         lines.append("Tasks:")
         for task in scenario.get_tasks():
             workload_str = ", ".join(f"{k}={v}" for k, v in task.workload.items())
-            lines.append(f"  {self.BRANCH}{task.task_id} → {task.mapped_hw} ({workload_str})")
+            # Show port info if available
+            port_info = ""
+            if task.input_ports:
+                port_info += f" in=[{','.join(task.input_ports)}]"
+            if task.output_ports:
+                port_info += f" out=[{','.join(task.output_ports)}]"
+            lines.append(f"  {self.BRANCH}{task.task_id} → {task.mapped_hw} ({workload_str}){port_info}")
 
         # Dependencies section
         lines.append("")
@@ -157,12 +163,26 @@ class TextViewer:
         if m2m_deps:
             lines.append("  M2M (Sequential):")
             for src, dst in m2m_deps:
-                lines.append(f"    {src} ──→ {dst}")
+                edge_data = scenario.graph.get_edge_data(src, dst)
+                port_str = ""
+                if edge_data:
+                    port_pairs = edge_data.get('port_pairs', [])
+                    if port_pairs and port_pairs[0][0] != 'output':
+                        pair_strs = [f"{sp}→{dp}" for sp, dp in port_pairs]
+                        port_str = f" ({', '.join(pair_strs)})"
+                lines.append(f"    {src} ──→ {dst}{port_str}")
 
         if otf_deps:
             lines.append("  OTF (Pipelined):")
             for src, dst in otf_deps:
-                lines.append(f"    {src} ═══► {dst}")
+                edge_data = scenario.graph.get_edge_data(src, dst)
+                port_str = ""
+                if edge_data:
+                    port_pairs = edge_data.get('port_pairs', [])
+                    if port_pairs and port_pairs[0][0] != 'output':
+                        pair_strs = [f"{sp}→{dp}" for sp, dp in port_pairs]
+                        port_str = f" ({', '.join(pair_strs)})"
+                lines.append(f"    {src} ═══► {dst}{port_str}")
 
         # OTF Groups
         otf_groups = scenario.get_otf_groups()
@@ -179,10 +199,8 @@ class TextViewer:
         
         path_str = ""
         for i, task_id in enumerate(order):
-            # Task ID
             task_str = task_id
             
-            # Module Info (if hw_registry provided)
             if hw_registry:
                 task = scenario.get_task(task_id)
                 if task and task.mapped_hw in hw_registry:
@@ -193,19 +211,184 @@ class TextViewer:
             
             path_str += task_str
             
-            # Connection arrow to next task
             if i < len(order) - 1:
                 next_task = order[i+1]
                 edge_type = scenario.get_edge_type(task_id, next_task)
                 
                 if edge_type == ConnectionType.OTF:
                     path_str += " ══► "
-                else: # M2M or None (default to M2M arrow)
+                else:
                     path_str += " ──→ "
                     
         lines.append(f"  {path_str}")
 
         return "\n".join(lines)
+
+    def print_scenario_flow(self, scenario: ScenarioGraph,
+                           hw_registry: Optional[Dict[str, HWNode]] = None) -> str:
+        """
+        Generate tree-style flow visualization of the scenario pipeline.
+        
+        Shows the processing chain from source (sensor) to sinks (encoder, display),
+        with connection types (OTF/M2M), port information, and IP grouping.
+
+        Args:
+            scenario: ScenarioGraph instance
+            hw_registry: Optional HW registry for ip_group/hierarchy_group info
+
+        Returns:
+            Formatted flow string
+        """
+        lines = [f"[Scenario Flow: {scenario.name}]", ""]
+
+        # Find root nodes (no incoming edges)
+        all_tasks = [t.task_id for t in scenario.get_tasks()]
+        root_tasks = [t for t in all_tasks if scenario.graph.in_degree(t) == 0]
+
+        if not root_tasks:
+            lines.append("  (No root tasks found)")
+            return "\n".join(lines)
+
+        # Build the tree recursively
+        visited = set()
+        for root in root_tasks:
+            self._print_flow_node(scenario, root, "", True, lines, visited, hw_registry)
+
+        return "\n".join(lines)
+
+    def _format_port_info(self, scenario: ScenarioGraph, task_id: str) -> str:
+        """Format input/output port summary for a task."""
+        ip_settings = getattr(scenario, '_ip_settings', {}).get(task_id, {})
+        if not ip_settings:
+            return ""
+        
+        parts = []
+        
+        # Inputs
+        inputs = ip_settings.get('inputs', [])
+        if inputs:
+            in_strs = []
+            for inp in inputs:
+                port = inp.get('port', '?')
+                size = inp.get('size', [])
+                size_str = f"{size[2]}x{size[3]}" if len(size) == 4 else ""
+                fmt = inp.get('format', '')
+                comp = inp.get('comp', '')
+                detail = size_str
+                if fmt:
+                    detail += f" {fmt}"
+                if comp == 'enable':
+                    detail += " comp"
+                in_strs.append(f"{port}({detail})")
+            parts.append("IN: " + ", ".join(in_strs))
+        
+        # Outputs
+        outputs = ip_settings.get('outputs', [])
+        if outputs:
+            out_strs = []
+            for out in outputs:
+                port = out.get('port', '?')
+                size = out.get('size', [])
+                size_str = f"{size[2]}x{size[3]}" if len(size) == 4 else ""
+                fmt = out.get('format', '')
+                comp = out.get('comp', '')
+                detail = size_str
+                if fmt:
+                    detail += f" {fmt}"
+                if comp == 'enable':
+                    detail += " comp"
+                out_strs.append(f"{port}({detail})")
+            parts.append("OUT: " + ", ".join(out_strs))
+        
+        return " | ".join(parts)
+
+    def _print_flow_node(self, scenario: ScenarioGraph, task_id: str,
+                        indent: str, is_last: bool, lines: List[str],
+                        visited: set,
+                        hw_registry: Optional[Dict[str, HWNode]] = None) -> None:
+        """Recursively print a task node in tree format."""
+        if task_id in visited:
+            lines.append(f"{indent}{'└── ' if is_last else '├── '}⟳ {task_id} (already shown)")
+            return
+        visited.add(task_id)
+
+        task = scenario.get_task(task_id)
+        if not task:
+            return
+
+        prefix = "└── " if is_last else "├── "
+        child_indent = indent + ("    " if is_last else "│   ")
+
+        # Build node label
+        hw_name = task.mapped_hw
+        workload_str = ""
+        if task.workload:
+            w = task.workload.get('width', 0)
+            h = task.workload.get('height', 0)
+            if w > 0 and h > 0:
+                workload_str = f" {w}x{h}"
+
+        # Group info from hw_registry
+        group_str = ""
+        if hw_registry and hw_name in hw_registry:
+            hw = hw_registry[hw_name]
+            if isinstance(hw, IPNode):
+                parts = []
+                if hw.ip_group:
+                    parts.append(hw.ip_group)
+                if hw.hierarchy_group:
+                    parts.append(hw.hierarchy_group)
+                if parts:
+                    group_str = f" [{'/'.join(parts)}]"
+            elif isinstance(hw, SensorNode):
+                group_str = f" @{hw.fps:.0f}fps"
+
+        # Mode info
+        mode_str = ""
+        if task.ip_mode and task.ip_mode != 'default':
+            mode_str = f" mode={task.ip_mode}"
+
+        node_label = f"{hw_name}{workload_str}{group_str}{mode_str}"
+        lines.append(f"{indent}{prefix}{node_label}")
+
+        # Port details on next line
+        port_info = self._format_port_info(scenario, task_id)
+        if port_info:
+            lines.append(f"{child_indent}  {port_info}")
+
+        # Get children (successors)
+        successors = list(scenario.graph.successors(task_id))
+        
+        # Sort: OTF children first, then M2M
+        def edge_sort_key(dst):
+            edge_data = scenario.graph.get_edge_data(task_id, dst)
+            conn_type = edge_data.get('conn_type', ConnectionType.M2M) if edge_data else ConnectionType.M2M
+            return 0 if conn_type == ConnectionType.OTF else 1
+        
+        successors.sort(key=edge_sort_key)
+
+        for i, succ in enumerate(successors):
+            succ_is_last = (i == len(successors) - 1)
+            
+            # Get edge info
+            edge_data = scenario.graph.get_edge_data(task_id, succ)
+            conn_type = edge_data.get('conn_type', ConnectionType.M2M) if edge_data else ConnectionType.M2M
+            port_pairs = edge_data.get('port_pairs', []) if edge_data else []
+
+            # Edge label
+            type_str = "OTF" if conn_type == ConnectionType.OTF else "M2M"
+            port_str = ""
+            if port_pairs and port_pairs[0][0] != 'output':
+                if len(port_pairs) == 1:
+                    port_str = f" {port_pairs[0][0]}→{port_pairs[0][1]}"
+                else:
+                    port_str = f" {len(port_pairs)} ports"
+            
+            edge_prefix = "└" if succ_is_last else "├"
+            edge_label = f"─[{type_str}{port_str}]─→"
+            lines.append(f"{child_indent}{edge_prefix}{edge_label}")
+            
+            self._print_flow_node(scenario, succ, child_indent, succ_is_last, lines, visited, hw_registry)
 
     def print_simulation_summary(self, results: 'SimulationResults') -> str:
         """
