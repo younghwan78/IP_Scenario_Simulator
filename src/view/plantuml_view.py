@@ -53,6 +53,7 @@ def _skinparam():
 skinparam backgroundColor #FEFEFE
 skinparam packageStyle rectangle
 skinparam defaultTextAlignment center
+skinparam linetype ortho
 skinparam padding 6
 skinparam rectangle {
     RoundCorner 10
@@ -68,6 +69,7 @@ skinparam package {
     FontStyle bold
 }
 """
+
 
 
 def _load_data(hw_path, sc_path):
@@ -313,14 +315,60 @@ def generate_level1(hw_registry, scenario, output_path):
 #  Level 2: Module-level detail
 # ═══════════════════════════════════════════════════════════════════
 
+def _emit_edges_level2(lines, scenario, task_hw):
+    """Emit edges at Level 2 with M2M detail (size/format/bitwidth/comp)."""
+    m2m_idx = 0
+    for src_id, dst_id, edge_data in scenario.graph.edges(data=True):
+        conn_type = edge_data.get('conn_type', ConnectionType.M2M)
+        port_pairs = edge_data.get('port_pairs', [])
+
+        if conn_type == ConnectionType.OTF:
+            port_label = " : OTF"
+            if port_pairs and port_pairs[0][0] != 'output':
+                if len(port_pairs) == 1:
+                    port_label = f" : OTF\\n{port_pairs[0][0]}->{port_pairs[0][1]}"
+                else:
+                    pair_strs = [f"{sp}->{dp}" for sp, dp in port_pairs]
+                    port_label = " : OTF\\n" + "\\n".join(pair_strs)
+            lines.append(f'{_safe_id(src_id)} ==> {_safe_id(dst_id)}{port_label}')
+        else:
+            ip_settings = getattr(scenario, '_ip_settings', {})
+            src_settings = ip_settings.get(src_id, {})
+            dst_settings = ip_settings.get(dst_id, {})
+            src_outputs = {o.get('port', ''): o for o in src_settings.get('outputs', [])}
+            dst_inputs = {i.get('port', ''): i for i in dst_settings.get('inputs', [])}
+
+            if port_pairs and port_pairs[0][0] != 'output':
+                for sp, dp in port_pairs:
+                    mem_id = f"mem_{m2m_idx}"
+                    detail = _m2m_detail_label(sp, dp, src_outputs.get(sp), dst_inputs.get(dp))
+                    lines.append(f'database "{detail}" as {mem_id}')
+                    lines.append(f'{_safe_id(src_id)} --> {mem_id}')
+                    lines.append(f'{mem_id} --> {_safe_id(dst_id)}')
+                    m2m_idx += 1
+            else:
+                mem_id = f"mem_{m2m_idx}"
+                lines.append(f'database "M2M" as {mem_id}')
+                lines.append(f'{_safe_id(src_id)} --> {mem_id}')
+                lines.append(f'{mem_id} --> {_safe_id(dst_id)}')
+                m2m_idx += 1
+
+
 def generate_level2(hw_registry, scenario, hw_raw, output_path):
     groups, task_hw, task_hier, task_ipg = _build_groups(scenario, hw_registry)
     lines = ["@startuml", _skinparam()]
+    lines.append("top to bottom direction")
     lines.append("skinparam rectangle {")
     lines.append("    FontSize 9")
     lines.append("}")
+    lines.append("skinparam package {")
+    lines.append("    padding 10")
+    lines.append("}")
     lines.append("title Level 2 View (Module Detail)\\n")
     lines.append("")
+
+    # Collect ordered task IDs per group for hidden links
+    grp_tids = {}
 
     for grp in HIERARCHY_ORDER:
         if grp not in groups:
@@ -335,6 +383,7 @@ def generate_level2(hw_registry, scenario, hw_raw, output_path):
             ipg = task_ipg[tid]
             ip_subgroups.setdefault(ipg, []).append(tid)
 
+        ordered_tids = []
         for ipg, tids in ip_subgroups.items():
             ip_bg = IP_GROUP_COLORS.get(ipg, "#E0E0E0")
 
@@ -343,10 +392,11 @@ def generate_level2(hw_registry, scenario, hw_raw, output_path):
                 hw = hw_registry.get(hw_name)
                 raw = hw_raw.get(hw_name, {})
                 modules = raw.get('modules', [])
+                ordered_tids.append(tid)
 
                 if modules:
-                    ip_alias = f"ip_{_safe_id(tid)}"
-                    lines.append(f'    package "{hw_name}" as {ip_alias} {ip_bg} {{')
+                    # Use _safe_id(tid) as alias so edges connect to packages
+                    lines.append(f'    package "{hw_name}" as {_safe_id(tid)} {ip_bg} {{')
                     for mod in modules:
                         mod_name = mod.get('name', '?')
                         mod_type = mod.get('type', 'Generic')
@@ -365,11 +415,19 @@ def generate_level2(hw_registry, scenario, hw_raw, output_path):
                     label = _ip_label(hw_name, hw, scenario, tid)
                     lines.append(f'    rectangle "{label}" as {_safe_id(tid)} {ip_bg}')
 
+        grp_tids[grp] = ordered_tids
         lines.append("}")
         lines.append("")
 
-    lines.append("' === Connections ===")
-    _emit_edges_level1(lines, scenario, task_hw)
+    # Hidden links between hierarchy groups (top-down ordering)
+    lines.append("' === Hidden links for vertical ordering ===")
+    active_grps = [g for g in HIERARCHY_ORDER if g in grp_tids]
+    for i in range(len(active_grps) - 1):
+        lines.append(f'pkg_{active_grps[i]} -[hidden]down-> pkg_{active_grps[i+1]}')
+
+    lines.append("")
+    lines.append("' === Connections (Task Topology) ===")
+    _emit_edges_level2(lines, scenario, task_hw)
     lines.append("")
     lines.append("@enduml")
 
@@ -421,14 +479,30 @@ def _mod_type_short(mod_type):
 # ── Main ─────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    hw_path = "hw_config/projectA_hw.yaml"
-    sc_path = "scenario_config/projectA_FHD30_recording_scenario.yaml"
-    out_dir = "output"
-    os.makedirs(out_dir, exist_ok=True)
+    import argparse
 
-    hw_registry, scenario, hw_raw = _load_data(hw_path, sc_path)
+    parser = argparse.ArgumentParser(description="Generate scenario diagrams")
+    parser.add_argument("--hw", default="hw_config/projectA_hw.yaml",
+                        help="HW config YAML path")
+    parser.add_argument("--sc", default="scenario_config/projectA_FHD30_recording_scenario.yaml",
+                        help="Scenario config YAML path")
+    parser.add_argument("--output-dir", "-o", default="output",
+                        help="Output directory (default: output)")
+    parser.add_argument("--format", "-f", choices=["puml", "html"], default="puml",
+                        help="Output format: puml (PlantUML) or html (interactive ELK.js)")
+    args = parser.parse_args()
 
-    generate_top_view(hw_registry, scenario, f"{out_dir}/scenario_top.puml")
-    generate_level1(hw_registry, scenario, f"{out_dir}/scenario_level1.puml")
-    generate_level2(hw_registry, scenario, hw_raw, f"{out_dir}/scenario_level2.puml")
-    print("\nAll 3 diagrams generated!")
+    os.makedirs(args.output_dir, exist_ok=True)
+    hw_registry, scenario, hw_raw = _load_data(args.hw, args.sc)
+
+    if args.format == "html":
+        from src.view.html_view import generate_top_html, generate_level1_html, generate_level2_html
+        generate_top_html(hw_registry, scenario, f"{args.output_dir}/scenario_top.html")
+        generate_level1_html(hw_registry, scenario, f"{args.output_dir}/scenario_level1.html")
+        generate_level2_html(hw_registry, scenario, hw_raw, f"{args.output_dir}/scenario_level2.html")
+        print("\nAll 3 HTML diagrams generated!")
+    else:
+        generate_top_view(hw_registry, scenario, f"{args.output_dir}/scenario_top.puml")
+        generate_level1(hw_registry, scenario, f"{args.output_dir}/scenario_level1.puml")
+        generate_level2(hw_registry, scenario, hw_raw, f"{args.output_dir}/scenario_level2.puml")
+        print("\nAll 3 PlantUML diagrams generated!")
