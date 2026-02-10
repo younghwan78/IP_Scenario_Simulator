@@ -106,7 +106,7 @@ ip_blocks:
     edges:
       # CSIS to PDP
       - src: "t_csis"
-        src_port: "COUTFIFO"
+        src_port: "IBUF"
         dst: "t_pdp"
         dst_port: "REORDER"
         type: "OTF"
@@ -287,29 +287,7 @@ ip_blocks:
         dst_port: "CINFIFO"
         type: "OTF"
 
-  # 8. YUVSC
-  - ip_settings:
-      hw: "YUVSC"
-      mode: "Normal"
-      inputs:
-        - port: "CINFIFO"
-          size: [0, 0, 4000, 3000]
-      outputs:
-        - port: "COUTFIFO"
-          size: [0, 0, 1920, 1080]
-    tasks:
-      - id: "t_yuvsc"
-        hw: "YUVSC"
-        description: "YUVSC"
-    edges:
-      # RGBP to YUVSC
-      - src: "t_rgbp"
-        src_port: "COUTFIFO"
-        dst: "t_yuvsc"
-        dst_port: "CINFIFO"
-        type: "OTF"
-
-  # 9. MLSC
+  # 8. MLSC
   - ip_settings:
       hw: "MLSC"
       mode: "Normal"
@@ -342,14 +320,14 @@ ip_blocks:
         hw: "MLSC"
         description: "MLSC"
     edges:
-      # YUVSC to MLSC
-      - src: "t_yuvsc"
+      # RGBP to MLSC
+      - src: "t_rgbp"
         src_port: "COUTFIFO"
         dst: "t_mlsc"
         dst_port: "CINFIFO"
         type: "OTF"
 
-  # 10. MTNR0
+  # 9. MTNR0
   - ip_settings:
       hw: "MTNR0"
       mode: "Normal"
@@ -373,7 +351,7 @@ ip_blocks:
         dst_port: "L0_RDMA"
         type: "M2M"
 
-  # 11. MTNR1
+  # 10. MTNR1
   - ip_settings:
       hw: "MTNR1"
       mode: "Normal"
@@ -430,7 +408,7 @@ ip_blocks:
         dst_port: "G4_RDMA"
         type: "M2M"
 
-  # 12. MSNR
+  # 11. MSNR
   - ip_settings:
       hw: "MSNR"
       mode: "Normal"
@@ -481,6 +459,28 @@ ip_blocks:
         dst_port: "G4_CINFIFO"
         type: "OTF"
 
+  # 12. YUVP
+  - ip_settings:
+      hw: "YUVSC"
+      mode: "Normal"
+      inputs:
+        - port: "CINFIFO"
+          size: [0, 0, 4000, 3000]
+      outputs:
+        - port: "COUTFIFO"
+          size: [0, 0, 1920, 1080]
+    tasks:
+      - id: "t_yuvp"
+        hw: "YUVP"
+        description: "YUVP"
+    edges:
+      # MSNR to YUVP
+      - src: "t_msnr"
+        src_port: "COUTFIFO"
+        dst: "t_yuvp"
+        dst_port: "CINFIFO"
+        type: "OTF"
+
   # 13. MCSC
   - ip_settings:
       hw: "MCSC"
@@ -502,8 +502,8 @@ ip_blocks:
         hw: "MCSC"
         description: "MCSC"
     edges:
-      # MSNR to MCSC
-      - src: "t_msnr"
+      # YUVP to MCSC
+      - src: "t_yuvp"
         src_port: "COUTFIFO"
         dst: "t_mcsc"
         dst_port: "CINFIFO"

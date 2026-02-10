@@ -49,6 +49,9 @@
     - name: "NFI_DEC"
       type: "CIN"
       latency: 5 #cycles
+    - name: "IBUF"
+      type: "Generic"
+      latency: 5 #cycles
     - name: "DEGAMMA"
       type: "Generic"
       latency: 2 #cycles
@@ -75,6 +78,8 @@
           COMP_BAYER_LOSSY: 0.5
   edges:
     - src: "NFI_DEC"
+      dst: "IBUF"
+    - src: "IBUF"
       dst: "DEGAMMA"
     - src: "DEGAMMA"
       dst: "sMCB"
@@ -82,7 +87,7 @@
       dst: "BNS"
     - src: "BNS"
       dst: "COUTFIFO"
-    - src: "BNS"
+    - src: "sMCB"
       dst: "CSIS_WDMA"
 #PDP
 - name: "PDP"
@@ -393,11 +398,13 @@
     - src: "CGRAS"
       dst: "CROP_DZOOM"
     - src: "CGRAS"
-      dst: "SPE_HIST"
-    - src: "SPE_HIST"
-      dst: "SPE_RGB_STAT_WDMA"
-    - src: "SPE_HIST"
-      dst: "SPE_Y_HIST_WDMA"
+      dst: "CDAF"
+    - src: "CDAF"
+      dst: "CDAF_WDMA"
+    - src: "CGRAS"
+      dst: "RGBHIST"
+    - src: "RGBHIST"
+      dst: "RGBHIST_WDMA"
     - src: "CGRAS"
       dst: "THSTAT_AWB"
     - src: "THSTAT_AWB"
@@ -417,51 +424,49 @@
     - src: "GTM"
       dst: "BLC"
     - src: "BLC"
+      dst: "DRC_CLCT"
+    - src: "DRC_CLCT"
+      dst: "DRC_CLCT_WDMA"
+    - src: "BLC"
       dst: "SDRC"
     - src: "SDRC"
       dst: "CCM9"
     - src: "CCM9"
       dst: "GAMMA_STAT"
     - src: "GAMMA_STAT"
-      dst: "RGB_TO_YUV"
-    - src: "RGB_TO_YUV"
-      dst: "MENR"
-    - src: "MENR"
-      dst: "EDGE_SCORE"
-    - src: "EDGE_SCORE"
-      dst: "DS_LME0"
-    - src: "DS_LME0"
-      dst: "DS_LME0_WDMA"
-    - src: "EDGE_SCORE"
-      dst: "DS_LME1"
-    - src: "DS_LME1"
-      dst: "DS_LME1_WDMA"
-    - src: "EDGE_SCORE"
-      dst: "CDAF"
-    - src: "CDAF"
-      dst: "CDAF_WDMA"
-    - src: "EDGE_SCORE"
-      dst: "RGBHIST"
-    - src: "RGBHIST"
-      dst: "RGBHIST_WDMA"
-    - src: "EDGE_SCORE"
-      dst: "DRC_CLCT"
-    - src: "DRC_CLCT"
-      dst: "DRC_CLCT_WDMA"
-    - src: "EDGE_SCORE"
+      dst: "SPE_HIST"
+    - src: "SPE_HIST"
+      dst: "SPE_RGB_STAT_WDMA"
+    - src: "SPE_HIST"
+      dst: "SPE_Y_HIST_WDMA"
+    - src: "GAMMA_STAT"
       dst: "DS_FDPIG"
     - src: "DS_FDPIG"
       dst: "DS_FDPIG_WDMA"
-    - src: "EDGE_SCORE"
+    - src: "GAMMA_STAT"
       dst: "DS_CAV"
     - src: "DS_CAV"
       dst: "DS_CAV_WDMA"
-    - src: "EDGE_SCORE"
+    - src: "GAMMA_STAT"
+      dst: "RGB_TO_YUV"
+    - src: "RGB_TO_YUV"
       dst: "DS_SAT"
     - src: "DS_SAT"
       dst: "SAT_Y_WDMA"
     - src: "DS_SAT"
       dst: "SAT_UV_WDMA"
+    - src: "RGB_TO_YUV"
+      dst: "DS_LME0"
+    - src: "DS_LME0"
+      dst: "MENR"
+    - src: "MENR"
+      dst: "DS_LME0_WDMA"
+    - src: "MENR"
+      dst: "DS_LME1"
+    - src: "DS_LME1"
+      dst: "DS_LME1_WDMA"
+    - src: "MENR"
+      dst: "EDGE_SCORE"
 
 #########################
 # Block BYRP
@@ -595,41 +600,6 @@
       dst: "COUTFIFO"
     - src: "COMPUTE"
       dst: "CROP_DNG_WDMA"
-
-#########################
-# Block YUVSC
-#########################
-#YUVSC
-- name: "YUVSC"
-  type: "IP"
-  ip_group: "YUVSC"
-  hierarchy_group: "ISP"
-  min_size: [64, 64]
-  max_size: [8192, 8192]
-  supports_crop: true
-  supports_scale: true
-  supported_modes:
-    - "Normal"
-  modules:
-    - name: "CINFIFO"
-      type: "CIN"
-      latency: 4 #cycles
-    - name: "COMPUTE"
-      type: "Generic"
-      latency: 8 #cycles
-    - name: "DS_YUVSC"
-      type: "Scaler"
-      latency: 8 #cycles
-    - name: "COUTFIFO"
-      type: "COUT"
-      latency: 4 #cycles
-  edges:
-    - src: "CINFIFO"
-      dst: "COMPUTE"
-    - src: "COMPUTE"
-      dst: "DS_YUVSC"
-    - src: "DS_YUVSC"
-      dst: "COUTFIFO"
 
 #########################
 # Block MLSC
@@ -877,6 +847,41 @@
       dst: "COUTFIFO"
 
 #########################
+# Block YUVP
+#########################
+#YUVP
+- name: "YUVP"
+  type: "IP"
+  ip_group: "YUVP"
+  hierarchy_group: "ISP"
+  min_size: [64, 64]
+  max_size: [8192, 8192]
+  supports_crop: true
+  supports_scale: true
+  supported_modes:
+    - "Normal"
+  modules:
+    - name: "CINFIFO"
+      type: "CIN"
+      latency: 4 #cycles
+    - name: "COMPUTE"
+      type: "Generic"
+      latency: 8 #cycles
+    - name: "DS_YUVP"
+      type: "Scaler"
+      latency: 8 #cycles
+    - name: "COUTFIFO"
+      type: "COUT"
+      latency: 4 #cycles
+  edges:
+    - src: "CINFIFO"
+      dst: "COMPUTE"
+    - src: "COMPUTE"
+      dst: "DS_YUVP"
+    - src: "DS_YUVP"
+      dst: "COUTFIFO"
+
+#########################
 # Block MCSC
 #########################
 #MCSC
@@ -940,49 +945,6 @@
       dst: "P3_WDMA"
     - src: "COMPUTE"
       dst: "P4_WDMA"
-
-# ISP Back-End (supports crop)
-# - name: "ISP_BE"
-#   type: "IP"
-#   ip_group: "BYRP"
-#   max_clock: 200000000
-#   min_size: [64, 64]
-#   max_size: [8192, 8192]
-#   supports_crop: true
-#   supports_scale: true
-#   supported_modes:
-#     - "default"
-#     - "power_saving"
-#   modules:
-#     - name: "TNR"
-#       type: "Generic"
-#       ppc: 2
-#     - name: "Crop0"
-#       type: "Crop"
-#       ppc: 2
-#       # crop_region -> scenario config
-#     - name: "RDMA_BE"
-#       type: "DMA"
-#       direction: "read"
-#       max_bandwidth: 25600000000
-#       multiple_outstanding: 16
-#       supported_compressions:
-#         - "AFBC"
-#         - "Linear"
-#       compression_ratios:
-#         AFBC: 0.6
-#         Linear: 1.0
-#     - name: "WDMA_BE"
-#       type: "DMA"
-#       direction: "write"
-#       max_bandwidth: 25600000000
-#       multiple_outstanding: 16
-#       supported_compressions:
-#         - "AFBC"
-#         - "Linear"
-#       compression_ratios:
-#         AFBC: 0.6
-#         Linear: 1.0
 
 # Video Encoder
 - name: "MFC"
