@@ -11,8 +11,6 @@ OTF paths are shown as thick arrows.
 import yaml
 import sys
 import os
-sys.path.insert(0, '.')
-from main import load_hw_config, create_hw_node, load_scenario_config, create_scenario, apply_scenario_settings
 from src.model.hw_nodes import IPNode, SensorNode
 from src.model.scenario import ConnectionType
 
@@ -73,6 +71,8 @@ skinparam package {
 
 
 def _load_data(hw_path, sc_path):
+    sys.path.insert(0, '.')
+    from main import load_hw_config, create_hw_node, load_scenario_config, create_scenario, apply_scenario_settings
     hw_config = load_hw_config(hw_path)
     hw_list = hw_config if isinstance(hw_config, list) else hw_config.get('hardware', [])
     hw_nodes = [create_hw_node(cfg) for cfg in hw_list]

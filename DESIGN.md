@@ -490,7 +490,8 @@ print(viewer.print_simulation_summary(results))
 │   ├── Scaler0 (ScalerModule, scale=0.50x0.50)
 │   └── Crop0 (CropModule, region=(0,0,1920,1080))
 ├── VENC (IPNode, 400MHz, PPC=1)
-└── DMA_Read (DMANode, MO=16, BW=25.6GB/s)
+└── ISP_FE (IPNode, Tar: 200MHz, PPC=4)
+    └── WDMA_FE (DMAModule, Write, BW=25.6GB/s, MO=16)
 ```
 
 ### 5.2 Monitor & Visualizer
@@ -508,12 +509,57 @@ classDiagram
     class Visualizer {
         +create_gantt_chart(df) Figure
         +create_gantt_chart_ms(df) Figure
+        +create_bw_chart(results, scenario) Figure
         +save_gantt(fig, path)
+        +export_perfetto_json(results, path)
         +show(fig)
     }
 
     Monitor --> Visualizer : provides data
 ```
+
+#### BW Chart
+
+Bandwidth Timeline Chart는 M2M 연결의 Read/Write BW를 시각화합니다:
+- **Top row**: Total Read BW + Total Write BW
+- **Per-IP rows**: IP별 Read/Write BW
+- DMA 모듈이 없는 경우 M2M edge의 port size (W×H×bitwidth) 와 task timing으로 BW를 자동 산출
+
+### 5.3 HTML Views (ELK.js)
+
+`html_view.py`에서 ELK.js 레이아웃 엔진을 사용한 인터랙티브 HTML 뷰를 생성합니다:
+- **Top View**: Hierarchy group 블록 (Sensor, ISP, CODEC, DPU)
+- **Level 1**: IP-level detail within hierarchy groups
+- **Level 2**: Module-level detail (DMA, Scaler, Crop 등)
+
+### 5.4 PlantUML Views
+
+`plantuml_view.py`에서 PlantUML 다이어그램을 생성합니다:
+- Top / Level 1 / Level 2 3단계 뷰
+- M2M: cylinder shape으로 포트 정보 (size/format/bitwidth/comp) 표시
+- OTF: thick arrow로 파이프라인 연결 표시
+
+### 5.5 Output Organization
+
+모든 출력 파일은 `{project}_{scenario}_` 접두사로 자동 명명됩니다:
+
+```
+output_view/                              # --view flag
+  {project}_{scenario}_top.html
+  {project}_{scenario}_level1.html
+  {project}_{scenario}_level2.html
+  {project}_{scenario}_top.puml
+  {project}_{scenario}_level1.puml
+  {project}_{scenario}_level2.puml
+
+output_simulation/                        # --gantt/--bw/--csv/--json flags
+  {project}_{scenario}_gantt.html         # Plotly CDN (~11KB)
+  {project}_{scenario}_bw.html            # Plotly CDN (~24KB)
+  {project}_{scenario}_results.csv
+  {project}_{scenario}_trace.json         # Perfetto format
+```
+
+HTML 파일은 `include_plotlyjs='cdn'`으로 생성되어 파일 크기가 4.8MB → ~11KB로 대폭 감소합니다.
 
 ---
 
@@ -843,12 +889,23 @@ def test_m2m_timing():
 
 ---
 
-## 10. Future Enhancements
+## 10. Recently Implemented Features
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| **Multi-Frame Pipelined Simulation** | ✅ Done | FPS 기반 프레임 간격으로 파이프라인 중첩 |
+| **DVFS Voltage Resolution** | ✅ Done | CSV 기반 DVFS 테이블 + ASV 그룹 전압 결정 |
+| **CSV-based HW Config** | ✅ Done | IP info/DVFS를 CSV로 관리 |
+| **BW Timeline Chart** | ✅ Done | M2M Read/Write BW 시각화 |
+| **Multi-Level HTML Views** | ✅ Done | ELK.js 기반 Top/L1/L2 인터랙티브 뷰 |
+| **PlantUML Views** | ✅ Done | 3단계 PlantUML 다이어그램 |
+| **CDN-based HTML** | ✅ Done | Plotly CDN으로 경량 HTML (4.8MB → 11KB) |
+| **Output Reorganization** | ✅ Done | output_view/ + output_simulation/ 분리, 자동 네이밍 |
+
+### Future Enhancements
 
 | Feature | Description | Priority |
 |---------|-------------|----------|
-| **Multi-Frame Simulation** | 연속 프레임 시뮬레이션 | High |
-| **DVFS Modeling** | Dynamic Voltage/Frequency Scaling | High |
 | **Memory BW Contention** | DRAM BW 경쟁 모델링 | Medium |
 | **Power State Transitions** | Clock gating, Power gating | Medium |
 | **GUI Dashboard** | Interactive visualization | Low |
@@ -860,9 +917,18 @@ def test_m2m_timing():
 
 | File | Description |
 |------|-------------|
-| [hw_nodes.py](file:///e:/10_Codes/23_MMIP_Scenario_simulation2/src/model/hw_nodes.py) | HWNode hierarchy |
-| [modules.py](file:///e:/10_Codes/23_MMIP_Scenario_simulation2/src/model/modules.py) | Module system |
-| [scenario.py](file:///e:/10_Codes/23_MMIP_Scenario_simulation2/src/model/scenario.py) | ScenarioGraph |
-| [simulator.py](file:///e:/10_Codes/23_MMIP_Scenario_simulation2/src/controller/simulator.py) | SoCSimulator |
-| [text_view.py](file:///e:/10_Codes/23_MMIP_Scenario_simulation2/src/view/text_view.py) | TextViewer |
-| [main.py](file:///e:/10_Codes/23_MMIP_Scenario_simulation2/main.py) | Entry point |
+| `main.py` | Entry point, CLI, output orchestration |
+| `src/model/hw_nodes.py` | HWNode hierarchy (Sensor, IP, Processor, Memory) |
+| `src/model/modules.py` | Module system (Scaler, Crop, DMA, Generic) |
+| `src/model/scenario.py` | ScenarioGraph (DAG, tasks, edges) |
+| `src/model/hw_info.py` | CSV-based HW info & DVFS database |
+| `src/model/hw_resolver.py` | DVFS voltage/clock resolution |
+| `src/model/tokens.py` | Token-based dataflow model |
+| `src/controller/simulator.py` | SoCSimulator (SimPy engine) |
+| `src/controller/performance_analyzer.py` | Throughput, FPS, utilization |
+| `src/controller/power_analyzer.py` | Energy, power breakdown |
+| `src/controller/timing_analyzer.py` | Latency, critical path |
+| `src/view/text_view.py` | TextViewer (terminal output) |
+| `src/view/visualizer.py` | Gantt chart, BW chart, Perfetto export |
+| `src/view/html_view.py` | Interactive HTML views (ELK.js) |
+| `src/view/plantuml_view.py` | PlantUML diagram views |

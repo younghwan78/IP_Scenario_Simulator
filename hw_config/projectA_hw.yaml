@@ -96,7 +96,7 @@
   hierarchy_group: "ISP"
   min_size: [64, 64]
   max_size: [8192, 8192]
-  supports_crop: false
+  supports_crop: true
   supports_scale: false
   supported_modes:
     - "Normal"

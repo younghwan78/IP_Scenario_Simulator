@@ -286,7 +286,7 @@ class IPNode(HWNode):
     latency: float = 0.0
 
     # Domain/hierarchy grouping
-    ip_group: str = ""           # Clock/voltage domain group
+    ip_group: str = ""           # HW block group (for view/diagram)
     hierarchy_group: str = ""    # Hierarchy-level diagram grouping
 
     # Intra-IP module connectivity
@@ -295,6 +295,26 @@ class IPNode(HWNode):
     # Clock optimization results
     required_freq: float = 0.0  # Calculated required frequency
     target_freq: float = 0.0    # Actual configured frequency
+
+    # ── CSV-based attributes (set by HWResolver) ──────────────
+    unit_power: float = 0.0      # mW/MP@30fps (from info.csv)
+    idc: float = 0.0             # idle power coefficient (from info.csv)
+    vdd: str = ""                # voltage domain (from info.csv)
+    dvfs_group: str = ""         # DVFS table reference (from info.csv DVFS column)
+    active_mode: str = "Normal"  # current operating mode
+
+    # Resolved values (set by HWResolver)
+    set_clock: float = 0.0       # MHz, actual clock from DVFS table
+    set_voltage: float = 0.0     # mV, final voltage after VDD alignment
+    required_clock: float = 0.0  # MHz, required clock with sw_margin
+    required_voltage: float = 0.0  # mV
+    dvfs_level: int = -1         # selected DVFS level
+
+    # Strategy callbacks for extensible calculation
+    # See hw_resolver.py docstring for extension examples
+    _power_calculator: Optional[Any] = field(default=None, repr=False)
+    _runtime_calculator: Optional[Any] = field(default=None, repr=False)
+    _bw_calculator: Optional[Any] = field(default=None, repr=False)
 
     def add_module(self, module: 'Module') -> 'IPNode':
         """
@@ -315,7 +335,12 @@ class IPNode(HWNode):
         """
         Calculate processing time for pixel workload.
 
-        Formula: pixels / (clock_freq * ppc * efficiency)
+        When CSV data is loaded (set_clock > 0):
+            pixels / (set_clock_hz * ppc)
+        Fallback (legacy):
+            pixels / (clock_freq * ppc * efficiency)
+
+        Custom runtime calculation can be set via _runtime_calculator.
 
         Args:
             workload: Dict with 'pixels' key or 'width'/'height' keys
@@ -323,17 +348,66 @@ class IPNode(HWNode):
         Returns:
             Processing time in seconds
         """
-        # Get pixels from workload - support both 'pixels' and 'width/height' formats
+        # Custom calculator override
+        if self._runtime_calculator is not None:
+            return self._runtime_calculator(self, workload)
+
+        # Get pixels from workload
         pixels = workload.get('pixels', 0)
         if pixels <= 0:
-            # Try to calculate from width and height
             width = workload.get('width', 0)
             height = workload.get('height', 0)
             pixels = width * height
 
-        if pixels <= 0 or self.clock_freq <= 0:
+        if pixels <= 0:
+            return 0.0
+
+        # CSV-based: use set_clock (MHz → Hz)
+        if self.set_clock > 0:
+            clock_hz = self.set_clock * 1e6
+            if clock_hz <= 0 or self.ppc <= 0:
+                return 0.0
+            return pixels / (clock_hz * self.ppc)
+
+        # Legacy fallback
+        if self.clock_freq <= 0:
             return 0.0
         return pixels / (self.clock_freq * self.ppc * self.efficiency)
+
+    def get_power_consumption(self, duration: float) -> float:
+        """
+        Calculate power consumption (energy) for given duration.
+
+        When CSV data is loaded (unit_power > 0):
+            Uses _power_calculator or default CSV formula.
+        Fallback (legacy):
+            (power_static + power_dynamic * utilization) * duration
+
+        Args:
+            duration: Processing duration in seconds
+
+        Returns:
+            Energy consumed in mJ
+        """
+        # Custom calculator override
+        if self._power_calculator is not None:
+            return self._power_calculator(self, duration)
+
+        # CSV-based power (simple estimate using unit_power * clock * duration)
+        if self.unit_power > 0 and self.set_clock > 0:
+            # Approximate: unit_power [mW/MP@30fps] is already factored in
+            # by HWResolver via ResolvedIPConfig.get_active_power()
+            # Here we just use active_power_mW * duration_s = energy_mJ
+            # For accurate power, use HWResolver.get_exploration_report()
+            from .hw_resolver import REFERENCE_VOLTAGE_MV, REFERENCE_FPS
+            v_scale = (self.set_voltage / REFERENCE_VOLTAGE_MV) ** 2 if self.set_voltage > 0 else 1.0
+            active_mw = self.unit_power * self.set_clock * v_scale  # approximate
+            idle_mw = self.idc * v_scale if self.idc > 0 else 0.0
+            return (active_mw + idle_mw) * duration
+
+        # Legacy fallback
+        active_power = self.power_static + (self.power_dynamic * self.utilization)
+        return active_power * duration
 
     def get_module(self, name: str) -> Optional['Module']:
         """Get a module by name."""

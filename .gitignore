@@ -44,12 +44,17 @@ htmlcov/
 .nox/
 
 # Output files
-*.csv
 *.html
 *.png
 *.pdf
+*.puml
 output/
+output_view/
+output_simulation/
 results/
+
+# Keep hw_config CSV files tracked
+!hw_config/*.csv
 
 # OS
 .DS_Store
@@ -59,3 +64,4 @@ Thumbs.db
 # Logs
 *.log
 trace.json
+*.patch

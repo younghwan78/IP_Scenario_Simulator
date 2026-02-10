@@ -7,81 +7,133 @@ SimPy 기반의 Discrete Event Simulator로 Android SoC의 Multimedia IP 성능/
 - **SimPy 기반 Event-Driven Simulation**: 이벤트 중심의 정확한 타이밍 시뮬레이션
 - **NetworkX DAG Modeling**: Task 의존성 그래프 기반 시나리오 모델링
 - **OTF/M2M 데이터 흐름**: 파이프라인(OTF)과 메모리 기반(M2M) 연결 지원
+- **Multi-Frame Pipelined Simulation**: FPS 기반 프레임 간격으로 파이프라인 중첩 지원
+- **CSV-based HW Config**: IP 성능 정보와 DVFS 테이블을 CSV로 관리
+- **DVFS Voltage Resolution**: ASV 그룹 기반 동적 전압/주파수 최적화
+- **Multi-Level Views**: Top/Level1/Level2 뷰를 HTML(ELK.js) 및 PlantUML로 생성
+- **BW Timeline Chart**: M2M 연결의 Read/Write Bandwidth 시각화
+- **CDN-based HTML**: Plotly CDN으로 경량 HTML 출력 (4.8MB → 11KB)
 - **MVC Architecture**: Model-View-Controller 패턴으로 확장성 확보
 - **Multiple Analyzers**: Performance, Power, Timing 분석 분리
-- **Flexible Configuration**: HW와 Scenario YAML 파일 분리
 
 ## Quick Start
 
 ### Installation
 
 ```bash
-# Clone repository
 cd e:\10_Codes\23_MMIP_Scenario_simulation2
 
-# Create virtual environment
 python -m venv venv
-
-# Activate (Windows)
 .\venv\Scripts\activate
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-### Run Demo
+### Run Simulation (all outputs)
 
 ```bash
-python main.py --demo
+python main.py -hw hw_config/projectA_hw.yaml \
+               -sc scenario_config/projectA_FHD30_recording_scenario.yaml \
+               --hw-info hw_config/projectA_info.csv \
+               --hw-dvfs hw_config/projectA_dvfs.csv
 ```
 
-### Run with Config Files
+### Selective Output
 
 ```bash
-python main.py --hw-config hw_config/sample_hw.yaml \
-               --scenario-config scenario_config/sample_scenario.yaml
-```
+# View only (HTML + PlantUML, no simulation)
+python main.py -hw ... -sc ... --hw-info ... --hw-dvfs ... --view --graph-only
 
-### Export Results
+# Gantt + CSV only
+python main.py -hw ... -sc ... --hw-info ... --hw-dvfs ... --gantt --csv
 
-```bash
-```bash
-python main.py --demo --output-csv results.csv --output-gantt gantt.html --output-json trace.json
+# BW chart only
+python main.py -hw ... -sc ... --hw-info ... --hw-dvfs ... --bw
 ```
 
 ## Command Line Options
 
-| Option | Shorthand | Description |
-|--------|-----------|-------------|
-| `--hw-config` | `-hw` | **Required.** Path to hardware configuration YAML file. |
-| `--scenario-config` | `-sc` | **Required.** Path to scenario configuration YAML file. |
-| `--demo` | | Run demonstration with built-in sample configuration. |
-| `--output-csv` | | Export simulation results to CSV file. |
-| `--output-gantt` | | Export Gantt chart to HTML (requires Plotly). |
-| `--output-json` | | Export trace data to Perfetto JSON format for detailed analysis. |
-| `--help` | `-h` | Show help message and exit. |
+| Option | Description |
+|--------|-------------|
+| `-hw`, `--hw-config` | **Required.** Hardware configuration YAML |
+| `-sc`, `--scenario-config` | **Required.** Scenario configuration YAML |
+| `--hw-info` | CSV file with IP performance info (PPC, clock, etc.) |
+| `--hw-dvfs` | CSV file with DVFS voltage tables |
+| `--asv-group` | ASV group for DVFS lookup (default: from scenario) |
+| `--num-frames` | Number of frames for multi-frame simulation |
+| `--graph-only` | Show graph structure and exit (no simulation) |
+| `--demo` | Run built-in demo |
+
+### Output Flags
+
+| Flag | Description |
+|------|-------------|
+| `--view` | Generate HTML + PlantUML view files (Top/Level1/Level2) |
+| `--gantt` | Generate Gantt chart HTML |
+| `--bw` | Generate Bandwidth timeline chart HTML |
+| `--csv` | Export simulation results to CSV |
+| `--json` | Export trace data to Perfetto JSON format |
+| `--output-view-dir` | Output directory for views (default: `output_view`) |
+| `--output-sim-dir` | Output directory for simulation (default: `output_simulation`) |
+
+> **Default behavior**: No flags specified → generate ALL outputs.
+
+## Output Structure
+
+```
+output_view/
+  {project}_{scenario}_top.html         # Top-level block diagram (ELK.js)
+  {project}_{scenario}_level1.html      # IP-level detail (ELK.js)
+  {project}_{scenario}_level2.html      # Module-level detail (ELK.js)
+  {project}_{scenario}_top.puml         # PlantUML top view
+  {project}_{scenario}_level1.puml      # PlantUML level 1
+  {project}_{scenario}_level2.puml      # PlantUML level 2
+
+output_simulation/
+  {project}_{scenario}_gantt.html       # Gantt chart (Plotly CDN, ~11KB)
+  {project}_{scenario}_bw.html          # BW timeline chart (Plotly CDN)
+  {project}_{scenario}_results.csv      # Simulation results
+  {project}_{scenario}_trace.json       # Perfetto trace format
+```
 
 ## Project Structure
 
 ```
 ├── src/
-│   ├── model/           # HW nodes, Modules, Scenario graph
-│   ├── controller/      # Simulator, Analyzers
-│   └── view/            # TextViewer, Visualizer
-├── hw_config/           # Hardware configurations
-├── scenario_config/     # Scenario configurations
-├── tests/               # Unit & Integration tests
-├── main.py              # Entry point
-├── DESIGN.md            # Design document
-└── requirements.txt     # Dependencies
+│   ├── model/
+│   │   ├── hw_nodes.py       # HWNode hierarchy (Sensor, IP, Processor, Memory)
+│   │   ├── modules.py        # Module system (Scaler, Crop, DMA, Generic)
+│   │   ├── scenario.py       # ScenarioGraph (DAG, tasks, edges)
+│   │   ├── hw_info.py        # CSV-based HW info & DVFS database
+│   │   ├── hw_resolver.py    # DVFS voltage/clock resolution
+│   │   └── tokens.py         # Token-based dataflow model
+│   ├── controller/
+│   │   ├── simulator.py      # SoCSimulator (SimPy engine)
+│   │   ├── performance_analyzer.py
+│   │   ├── power_analyzer.py
+│   │   └── timing_analyzer.py
+│   └── view/
+│       ├── text_view.py      # TextViewer (terminal output)
+│       ├── visualizer.py     # Gantt/BW chart (Plotly)
+│       ├── html_view.py      # HTML views (ELK.js)
+│       └── plantuml_view.py  # PlantUML views
+├── hw_config/
+│   ├── projectA_hw.yaml      # Hardware configuration
+│   ├── projectA_info.csv     # IP performance info
+│   └── projectA_dvfs.csv     # DVFS voltage tables
+├── scenario_config/
+│   └── projectA_FHD30_recording_scenario.yaml
+├── tests/                    # Unit & Integration tests (128 tests)
+├── main.py                   # Entry point
+├── DESIGN.md                 # Design document
+└── requirements.txt          # Dependencies
 ```
 
 ## HW Node Types
 
 | Type | Description | Key Parameters |
 |------|-------------|----------------|
-| **IPNode** | Pixel processing (ISP, Codec) | `ppc`, `efficiency` |
-| **DMANode** | Memory access | `bandwidth`, `multiple_outstanding` |
+| **SensorNode** | Image sensor | `fps`, `v_valid_time`, `sensor_mode` |
+| **IPNode** | Pixel processing (ISP, Codec) | `ppc`, `efficiency`, `clock_freq` |
 | **ProcessorNode** | CPU/DSP/NPU | `cycles_per_op`, `num_cores` |
 | **MemoryNode** | DRAM/SRAM | `bandwidth`, `capacity` |
 
@@ -92,61 +144,27 @@ python main.py --demo --output-csv results.csv --output-gantt gantt.html --outpu
 | **M2M** | Memory-to-Memory (Sequential) | `Time(A) + Time(B)` |
 | **OTF** | On-The-Fly (Pipelined) | `max(Time(A), Time(B))` |
 
-## Example Output
+## CSV-based HW Configuration
 
-```text
-[Clock Optimization]
-Optimizing OTF Group [t_isp_fe, t_sensor]
-  Constraint: vValid=11.80ms, Req Throughput=702.92Mpps
-  ISP_FE: Req=185.0MHz -> Set=200.0MHz
+Performance info and DVFS tables are managed via CSV files:
 
-[SoC Hardware Hierarchy]
-├── Sensor_Ext (SensorNode, 3840x2160@30fps, mode=4K_30fps, vValid=11.80ms)
-├── ISP_FE (IPNode, Tar: 200MHz [Req: 185MHz], PPC=4)
-│   ├── Scaler0 (ScalerModule, scale=0.50x0.50, 3840x2160 → 1920x1080)
-│   └── ...
-├── VENC (IPNode, 400MHz, PPC=1)
+```bash
+# projectA_info.csv — IP performance parameters
+IP_Name,Type,PPC,Efficiency,Max_Clock,...
 
-[Scenario: 4K_Recording]
-Topological Order:
-  t_sensor ══► t_isp_fe[Scaler0] ──→ t_isp_be[Crop0] ──→ t_venc
-
-[Simulation Results: 4K_Recording]
-Total Time: 24.693 ms
-Total Tasks: 4
-
-Task Execution Timeline:
---------------------------------------------------------------------------------
-Task ID              Hardware        Start (ms)   End (ms)     Duration (ms)
---------------------------------------------------------------------------------
-t_isp_fe             ISP_FE          0.000        10.914       10.914
-...
-
-Timing Diagram (ASCII Gantt):
---------------------------------------------------------------------------------
-Scale: 62 chars = 24.7 ms (0.40 ms/char)
-                | 0.............................................24.7ms
-ISP_FE          | ####################### t_isp_fe (0.0-10.9ms)
-Sensor_Ext      | ####################### t_sensor (0.0-10.9ms)
-...
---------------------------------------------------------------------------------
+# projectA_dvfs.csv — DVFS voltage/frequency tables
+Domain,Level,Frequency,Voltage_ASV0,...,Voltage_ASV15
 ```
 
 ## Testing
 
 ```bash
-# Run all tests
+# Run all tests (128 tests)
 pytest tests/ -v
 
-# Run specific test file
-pytest tests/test_model.py -v
+# Quick run
+pytest tests/ -q
 ```
-
-## Documentation
-
-- [DESIGN.md](DESIGN.md) - Detailed design document
-- [hw_config/sample_hw.yaml](hw_config/sample_hw.yaml) - Sample HW configuration
-- [scenario_config/sample_scenario.yaml](scenario_config/sample_scenario.yaml) - Sample scenario
 
 ## Dependencies
 
@@ -156,6 +174,10 @@ pytest tests/test_model.py -v
 - Pandas >= 2.0
 - Plotly >= 5.0
 - PyYAML >= 6.0
+
+## Documentation
+
+- [DESIGN.md](DESIGN.md) - Detailed design document
 
 ## License
 

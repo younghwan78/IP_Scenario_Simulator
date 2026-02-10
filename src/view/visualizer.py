@@ -394,6 +394,10 @@ class Visualizer:
             })
 
         if not dma_records:
+            # Fallback: derive BW from M2M edge port sizes and task timing
+            dma_records = self._derive_bw_from_m2m(results, scenario)
+
+        if not dma_records:
             print("No DMA transfer data found for BW chart.")
             return None
 
@@ -494,6 +498,143 @@ class Visualizer:
 
         return fig
 
+    def _derive_bw_from_m2m(self, results, scenario) -> list:
+        """Derive BW records from M2M edges using port sizes and task timing.
+        
+        For each M2M edge, compute data size from port info (width × height × bitwidth/8)
+        and duration from the source task's processing time.
+        """
+        from ..model.scenario import ConnectionType
+        
+        # Build lookup: task_id → TaskResult (use frame 0)
+        task_map = {}
+        for r in results.task_results:
+            if r.frame_id == 0:
+                task_map[r.task_id] = r
+        
+        ip_settings = getattr(scenario, '_ip_settings', {})
+        records = []
+        
+        for src_id, dst_id, edge_data in scenario.graph.edges(data=True):
+            conn_type = edge_data.get('conn_type', ConnectionType.M2M)
+            if conn_type != ConnectionType.M2M:
+                continue
+            
+            port_pairs = edge_data.get('port_pairs', [])
+            src_result = task_map.get(src_id)
+            dst_result = task_map.get(dst_id)
+            
+            if not src_result or not dst_result:
+                continue
+            
+            # Get port info from ip_settings
+            src_settings = ip_settings.get(src_id, {})
+            dst_settings = ip_settings.get(dst_id, {})
+            src_outputs = {o.get('port', ''): o for o in src_settings.get('outputs', [])}
+            dst_inputs = {i.get('port', ''): i for i in dst_settings.get('inputs', [])}
+            
+            for sp, dp in (port_pairs if port_pairs and port_pairs[0][0] != 'output' 
+                           else [('output', 'input')]):
+                # Find port info to compute data size
+                port_info = src_outputs.get(sp) or dst_inputs.get(dp) or {}
+                sz = port_info.get('size', [])
+                bitwidth = port_info.get('bitwidth', 8)
+                comp_ratio = port_info.get('comp_ratio', 1.0)
+                if port_info.get('comp') != 'enable':
+                    comp_ratio = 1.0
+                
+                if len(sz) >= 4 and sz[2] > 0 and sz[3] > 0:
+                    # Data size in bytes
+                    data_size = sz[2] * sz[3] * (bitwidth / 8) * comp_ratio
+                else:
+                    continue
+                
+                # Write: src task writes at the end of its processing
+                w_duration = src_result.duration
+                if w_duration > 0:
+                    w_bw = (data_size / w_duration) / 1e9  # GB/s
+                    port_label = sp if sp != 'output' else f"{src_result.hw_name}_WDMA"
+                    records.append({
+                        'start': src_result.start_time,
+                        'end': src_result.end_time,
+                        'bw_gbps': w_bw,
+                        'direction': 'Write',
+                        'parent_ip': src_result.hw_name,
+                        'dma_name': port_label,
+                        'frame_id': 0,
+                    })
+                
+                # Read: dst task reads at the start of its processing
+                r_duration = dst_result.duration
+                if r_duration > 0:
+                    r_bw = (data_size / r_duration) / 1e9  # GB/s
+                    port_label = dp if dp != 'input' else f"{dst_result.hw_name}_RDMA"
+                    records.append({
+                        'start': dst_result.start_time,
+                        'end': dst_result.end_time,
+                        'bw_gbps': r_bw,
+                        'direction': 'Read',
+                        'parent_ip': dst_result.hw_name,
+                        'dma_name': port_label,
+                        'frame_id': 0,
+                    })
+        
+        # Add multi-frame data if available
+        if records:
+            num_frames = max(r.frame_id for r in results.task_results) + 1
+            if num_frames > 1:
+                base_records = list(records)
+                for frame_id in range(1, num_frames):
+                    for r in results.task_results:
+                        if r.frame_id != frame_id:
+                            continue
+                    # Re-derive for other frames
+                    for src_id, dst_id, edge_data in scenario.graph.edges(data=True):
+                        if edge_data.get('conn_type', ConnectionType.M2M) != ConnectionType.M2M:
+                            continue
+                        port_pairs = edge_data.get('port_pairs', [])
+                        # Find frame-specific results
+                        src_r = next((r for r in results.task_results 
+                                      if r.task_id == src_id and r.frame_id == frame_id), None)
+                        dst_r = next((r for r in results.task_results 
+                                      if r.task_id == dst_id and r.frame_id == frame_id), None)
+                        if not src_r or not dst_r:
+                            continue
+                        src_settings = ip_settings.get(src_id, {})
+                        dst_settings = ip_settings.get(dst_id, {})
+                        src_outputs = {o.get('port', ''): o for o in src_settings.get('outputs', [])}
+                        dst_inputs = {i.get('port', ''): i for i in dst_settings.get('inputs', [])}
+                        for sp, dp in (port_pairs if port_pairs and port_pairs[0][0] != 'output' 
+                                       else [('output', 'input')]):
+                            port_info = src_outputs.get(sp) or dst_inputs.get(dp) or {}
+                            sz = port_info.get('size', [])
+                            bitwidth = port_info.get('bitwidth', 8)
+                            comp_ratio = port_info.get('comp_ratio', 1.0)
+                            if port_info.get('comp') != 'enable':
+                                comp_ratio = 1.0
+                            if len(sz) >= 4 and sz[2] > 0 and sz[3] > 0:
+                                data_size = sz[2] * sz[3] * (bitwidth / 8) * comp_ratio
+                            else:
+                                continue
+                            if src_r.duration > 0:
+                                records.append({
+                                    'start': src_r.start_time, 'end': src_r.end_time,
+                                    'bw_gbps': (data_size / src_r.duration) / 1e9,
+                                    'direction': 'Write', 'parent_ip': src_r.hw_name,
+                                    'dma_name': sp if sp != 'output' else f"{src_r.hw_name}_WDMA",
+                                    'frame_id': frame_id,
+                                })
+                            if dst_r.duration > 0:
+                                records.append({
+                                    'start': dst_r.start_time, 'end': dst_r.end_time,
+                                    'bw_gbps': (data_size / dst_r.duration) / 1e9,
+                                    'direction': 'Read', 'parent_ip': dst_r.hw_name,
+                                    'dma_name': dp if dp != 'input' else f"{dst_r.hw_name}_RDMA",
+                                    'frame_id': frame_id,
+                                })
+        
+        return records
+
     def save_gantt(self, fig: 'go.Figure', path: str) -> None:
         """
         Save Gantt chart to file.
@@ -507,7 +648,7 @@ class Visualizer:
             return
 
         if path.endswith('.html'):
-            fig.write_html(path)
+            fig.write_html(path, include_plotlyjs='cdn')
         else:
             try:
                 fig.write_image(path)
@@ -515,7 +656,7 @@ class Visualizer:
                 print(f"Error saving image: {e}")
                 # Fallback to HTML
                 html_path = path.rsplit('.', 1)[0] + '.html'
-                fig.write_html(html_path)
+                fig.write_html(html_path, include_plotlyjs='cdn')
                 print(f"Saved as HTML instead: {html_path}")
 
     def show(self, fig: 'go.Figure') -> None:

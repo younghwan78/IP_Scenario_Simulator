@@ -3,10 +3,12 @@ Main entry point for SoC Multimedia Architecture Simulator.
 
 Usage:
     python main.py [--hw-config PATH] [--scenario-config PATH]
+                   [--hw-info PATH] [--hw-dvfs PATH] [--asv-group N]
 """
 
 import argparse
 import io
+import os
 import sys
 from pathlib import Path
 from typing import Dict
@@ -623,66 +625,103 @@ def main():
         help='Only build and display graph structure (no simulation)'
     )
     parser.add_argument(
-        '--output-csv',
-        type=str,
-        default=None,
-        help='Export simulation results to CSV file'
-    )
-    parser.add_argument(
-        '--output-gantt',
-        type=str,
-        default=None,
-        help='Export Gantt chart visualization to HTML file (requires Plotly)'
-    )
-    parser.add_argument(
-        '--output-json',
-        type=str,
-        default=None,
-        help='Export trace data to Perfetto JSON format for detailed analysis'
-    )
-    parser.add_argument(
-        '--output-bw',
-        type=str,
-        default=None,
-        help='Export Bandwidth timeline chart to HTML file (requires Plotly)'
-    )
-    parser.add_argument(
         '--num-frames', '-n',
         type=int,
         default=None,
         help='Number of frames to simulate (overrides scenario config, default: 1)'
     )
+    parser.add_argument(
+        '--hw-info',
+        type=str,
+        default=None,
+        help='Path to project info CSV (e.g., hw_config/projectA_info.csv)'
+    )
+    parser.add_argument(
+        '--hw-dvfs',
+        type=str,
+        default=None,
+        help='Path to project DVFS CSV (e.g., hw_config/projectA_dvfs.csv)'
+    )
+    parser.add_argument(
+        '--asv-group',
+        type=int,
+        default=None,
+        help='ASV group for DVFS voltage lookup (overrides scenario config, default: 4)'
+    )
+    # ── Output selection flags ──
+    # Default (no flags) = generate ALL outputs
+    # If any flag specified, generate only those outputs
+    parser.add_argument(
+        '--view', action='store_true',
+        help='Generate HTML view files (Top/Level1/Level2)'
+    )
+    parser.add_argument(
+        '--gantt', action='store_true',
+        help='Generate Gantt chart HTML'
+    )
+    parser.add_argument(
+        '--bw', action='store_true',
+        help='Generate Bandwidth timeline chart HTML'
+    )
+    parser.add_argument(
+        '--csv', action='store_true',
+        help='Export simulation results to CSV'
+    )
+    parser.add_argument(
+        '--json', action='store_true',
+        help='Export trace data to Perfetto JSON format'
+    )
+    parser.add_argument(
+        '--output-view-dir',
+        type=str,
+        default='output_view',
+        help='Directory for HTML view outputs (default: output_view)'
+    )
+    parser.add_argument(
+        '--output-sim-dir',
+        type=str,
+        default='output_simulation',
+        help='Directory for simulation outputs (default: output_simulation)'
+    )
 
     args = parser.parse_args()
+
+    # Determine output flags: default (no flags) = all outputs
+    any_flag = args.view or args.gantt or args.bw or args.csv or args.json
+    do_view = args.view or (not any_flag)
+    do_gantt = args.gantt or (not any_flag)
+    do_bw = args.bw or (not any_flag)
+    do_csv = args.csv or (not any_flag)
+    do_json = args.json or (not any_flag)
 
     if args.demo or (args.hw_config is None and args.scenario_config is None):
         # Run demo mode
         results = run_demo()
 
         # Export if requested
-        if args.output_csv or args.output_gantt:
-            monitor = Monitor()
-            monitor.from_simulation_results(results)
+        monitor = Monitor()
+        monitor.from_simulation_results(results)
 
-            if args.output_csv:
-                monitor.export_csv(args.output_csv)
-                print(f"\nResults exported to: {args.output_csv}")
+        os.makedirs(args.output_sim_dir, exist_ok=True)
 
-            if args.output_gantt:
-                visualizer = Visualizer()
-                df = monitor.to_dataframe()
-                fig = visualizer.create_gantt_chart_ms(df, title=results.scenario_name)
-                if fig:
-                    visualizer.save_gantt(fig, args.output_gantt)
-                    print(f"Gantt chart saved to: {args.output_gantt}")
+        if do_csv:
+            csv_path = os.path.join(args.output_sim_dir, 'demo_results.csv')
+            monitor.export_csv(csv_path)
+            print(f"\nResults exported to: {csv_path}")
 
-        if args.output_json:
+        if do_gantt:
             visualizer = Visualizer()
-            visualizer.export_perfetto_json(results, args.output_json)
+            df = monitor.to_dataframe()
+            fig = visualizer.create_gantt_chart_ms(df, title=results.scenario_name)
+            if fig:
+                gantt_path = os.path.join(args.output_sim_dir, 'demo_gantt.html')
+                visualizer.save_gantt(fig, gantt_path)
+                print(f"Gantt chart saved to: {gantt_path}")
 
-        # Note: BW chart not available in demo mode (no scenario object)
-        if args.output_bw:
-            print("Warning: BW chart export is not available in demo mode. Use --hw-config and --scenario-config.")
+        if do_json:
+            visualizer = Visualizer()
+            json_path = os.path.join(args.output_sim_dir, 'demo_trace.json')
+            visualizer.export_perfetto_json(results, json_path)
 
         return
 
@@ -695,6 +734,8 @@ def main():
         else:
             hw_list = hw_config.get('hardware', [])
         hw_nodes = [create_hw_node(cfg) for cfg in hw_list]
+        # Keep raw config for Level2 HTML view (module info)
+        hw_raw = {item['name']: item for item in hw_list}
     else:
         print("Error: --hw-config required when not in demo mode")
         return
@@ -710,7 +751,75 @@ def main():
     hw_registry = {node.name: node for node in hw_nodes}
     apply_scenario_settings(hw_registry, scenario_config)
 
+    # ── Derive output prefix: {project}_{scenario}_ ──
+    # Project name from hw_config filename (e.g., projectA_hw.yaml → projectA)
+    hw_basename = os.path.splitext(os.path.basename(args.hw_config))[0]
+    project_name = hw_basename.replace('_hw', '')
+    scenario_name = scenario.name.replace(' ', '_')
+    output_prefix = f"{project_name}_{scenario_name}_"
+
+    # ── CSV-based HW Info Integration ──────────────────────────
+    resolved_configs = None
+    if args.hw_info and args.hw_dvfs:
+        from src.model.hw_info import create_hw_info_db
+        from src.model.hw_resolver import HWResolver
+
+        print("\n[CSV HW Config Loading]")
+        hw_info_db = create_hw_info_db(args.hw_info, args.hw_dvfs)
+        print(f"  Project: {hw_info_db.project_name}")
+        print(f"  IPs loaded: {len(hw_info_db.ip_infos)}")
+        print(f"  DVFS tables loaded: {len(hw_info_db.dvfs_tables)} "
+              f"({', '.join(hw_info_db.dvfs_tables.keys())})")
+
+        # Validate: all IPs in hw_registry must exist in info.csv
+        validation_errors = hw_info_db.validate_against_hw(hw_registry)
+        if validation_errors:
+            print("\n[Error] CSV validation failed:")
+            for err in validation_errors:
+                print(f"  - {err}")
+            sys.exit(1)
+        print("  Validation: PASSED")
+
+        # Resolve DVFS/Voltage
+        scenario_data = scenario_config.get('scenario', scenario_config)
+        asv_group = args.asv_group or scenario_data.get('asv_group', 4)
+        resolver = HWResolver(hw_info_db, asv_group=asv_group)
+        resolved_configs = resolver.resolve_scenario(
+            hw_registry, scenario, scenario_config
+        )
+        resolver.apply_to_hw(hw_registry, resolved_configs)
+
+        # Print exploration report
+        print(resolver.get_exploration_report(resolved_configs))
+    elif args.hw_info or args.hw_dvfs:
+        print("Warning: Both --hw-info and --hw-dvfs must be specified together. "
+              "Skipping CSV-based HW config.")
+
     text_viewer = TextViewer()
+
+    # ── Generate HTML views ──
+    if do_view:
+        from src.view.html_view import (
+            generate_top_html, generate_level1_html, generate_level2_html
+        )
+        from src.view.plantuml_view import (
+            generate_top_view, generate_level1, generate_level2
+        )
+        os.makedirs(args.output_view_dir, exist_ok=True)
+        # HTML views
+        top_path = os.path.join(args.output_view_dir, f"{output_prefix}top.html")
+        l1_path = os.path.join(args.output_view_dir, f"{output_prefix}level1.html")
+        l2_path = os.path.join(args.output_view_dir, f"{output_prefix}level2.html")
+        generate_top_html(hw_registry, scenario, top_path)
+        generate_level1_html(hw_registry, scenario, l1_path)
+        generate_level2_html(hw_registry, scenario, hw_raw, l2_path)
+        # PlantUML views
+        puml_top = os.path.join(args.output_view_dir, f"{output_prefix}top.puml")
+        puml_l1 = os.path.join(args.output_view_dir, f"{output_prefix}level1.puml")
+        puml_l2 = os.path.join(args.output_view_dir, f"{output_prefix}level2.puml")
+        generate_top_view(hw_registry, scenario, puml_top)
+        generate_level1(hw_registry, scenario, puml_l1)
+        generate_level2(hw_registry, scenario, hw_raw, puml_l2)
 
     # Graph-only mode: show structure and exit
     if args.graph_only:
@@ -726,11 +835,16 @@ def main():
         return
 
     # Check and align OTF/Sensor timing (Clock Optimization)
-    print("\n[Clock Optimization]")
-    opt_messages = scenario.optimize_otf_clocks(hw_registry)
-    for msg in opt_messages:
-        print(msg)
-    print()
+    # Skip if CSV-based resolution already set clocks
+    if resolved_configs is None:
+        print("\n[Clock Optimization]")
+        opt_messages = scenario.optimize_otf_clocks(hw_registry)
+        for msg in opt_messages:
+            print(msg)
+        print()
+    else:
+        print("\n[Clock Optimization] Skipped (CSV-based DVFS resolution active)")
+        print()
 
     # Constraint Validation
     print("[Validation]")
@@ -767,34 +881,39 @@ def main():
 
     print(text_viewer.print_simulation_summary(results))
 
-    # Export results
-    if args.output_csv or args.output_gantt:
-        monitor = Monitor()
-        monitor.from_simulation_results(results)
+    # ── Export simulation results ──
+    os.makedirs(args.output_sim_dir, exist_ok=True)
+    monitor = Monitor()
+    monitor.from_simulation_results(results)
 
-        if args.output_csv:
-            monitor.export_csv(args.output_csv)
-            print(f"\nResults exported to: {args.output_csv}")
+    if do_csv:
+        csv_path = os.path.join(args.output_sim_dir, f"{output_prefix}results.csv")
+        monitor.export_csv(csv_path)
+        print(f"Results exported to: {csv_path}")
 
-        if args.output_gantt:
-            visualizer = Visualizer()
-            df = monitor.to_dataframe()
-            fig = visualizer.create_gantt_chart_ms(df, title=results.scenario_name)
-            if fig:
-                visualizer.save_gantt(fig, args.output_gantt)
-                print(f"Gantt chart saved to: {args.output_gantt}")
-
-    if args.output_json:
+    if do_gantt:
         visualizer = Visualizer()
-        visualizer.export_perfetto_json(results, args.output_json)
+        df = monitor.to_dataframe()
+        fig = visualizer.create_gantt_chart_ms(df, title=results.scenario_name)
+        if fig:
+            gantt_path = os.path.join(args.output_sim_dir, f"{output_prefix}gantt.html")
+            visualizer.save_gantt(fig, gantt_path)
+            print(f"Gantt chart saved to: {gantt_path}")
 
-    if args.output_bw:
+    if do_json:
+        visualizer = Visualizer()
+        json_path = os.path.join(args.output_sim_dir, f"{output_prefix}trace.json")
+        visualizer.export_perfetto_json(results, json_path)
+        print(f"Trace exported to: {json_path}")
+
+    if do_bw:
         visualizer = Visualizer()
         bw_fig = visualizer.create_bw_chart(results, scenario,
                                             title=f"{scenario.name} - Bandwidth Timeline")
         if bw_fig:
-            visualizer.save_gantt(bw_fig, args.output_bw)
-            print(f"BW chart saved to: {args.output_bw}")
+            bw_path = os.path.join(args.output_sim_dir, f"{output_prefix}bw.html")
+            visualizer.save_gantt(bw_fig, bw_path)
+            print(f"BW chart saved to: {bw_path}")
 
 
 if __name__ == "__main__":
