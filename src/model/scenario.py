@@ -45,6 +45,7 @@ class Task:
     workload: Dict[str, Any] = field(default_factory=dict)
     ip_mode: Optional[str] = None
     crop_size: Optional[Tuple[int, int]] = None
+    h_blank_margin: float = 0.05  # H-blank margin for IP runtime (default 5%)
     # Token-based additions
     join_policy: JoinPolicy = JoinPolicy.AND_JOIN
     window_size: int = 1
@@ -132,6 +133,7 @@ class ScenarioGraph:
                  workload: Optional[Dict[str, Any]] = None,
                  ip_mode: Optional[str] = None,
                  crop_size: Optional[Tuple[int, int]] = None,
+                 h_blank_margin: float = 0.05,
                  join_policy: JoinPolicy = JoinPolicy.AND_JOIN,
                  window_size: int = 1,
                  input_ports: Optional[List[str]] = None,
@@ -146,6 +148,7 @@ class ScenarioGraph:
             workload: Workload parameters dict
             ip_mode: Optional IP mode (e.g., 'power_saving', 'high_performance')
             crop_size: Optional crop output size (width, height)
+            h_blank_margin: H-blank margin for IP runtime calculation (default: 0.05 = 5%)
             join_policy: Multi-input join policy (AND/OR/WINDOW)
             window_size: Window size for WINDOW_BASED join
             input_ports: Named input ports for token queues
@@ -165,6 +168,7 @@ class ScenarioGraph:
             workload=workload,
             ip_mode=ip_mode,
             crop_size=crop_size,
+            h_blank_margin=h_blank_margin,
             join_policy=join_policy,
             window_size=window_size,
             input_ports=input_ports if input_ports else [],

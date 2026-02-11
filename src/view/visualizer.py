@@ -195,13 +195,16 @@ class Visualizer:
         return fig
 
     def create_gantt_chart_ms(self, df: pd.DataFrame,
-                               title: str = "Simulation Timeline") -> Optional['go.Figure']:
+                               title: str = "Simulation Timeline",
+                               hw_order: list = None) -> Optional['go.Figure']:
         """
         Create a Gantt chart with time in milliseconds (numeric axis).
 
         Args:
             df: DataFrame with TaskID, HW, StartTime, EndTime columns
             title: Chart title
+            hw_order: Optional list of HW names in desired Y-axis order
+                      (scenario definition order). If None, ordered by start time.
 
         Returns:
             Plotly Figure object
@@ -215,9 +218,23 @@ class Visualizer:
 
         fig = go.Figure()
 
-        # Get unique HW names ordered by start time (scenario execution order)
-        df_sorted = df.sort_values('StartTime')
-        hw_names = df_sorted['HW'].unique().tolist()
+        # Get unique HW names in desired order
+        if hw_order:
+            # Use provided scenario order, append any HW not in the list
+            seen = set()
+            hw_names = []
+            for hw in hw_order:
+                if hw in df['HW'].values and hw not in seen:
+                    hw_names.append(hw)
+                    seen.add(hw)
+            # Append any remaining HW not in hw_order
+            for hw in df['HW'].unique():
+                if hw not in seen:
+                    hw_names.append(hw)
+        else:
+            # Default: order by first start time
+            df_sorted = df.sort_values('StartTime')
+            hw_names = df_sorted['HW'].unique().tolist()
 
         # Color palette
         colors = px.colors.qualitative.Set2

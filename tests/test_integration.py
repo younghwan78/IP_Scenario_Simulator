@@ -68,10 +68,10 @@ class TestIntegration4KRecording:
         self.pixels_4k = 3840 * 2160  # 8,294,400
 
         self.scenario = ScenarioGraph(name="4K_Recording")
-        self.scenario.add_task("t_sensor", "Sensor_Ext", pixels=self.pixels_4k)
-        self.scenario.add_task("t_isp_fe", "ISP_FE", pixels=self.pixels_4k)
-        self.scenario.add_task("t_isp_be", "ISP_BE", pixels=self.pixels_4k)
-        self.scenario.add_task("t_venc", "VENC", pixels=self.pixels_4k)
+        self.scenario.add_task("t_sensor", "Sensor_Ext", pixels=self.pixels_4k, h_blank_margin=0)
+        self.scenario.add_task("t_isp_fe", "ISP_FE", pixels=self.pixels_4k, h_blank_margin=0)
+        self.scenario.add_task("t_isp_be", "ISP_BE", pixels=self.pixels_4k, h_blank_margin=0)
+        self.scenario.add_task("t_venc", "VENC", pixels=self.pixels_4k, h_blank_margin=0)
 
         self.scenario.add_dependency("t_sensor", "t_isp_fe", "OTF")
         self.scenario.add_dependency("t_isp_fe", "t_isp_be", "M2M")
@@ -103,7 +103,7 @@ class TestIntegration4KRecording:
         Expected: 8294400 / (600e6 * 4 * 0.95) ≈ 3.638ms
         """
         ip = self.hw_nodes[1]  # ISP_FE
-        time = ip.get_processing_time({'pixels': self.pixels_4k})
+        time = ip.get_processing_time({'pixels': self.pixels_4k, 'h_blank_margin': 0})
 
         expected = self.pixels_4k / (600e6 * 4 * 0.95)
         assert abs(time - expected) < 1e-9
@@ -251,8 +251,8 @@ class TestIntegrationOTFPipeline:
         hw_30fps = IPNode(name="HW_30fps", clock_freq=30e6, ppc=1)
 
         scenario = ScenarioGraph(name="OTF_FPS_Test")
-        scenario.add_task("t_fast", "HW_100fps", pixels=pixels)
-        scenario.add_task("t_slow", "HW_30fps", pixels=pixels)
+        scenario.add_task("t_fast", "HW_100fps", pixels=pixels, h_blank_margin=0)
+        scenario.add_task("t_slow", "HW_30fps", pixels=pixels, h_blank_margin=0)
         scenario.add_dependency("t_fast", "t_slow", "OTF")
 
         simulator = SoCSimulator()

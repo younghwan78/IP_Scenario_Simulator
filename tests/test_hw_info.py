@@ -387,7 +387,7 @@ class TestHWResolver:
 
         # Processing time should use legacy formula
         pixels = 1920 * 1080
-        time = ip.get_processing_time({'width': 1920, 'height': 1080})
+        time = ip.get_processing_time({'width': 1920, 'height': 1080, 'h_blank_margin': 0})
         expected = pixels / (600e6 * 4 * 0.95)
         assert abs(time - expected) < 1e-12
 
@@ -403,7 +403,7 @@ class TestHWResolver:
         ip.set_clock = 400.0  # 400 MHz
 
         pixels = 1920 * 1080
-        time = ip.get_processing_time({'width': 1920, 'height': 1080})
+        time = ip.get_processing_time({'width': 1920, 'height': 1080, 'h_blank_margin': 0})
         expected = pixels / (400e6 * 4)  # Uses set_clock, no efficiency
         assert abs(time - expected) < 1e-12
 

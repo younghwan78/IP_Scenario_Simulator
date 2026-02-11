@@ -237,6 +237,7 @@ def create_scenario(config: dict) -> ScenarioGraph:
     # Old format
     scenario_data = config.get('scenario', config)
     name = scenario_data.get('name', 'Unnamed')
+    h_blank_margin = float(scenario_data.get('h_blank_margin', 0.05))
 
     scenario = ScenarioGraph(name=name)
 
@@ -269,7 +270,8 @@ def create_scenario(config: dict) -> ScenarioGraph:
             mapped_hw=task_config['hw'],
             workload=workload,
             ip_mode=ip_mode,
-            crop_size=crop_size
+            crop_size=crop_size,
+            h_blank_margin=h_blank_margin
         )
 
     # Add edges
@@ -321,6 +323,7 @@ def create_scenario_from_blocks(config: dict) -> ScenarioGraph:
             edges: [{ src, dst, type, src_port, dst_port }]
     """
     name = config.get('name', 'Unnamed')
+    h_blank_margin = float(config.get('h_blank_margin', 0.05))
     scenario = ScenarioGraph(name=name)
     
     # Store ip_settings per task for later reference (text view etc.)
@@ -339,7 +342,8 @@ def create_scenario_from_blocks(config: dict) -> ScenarioGraph:
         scenario.add_task(
             task_id=task_cfg['id'],
             mapped_hw=task_cfg['hw'],
-            workload=workload
+            workload=workload,
+            h_blank_margin=h_blank_margin
         )
     
     # Process each IP block
@@ -365,6 +369,7 @@ def create_scenario_from_blocks(config: dict) -> ScenarioGraph:
                 mapped_hw=task_hw,
                 workload=workload.copy(),
                 ip_mode=ip_mode,
+                h_blank_margin=h_blank_margin,
                 input_ports=input_ports,
                 output_ports=output_ports
             )
@@ -800,26 +805,32 @@ def main():
     # ── Generate HTML views ──
     if do_view:
         from src.view.html_view import (
-            generate_top_html, generate_level1_html, generate_level2_html
+            generate_top_html, generate_level1_html, generate_level2_html,
+            generate_task_topology_html
         )
         from src.view.plantuml_view import (
-            generate_top_view, generate_level1, generate_level2
+            generate_top_view, generate_level1, generate_level2,
+            generate_task_topology
         )
         os.makedirs(args.output_view_dir, exist_ok=True)
         # HTML views
         top_path = os.path.join(args.output_view_dir, f"{output_prefix}top.html")
         l1_path = os.path.join(args.output_view_dir, f"{output_prefix}level1.html")
         l2_path = os.path.join(args.output_view_dir, f"{output_prefix}level2.html")
+        topo_html = os.path.join(args.output_view_dir, f"{output_prefix}task_topology.html")
         generate_top_html(hw_registry, scenario, top_path)
         generate_level1_html(hw_registry, scenario, l1_path)
         generate_level2_html(hw_registry, scenario, hw_raw, l2_path)
+        generate_task_topology_html(hw_registry, scenario, topo_html)
         # PlantUML views
         puml_top = os.path.join(args.output_view_dir, f"{output_prefix}top.puml")
         puml_l1 = os.path.join(args.output_view_dir, f"{output_prefix}level1.puml")
         puml_l2 = os.path.join(args.output_view_dir, f"{output_prefix}level2.puml")
+        puml_topo = os.path.join(args.output_view_dir, f"{output_prefix}task_topology.puml")
         generate_top_view(hw_registry, scenario, puml_top)
         generate_level1(hw_registry, scenario, puml_l1)
         generate_level2(hw_registry, scenario, hw_raw, puml_l2)
+        generate_task_topology(hw_registry, scenario, puml_topo)
 
     # Graph-only mode: show structure and exit
     if args.graph_only:
@@ -894,7 +905,28 @@ def main():
     if do_gantt:
         visualizer = Visualizer()
         df = monitor.to_dataframe()
-        fig = visualizer.create_gantt_chart_ms(df, title=results.scenario_name)
+        # Build HW order from scenario config (ip_blocks definition order)
+        hw_order = []
+        seen_hw = set()
+        # Sensor task first
+        sensor_cfg = scenario_config.get('sensor', {})
+        if sensor_cfg.get('hw'):
+            hw_order.append(sensor_cfg['hw'])
+            seen_hw.add(sensor_cfg['hw'])
+        # Then ip_blocks in YAML definition order
+        for block in scenario_config.get('ip_blocks', []):
+            ip_set = block.get('ip_settings', {})
+            hw_name = ip_set.get('hw', '')
+            if hw_name and hw_name not in seen_hw:
+                hw_order.append(hw_name)
+                seen_hw.add(hw_name)
+        # Fallback: append any HW from tasks not in ip_blocks
+        for tid in scenario.topological_order():
+            task = scenario.get_task(tid)
+            if task and task.mapped_hw not in seen_hw:
+                hw_order.append(task.mapped_hw)
+                seen_hw.add(task.mapped_hw)
+        fig = visualizer.create_gantt_chart_ms(df, title=results.scenario_name, hw_order=hw_order)
         if fig:
             gantt_path = os.path.join(args.output_sim_dir, f"{output_prefix}gantt.html")
             visualizer.save_gantt(fig, gantt_path)

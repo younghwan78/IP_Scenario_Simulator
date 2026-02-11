@@ -436,6 +436,47 @@ def generate_level2(hw_registry, scenario, hw_raw, output_path):
     print(f"Level 2 -> {output_path}")
 
 
+# ═══════════════════════════════════════════════════════════════════
+#  Task Topology: flat task DAG (no hierarchy grouping)
+# ═══════════════════════════════════════════════════════════════════
+
+def generate_task_topology(hw_registry, scenario, output_path):
+    """Generate a flat task topology diagram showing task DAG with OTF/M2M edges."""
+    lines = ["@startuml", _skinparam()]
+    lines.append("top to bottom direction")
+    lines.append("title Task Topology\\n")
+    lines.append("")
+
+    # Emit task nodes in topological order
+    for task in scenario.get_tasks():
+        tid = task.task_id
+        hw_name = task.mapped_hw
+        hw = hw_registry.get(hw_name)
+        hier = _get_hierarchy(hw, hw_name) if hw else "Other"
+        bg = HIERARCHY_COLORS.get(hier, "#FAFAFA")
+        # Label: task_id (HW_name)
+        label = f"<b>{tid}</b>\\n({hw_name})"
+        lines.append(f'rectangle "{label}" as {_safe_id(tid)} {bg}')
+
+    lines.append("")
+    lines.append("' === Connections ===")
+
+    # Emit edges — simple OTF/M2M arrows (no memory cylinders for clarity)
+    for src_id, dst_id, edge_data in scenario.graph.edges(data=True):
+        conn_type = edge_data.get('conn_type', ConnectionType.M2M)
+        if conn_type == ConnectionType.OTF:
+            lines.append(f'{_safe_id(src_id)} ==> {_safe_id(dst_id)} : OTF')
+        else:
+            lines.append(f'{_safe_id(src_id)} --> {_safe_id(dst_id)} : M2M')
+
+    lines.append("")
+    lines.append("@enduml")
+
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write("\n".join(lines))
+    print(f"Task Topology -> {output_path}")
+
+
 # ── Helpers ──────────────────────────────────────────────────────
 
 def _ip_label(hw_name, hw, scenario, tid):

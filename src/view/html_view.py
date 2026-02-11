@@ -364,6 +364,38 @@ def generate_level2_html(hw_registry, scenario, hw_raw, output_path):
 
 
 # ═══════════════════════════════════════════════════════════════════
+#  Task Topology: flat task DAG (no hierarchy grouping)
+# ═══════════════════════════════════════════════════════════════════
+
+def generate_task_topology_html(hw_registry, scenario, output_path):
+    """Generate a flat task topology HTML view showing the task DAG."""
+    from src.view.plantuml_view import _get_hierarchy
+    ip_settings = getattr(scenario, '_ip_settings', {})
+    meta = {}
+
+    elk = _make_elk_root()
+
+    # Add all tasks as flat nodes (no grouping)
+    for task in scenario.get_tasks():
+        tid = task.task_id
+        hw_name = task.mapped_hw
+        hw = hw_registry.get(hw_name)
+        hier = _get_hierarchy(hw, hw_name) if hw else "Other"
+        bg = HIERARCHY_COLORS.get(hier, "#FAFAFA")
+
+        lbl = f"{tid}\\n({hw_name})"
+        w = max(len(tid) * 8 + 20, len(hw_name) * 8 + 40, 120)
+        elk["children"].append({"id": tid, "width": w, "height": 45})
+        meta[tid] = {"type": "leaf", "label": lbl, "color": bg}
+
+    # Edges
+    _build_cross_edges(elk, meta, scenario, ip_settings)
+
+    _render_html("Task Topology", elk, meta, output_path)
+    print(f"Task Topology HTML -> {output_path}")
+
+
+# ═══════════════════════════════════════════════════════════════════
 #  HTML Template (shared by all levels)
 # ═══════════════════════════════════════════════════════════════════
 

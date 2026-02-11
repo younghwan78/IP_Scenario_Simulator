@@ -35,8 +35,8 @@ class TestSoCSimulator:
 
         # Create scenario
         scenario = ScenarioGraph(name="M2M_Test")
-        scenario.add_task("task_a", "HW_A", pixels=int(1e9))  # 1 second
-        scenario.add_task("task_b", "HW_B", pixels=int(1e9))  # 2 seconds (half clock)
+        scenario.add_task("task_a", "HW_A", pixels=int(1e9), h_blank_margin=0)  # 1 second
+        scenario.add_task("task_b", "HW_B", pixels=int(1e9), h_blank_margin=0)  # 2 seconds (half clock)
         scenario.add_dependency("task_a", "task_b", "M2M")
 
         # Run simulation
@@ -84,8 +84,8 @@ class TestSoCSimulator:
         pixels_per_frame = 1_000_000
 
         scenario = ScenarioGraph(name="OTF_Test")
-        scenario.add_task("t_fast", "HW_Fast", pixels=pixels_per_frame)
-        scenario.add_task("t_slow", "HW_Slow", pixels=pixels_per_frame)
+        scenario.add_task("t_fast", "HW_Fast", pixels=pixels_per_frame, h_blank_margin=0)
+        scenario.add_task("t_slow", "HW_Slow", pixels=pixels_per_frame, h_blank_margin=0)
         scenario.add_dependency("t_fast", "t_slow", "OTF")
 
         simulator = SoCSimulator()
@@ -122,8 +122,8 @@ class TestSoCSimulator:
 
         # Two independent tasks
         scenario = ScenarioGraph(name="Parallel_Test")
-        scenario.add_task("t_a", "HW_A", pixels=int(1e9))  # 1 second
-        scenario.add_task("t_b", "HW_B", pixels=int(1e9))  # 1 second
+        scenario.add_task("t_a", "HW_A", pixels=int(1e9), h_blank_margin=0)  # 1 second
+        scenario.add_task("t_b", "HW_B", pixels=int(1e9), h_blank_margin=0)  # 1 second
         # No dependencies - they should run in parallel
 
         simulator = SoCSimulator()
@@ -154,8 +154,8 @@ class TestSoCSimulator:
         hw = IPNode(name="HW_Shared", clock_freq=1e9, ppc=1)
 
         scenario = ScenarioGraph(name="Contention_Test")
-        scenario.add_task("t_1", "HW_Shared", pixels=int(1e9))  # 1 second
-        scenario.add_task("t_2", "HW_Shared", pixels=int(1e9))  # 1 second
+        scenario.add_task("t_1", "HW_Shared", pixels=int(1e9), h_blank_margin=0)  # 1 second
+        scenario.add_task("t_2", "HW_Shared", pixels=int(1e9), h_blank_margin=0)  # 1 second
         # No explicit dependency, but same HW
 
         simulator = SoCSimulator()

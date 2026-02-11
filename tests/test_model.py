@@ -35,7 +35,7 @@ class TestIPNode:
         )
 
         pixels_4k = 3840 * 2160  # 8,294,400
-        processing_time = ip.get_processing_time({'pixels': pixels_4k})
+        processing_time = ip.get_processing_time({'pixels': pixels_4k, 'h_blank_margin': 0})
 
         expected_time = 0.003456  # 3.456 ms
         assert abs(processing_time - expected_time) < 1e-9, \
@@ -51,7 +51,7 @@ class TestIPNode:
         )
 
         pixels = 8294400
-        processing_time = ip.get_processing_time({'pixels': pixels})
+        processing_time = ip.get_processing_time({'pixels': pixels, 'h_blank_margin': 0})
 
         # With 80% efficiency, time should be 25% longer
         expected_time = 0.003456 / 0.8  # ~4.32 ms

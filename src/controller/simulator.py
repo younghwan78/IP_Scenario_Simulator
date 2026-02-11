@@ -332,6 +332,11 @@ class SoCSimulator:
         )
         self._task_results.append(result)
 
+    def _simulate_dma_transfer_process(self, src_task_id: str, dst_task_id: str,
+                                       transfer_config: Dict, data_config: Dict) -> Generator:
+        """SimPy process wrapper for _simulate_dma_transfer (for parallel execution)."""
+        yield from self._simulate_dma_transfer(src_task_id, dst_task_id, transfer_config, data_config)
+
     def _run_task_process(self, task: Task, frame_start_offset: float = 0.0) -> Generator:
         """
         SimPy process for executing a single task.
@@ -360,16 +365,23 @@ class SoCSimulator:
             else:  # OTF
                 otf_preds.append(pred_id)
 
-        # Wait for M2M predecessors to complete
+        # Wait for ALL M2M predecessors to complete in parallel
+        if m2m_preds:
+            pred_events = [self._task_events[p] for p in m2m_preds if p in self._task_events]
+            if pred_events:
+                yield self.env.all_of(pred_events)
+
+        # Run DMA transfers in parallel (all predecessors already completed)
+        dma_processes = []
         for pred_id in m2m_preds:
-            if pred_id in self._task_events:
-                yield self._task_events[pred_id]
-                
-            # Check for Explicit DMA Transfer
             edge_transfer = self.scenario.graph.edges[pred_id, task_id].get('transfer')
             if edge_transfer:
                 edge_data = self.scenario.graph.edges[pred_id, task_id].get('data', {})
-                yield from self._simulate_dma_transfer(pred_id, task_id, edge_transfer, edge_data)
+                dma_processes.append(
+                    self.env.process(self._simulate_dma_transfer_process(
+                        pred_id, task_id, edge_transfer, edge_data)))
+        if dma_processes:
+            yield self.env.all_of(dma_processes)
 
         # For OTF: wait for all OTF group members to be ready
         # (handled by _run_otf_group separately)
@@ -377,8 +389,9 @@ class SoCSimulator:
         # Record start time
         start_time = self.env.now
 
-        # Calculate processing time
-        processing_time = hw.get_processing_time(task.workload)
+        # Calculate processing time (inject h_blank_margin into workload)
+        workload = {**task.workload, 'h_blank_margin': task.h_blank_margin}
+        processing_time = hw.get_processing_time(workload)
 
         # Request hardware resource (for contention)
         with hw.resource.request() as req:
@@ -441,24 +454,31 @@ class SoCSimulator:
             if edge_type == ConnectionType.M2M:
                 m2m_preds.append(pred_id)
 
-        # Wait for M2M predecessors in this frame to complete
+        # Wait for ALL M2M predecessors in this frame to complete in parallel
+        if m2m_preds:
+            pred_events = [task_events[p] for p in m2m_preds if p in task_events]
+            if pred_events:
+                yield self.env.all_of(pred_events)
+
+        # Run DMA transfers in parallel (all predecessors already completed)
+        dma_processes = []
         for pred_id in m2m_preds:
-            if pred_id in task_events:
-                yield task_events[pred_id]
-                
-            # Check for Explicit DMA Transfer
             edge_transfer = self.scenario.graph.edges[pred_id, task_id].get('transfer')
             if edge_transfer:
                 edge_data = self.scenario.graph.edges[pred_id, task_id].get('data', {})
-                # Store current frame for DMA result
                 self._current_frame_id = frame_id
-                yield from self._simulate_dma_transfer(pred_id, task_id, edge_transfer, edge_data)
+                dma_processes.append(
+                    self.env.process(self._simulate_dma_transfer_process(
+                        pred_id, task_id, edge_transfer, edge_data)))
+        if dma_processes:
+            yield self.env.all_of(dma_processes)
 
         # Record start time
         start_time = self.env.now
 
-        # Calculate processing time
-        processing_time = hw.get_processing_time(task.workload)
+        # Calculate processing time (inject h_blank_margin into workload)
+        workload = {**task.workload, 'h_blank_margin': task.h_blank_margin}
+        processing_time = hw.get_processing_time(workload)
 
         # Request hardware resource (for contention)
         with hw.resource.request() as req:
@@ -529,11 +549,12 @@ class SoCSimulator:
         # Record start time (same for all)
         start_time = self.env.now
 
-        # Calculate processing times for all tasks
+        # Calculate processing times for all tasks (inject h_blank_margin)
         processing_times = []
         for task in tasks:
             hw = self._get_hw(task.mapped_hw)
-            pt = hw.get_processing_time(task.workload)
+            workload = {**task.workload, 'h_blank_margin': task.h_blank_margin}
+            pt = hw.get_processing_time(workload)
             processing_times.append((task, hw, pt))
 
         # OTF: throughput limited by slowest (bottleneck)

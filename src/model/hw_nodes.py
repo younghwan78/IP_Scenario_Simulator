@@ -362,17 +362,22 @@ class IPNode(HWNode):
         if pixels <= 0:
             return 0.0
 
+        # H-blank margin: HW_TIME = base_time * (1 + h_blank_margin)
+        h_blank_margin = workload.get('h_blank_margin', 0.05)
+
         # CSV-based: use set_clock (MHz → Hz)
         if self.set_clock > 0:
             clock_hz = self.set_clock * 1e6
             if clock_hz <= 0 or self.ppc <= 0:
                 return 0.0
-            return pixels / (clock_hz * self.ppc)
+            base_time = pixels / (clock_hz * self.ppc)
+            return base_time * (1 + h_blank_margin)
 
         # Legacy fallback
         if self.clock_freq <= 0:
             return 0.0
-        return pixels / (self.clock_freq * self.ppc * self.efficiency)
+        base_time = pixels / (self.clock_freq * self.ppc * self.efficiency)
+        return base_time * (1 + h_blank_margin)
 
     def get_power_consumption(self, duration: float) -> float:
         """
