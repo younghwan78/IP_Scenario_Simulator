@@ -346,7 +346,8 @@ class Visualizer:
 
     def create_bw_chart(self, results: 'SimulationResults',
                         scenario: 'ScenarioGraph',
-                        title: str = "Bandwidth Timeline") -> Optional['go.Figure']:
+                        title: str = "Bandwidth Timeline",
+                        hw_registry: dict = None) -> Optional['go.Figure']:
         """
         Create a bandwidth timeline chart from simulation results.
 
@@ -354,10 +355,15 @@ class Visualizer:
         - Top row: Total Read BW + Total Write BW
         - Subsequent rows: Per-IP Read/Write BW
 
+        BW is derived from ip_settings: each DMA port's data size is computed
+        from its format/bitwidth/comp/comp_ratio, and the IP's total BW is
+        the sum of all its DMA ports' BW.
+
         Args:
             results: SimulationResults containing DMA task results
             scenario: ScenarioGraph for mapping DMA tasks to parent IPs
             title: Chart title
+            hw_registry: HW registry for determining port types (DMA vs CIN/COUT)
 
         Returns:
             Plotly Figure object, or None if Plotly unavailable
@@ -411,8 +417,8 @@ class Visualizer:
             })
 
         if not dma_records:
-            # Fallback: derive BW from M2M edge port sizes and task timing
-            dma_records = self._derive_bw_from_m2m(results, scenario)
+            # Derive BW from ip_settings (all scenario-defined DMA ports)
+            dma_records = self._derive_bw_from_ip_settings(results, scenario, hw_registry)
 
         if not dma_records:
             print("No DMA transfer data found for BW chart.")
@@ -430,57 +436,94 @@ class Visualizer:
         fig = make_subplots(
             rows=num_rows, cols=1,
             shared_xaxes=True,
-            vertical_spacing=0.05,
+            vertical_spacing=0.03,
             subplot_titles=subplot_titles
         )
 
-        # Color scheme
-        read_color = 'rgba(55, 126, 184, 0.7)'   # Blue for Read
-        write_color = 'rgba(228, 26, 28, 0.7)'    # Red for Write
-        read_line = 'rgba(55, 126, 184, 1.0)'
-        write_line = 'rgba(228, 26, 28, 1.0)'
+        # Color palettes: blue/green family for Read, red/yellow family for Write
+        # Each DMA port gets a distinct shade within its direction family
+        _READ_PALETTE = [
+            'rgba(33, 113, 181, 0.75)',   # dark blue
+            'rgba(35, 139, 69, 0.75)',    # forest green
+            'rgba(66, 146, 198, 0.75)',   # medium blue
+            'rgba(49, 163, 84, 0.75)',    # green
+            'rgba(8, 81, 156, 0.75)',     # deep blue
+            'rgba(0, 109, 44, 0.75)',     # dark green
+            'rgba(107, 174, 214, 0.75)',  # light blue
+            'rgba(116, 196, 118, 0.75)',  # light green
+            'rgba(37, 52, 148, 0.75)',    # navy
+            'rgba(0, 68, 27, 0.75)',      # deep green
+            'rgba(43, 140, 190, 0.75)',   # cerulean
+            'rgba(102, 194, 164, 0.75)',  # teal
+            'rgba(49, 130, 189, 0.75)',   # steel blue
+            'rgba(65, 171, 93, 0.75)',    # emerald
+            'rgba(116, 169, 207, 0.75)',  # periwinkle
+            'rgba(161, 217, 155, 0.75)',  # sage
+        ]
+        _WRITE_PALETTE = [
+            'rgba(228, 26, 28, 0.75)',    # red
+            'rgba(255, 191, 0, 0.75)',    # gold
+            'rgba(227, 74, 51, 0.75)',    # vermillion
+            'rgba(255, 127, 0, 0.75)',    # orange
+            'rgba(189, 0, 38, 0.75)',     # crimson
+            'rgba(253, 218, 13, 0.75)',   # yellow
+            'rgba(240, 59, 32, 0.75)',    # scarlet
+            'rgba(253, 141, 60, 0.75)',   # tangerine
+            'rgba(179, 0, 0, 0.75)',      # dark red
+            'rgba(254, 217, 118, 0.75)',  # light gold
+            'rgba(215, 48, 39, 0.75)',    # flame
+            'rgba(204, 76, 2, 0.75)',     # burnt orange
+            'rgba(244, 109, 67, 0.75)',   # salmon
+            'rgba(236, 112, 20, 0.75)',   # amber
+            'rgba(252, 78, 42, 0.75)',    # coral
+            'rgba(254, 178, 76, 0.75)',   # marigold
+        ]
+
+        def _get_dma_color(dma_name, direction, dma_color_map):
+            """Get a distinct color for a DMA port within its Read/Write family."""
+            key = (dma_name, direction)
+            if key not in dma_color_map:
+                palette = _READ_PALETTE if direction == 'Read' else _WRITE_PALETTE
+                # Count existing entries for this direction
+                count = sum(1 for k in dma_color_map if k[1] == direction)
+                dma_color_map[key] = palette[count % len(palette)]
+            return dma_color_map[key]
+
+        # Track which DMA legend entries already shown
+        legend_shown = set()
+        dma_color_map = {}  # (dma_name, direction) → color
 
         def _add_bw_traces(fig, records, row, show_legend=False):
-            """Add read/write BW bar traces for a set of DMA records."""
-            read_recs = [r for r in records if r['direction'] == 'Read']
-            write_recs = [r for r in records if r['direction'] == 'Write']
-
-            # Add rectangular shapes for each DMA transfer
-            for rec in read_recs:
+            """Add per-DMA colored BW bar traces."""
+            for rec in records:
+                dma_name = rec['dma_name']
+                direction = rec['direction']
+                color = _get_dma_color(dma_name, direction, dma_color_map)
+                
+                # Darken for border line
+                border = color.replace('0.75)', '1.0)')
+                
                 start_ms = rec['start'] * 1000
                 end_ms = rec['end'] * 1000
+                
+                # Legend: show each DMA port once globally
+                legend_key = f"{dma_name}({direction})"
+                show = show_legend and legend_key not in legend_shown
+                if show:
+                    legend_shown.add(legend_key)
+                
                 fig.add_trace(go.Bar(
                     x=[(start_ms + end_ms) / 2],
                     y=[rec['bw_gbps']],
                     width=[end_ms - start_ms],
-                    name='Read BW',
-                    marker_color=read_color,
-                    marker_line=dict(color=read_line, width=1),
-                    showlegend=show_legend and rec == read_recs[0],
-                    legendgroup='read',
+                    name=f"{dma_name} ({direction[0]})",
+                    marker_color=color,
+                    marker_line=dict(color=border, width=1),
+                    showlegend=show,
+                    legendgroup=legend_key,
                     hovertemplate=(
-                        f"{rec['dma_name']}<br>"
-                        f"BW: {rec['bw_gbps']:.2f} GB/s<br>"
-                        f"Time: {start_ms:.3f} ~ {end_ms:.3f} ms<br>"
-                        f"Frame: {rec['frame_id']}"
-                        "<extra></extra>"
-                    ),
-                ), row=row, col=1)
-
-            for rec in write_recs:
-                start_ms = rec['start'] * 1000
-                end_ms = rec['end'] * 1000
-                fig.add_trace(go.Bar(
-                    x=[(start_ms + end_ms) / 2],
-                    y=[rec['bw_gbps']],
-                    width=[end_ms - start_ms],
-                    name='Write BW',
-                    marker_color=write_color,
-                    marker_line=dict(color=write_line, width=1),
-                    showlegend=show_legend and rec == write_recs[0],
-                    legendgroup='write',
-                    hovertemplate=(
-                        f"{rec['dma_name']}<br>"
+                        f"{rec['parent_ip']} / {dma_name}<br>"
+                        f"Direction: {direction}<br>"
                         f"BW: {rec['bw_gbps']:.2f} GB/s<br>"
                         f"Time: {start_ms:.3f} ~ {end_ms:.3f} ms<br>"
                         f"Frame: {rec['frame_id']}"
@@ -496,159 +539,172 @@ class Visualizer:
             ip_records = [r for r in dma_records if r['parent_ip'] == ip_name]
             _add_bw_traces(fig, ip_records, row=2 + i, show_legend=False)
 
-        # 6. Layout
+        # 6. Compute unified Y-axis range from total BW max
+        max_bw = max(rec['bw_gbps'] for rec in dma_records) if dma_records else 1.0
+        # For stacked bars, compute max stacked BW per time window
+        # Simple approach: sum all concurrent BWs at any time point
+        # Use the total row's max stacked value
+        total_stacked = {}
+        for rec in dma_records:
+            key = (round(rec['start'], 6), round(rec['end'], 6))
+            total_stacked[key] = total_stacked.get(key, 0) + rec['bw_gbps']
+        if total_stacked:
+            max_bw = max(total_stacked.values())
+        y_max = max_bw * 1.1  # 10% headroom
+
+        # 7. Layout
         fig.update_layout(
             title=title,
             barmode='stack',
-            height=200 + num_rows * 150,
+            height=200 + num_rows * 500,  # taller subplots
             showlegend=True,
-            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+            legend=dict(
+                orientation='v',       # vertical legend on the right
+                yanchor='top', y=1.0,
+                xanchor='left', x=1.02,
+                font=dict(size=9),
+                bgcolor='rgba(255,255,255,0.8)',
+                bordercolor='rgba(200,200,200,0.5)',
+                borderwidth=1,
+            ),
+            margin=dict(t=60, r=200),  # room for title + right legend
         )
 
-        # Set y-axis labels
-        fig.update_yaxes(title_text='GB/s', row=1, col=1)
-        for i in range(len(seen_ips)):
-            fig.update_yaxes(title_text='GB/s', row=2 + i, col=1)
+        # Set unified y-axis range for all subplots
+        for row_idx in range(1, num_rows + 1):
+            fig.update_yaxes(title_text='GB/s', range=[0, y_max], row=row_idx, col=1)
 
         # Set x-axis label on bottom subplot only
         fig.update_xaxes(title_text='Time (ms)', row=num_rows, col=1)
 
         return fig
 
-    def _derive_bw_from_m2m(self, results, scenario) -> list:
-        """Derive BW records from M2M edges using port sizes and task timing.
+    def _derive_bw_from_ip_settings(self, results, scenario, hw_registry=None) -> list:
+        """Derive BW records from all scenario-defined DMA ports using ip_settings.
         
-        For each M2M edge, compute data size from port info (width × height × bitwidth/8)
-        and duration from the source task's processing time.
+        For each task, inspect all input/output ports in ip_settings.
+        Use hw_registry module type to determine if a port is DMA (generates BW)
+        or CIN/COUT (OTF, no memory BW).
+        
+        Data size per DMA port:
+            size[2] × size[3] × (bitwidth / 8) × comp_ratio
+        BW = data_size / task_duration
+        IP total BW = sum of all its DMA ports' BW
         """
         from ..model.scenario import ConnectionType
-        
-        # Build lookup: task_id → TaskResult (use frame 0)
-        task_map = {}
-        for r in results.task_results:
-            if r.frame_id == 0:
-                task_map[r.task_id] = r
+        from ..model.modules import DMAModule
         
         ip_settings = getattr(scenario, '_ip_settings', {})
         records = []
         
-        for src_id, dst_id, edge_data in scenario.graph.edges(data=True):
-            conn_type = edge_data.get('conn_type', ConnectionType.M2M)
-            if conn_type != ConnectionType.M2M:
+        # Build lookup: task_id → TaskResult per frame
+        frame_results = {}  # {frame_id: {task_id: TaskResult}}
+        for r in results.task_results:
+            if r.task_id.startswith('dma_'):
                 continue
-            
-            port_pairs = edge_data.get('port_pairs', [])
-            src_result = task_map.get(src_id)
-            dst_result = task_map.get(dst_id)
-            
-            if not src_result or not dst_result:
-                continue
-            
-            # Get port info from ip_settings
-            src_settings = ip_settings.get(src_id, {})
-            dst_settings = ip_settings.get(dst_id, {})
-            src_outputs = {o.get('port', ''): o for o in src_settings.get('outputs', [])}
-            dst_inputs = {i.get('port', ''): i for i in dst_settings.get('inputs', [])}
-            
-            for sp, dp in (port_pairs if port_pairs and port_pairs[0][0] != 'output' 
-                           else [('output', 'input')]):
-                # Find port info to compute data size
-                port_info = src_outputs.get(sp) or dst_inputs.get(dp) or {}
-                sz = port_info.get('size', [])
-                bitwidth = port_info.get('bitwidth', 8)
-                comp_ratio = port_info.get('comp_ratio', 1.0)
-                if port_info.get('comp') != 'enable':
-                    comp_ratio = 1.0
-                
-                if len(sz) >= 4 and sz[2] > 0 and sz[3] > 0:
-                    # Data size in bytes
-                    data_size = sz[2] * sz[3] * (bitwidth / 8) * comp_ratio
-                else:
+            frame_results.setdefault(r.frame_id, {})[r.task_id] = r
+        
+        if not frame_results:
+            return records
+        
+        def _is_dma_port(hw_name, port_name):
+            """Check if a port is a DMA module by looking up hw_registry."""
+            if hw_registry and hw_name in hw_registry:
+                hw = hw_registry[hw_name]
+                from ..model.hw_nodes import IPNode
+                if isinstance(hw, IPNode):
+                    for module in hw.modules:
+                        if module.name == port_name:
+                            return isinstance(module, DMAModule)
+            # Fallback: name-based heuristic
+            upper = port_name.upper()
+            return 'RDMA' in upper or 'WDMA' in upper
+        
+        def _get_dma_direction(hw_name, port_name):
+            """Get DMA direction from hw_registry module definition."""
+            if hw_registry and hw_name in hw_registry:
+                hw = hw_registry[hw_name]
+                from ..model.hw_nodes import IPNode
+                if isinstance(hw, IPNode):
+                    for module in hw.modules:
+                        if module.name == port_name and isinstance(module, DMAModule):
+                            return getattr(module, 'direction', None)
+            return None
+        
+        def _calc_data_size(port_info):
+            """Calculate data size in bytes from port info."""
+            sz = port_info.get('size', [])
+            if len(sz) < 4 or sz[2] <= 0 or sz[3] <= 0:
+                return 0
+            bitwidth = port_info.get('bitwidth', 8)
+            comp_ratio = port_info.get('comp_ratio', 1.0)
+            if port_info.get('comp') != 'enable':
+                comp_ratio = 1.0
+            return sz[2] * sz[3] * (bitwidth / 8) * comp_ratio
+        
+        # Process each frame
+        for frame_id, task_map in sorted(frame_results.items()):
+            for task_id, task_result in task_map.items():
+                settings = ip_settings.get(task_id, {})
+                if not settings:
                     continue
                 
-                # Write: src task writes at the end of its processing
-                w_duration = src_result.duration
-                if w_duration > 0:
-                    w_bw = (data_size / w_duration) / 1e9  # GB/s
-                    port_label = sp if sp != 'output' else f"{src_result.hw_name}_WDMA"
+                hw_name = settings.get('hw', task_result.hw_name)
+                duration = task_result.duration
+                if duration <= 0:
+                    continue
+                
+                # Process input ports (potential Read DMA)
+                for port_info in settings.get('inputs', []):
+                    port_name = port_info.get('port', '')
+                    if not _is_dma_port(hw_name, port_name):
+                        continue  # CIN/OTF port — no memory BW
+                    
+                    data_size = _calc_data_size(port_info)
+                    if data_size <= 0:
+                        continue
+                    
+                    # Determine direction from hw.yaml or default to Read for inputs
+                    direction = _get_dma_direction(hw_name, port_name)
+                    if direction is None:
+                        direction = 'read'
+                    
+                    bw_gbps = (data_size / duration) / 1e9
                     records.append({
-                        'start': src_result.start_time,
-                        'end': src_result.end_time,
-                        'bw_gbps': w_bw,
-                        'direction': 'Write',
-                        'parent_ip': src_result.hw_name,
-                        'dma_name': port_label,
-                        'frame_id': 0,
+                        'start': task_result.start_time,
+                        'end': task_result.end_time,
+                        'bw_gbps': bw_gbps,
+                        'direction': 'Read' if direction == 'read' else 'Write',
+                        'parent_ip': hw_name,
+                        'dma_name': port_name,
+                        'frame_id': frame_id,
                     })
                 
-                # Read: dst task reads at the start of its processing
-                r_duration = dst_result.duration
-                if r_duration > 0:
-                    r_bw = (data_size / r_duration) / 1e9  # GB/s
-                    port_label = dp if dp != 'input' else f"{dst_result.hw_name}_RDMA"
+                # Process output ports (potential Write DMA)
+                for port_info in settings.get('outputs', []):
+                    port_name = port_info.get('port', '')
+                    if not _is_dma_port(hw_name, port_name):
+                        continue  # COUT/OTF port — no memory BW
+                    
+                    data_size = _calc_data_size(port_info)
+                    if data_size <= 0:
+                        continue
+                    
+                    # Determine direction from hw.yaml or default to Write for outputs
+                    direction = _get_dma_direction(hw_name, port_name)
+                    if direction is None:
+                        direction = 'write'
+                    
+                    bw_gbps = (data_size / duration) / 1e9
                     records.append({
-                        'start': dst_result.start_time,
-                        'end': dst_result.end_time,
-                        'bw_gbps': r_bw,
-                        'direction': 'Read',
-                        'parent_ip': dst_result.hw_name,
-                        'dma_name': port_label,
-                        'frame_id': 0,
+                        'start': task_result.start_time,
+                        'end': task_result.end_time,
+                        'bw_gbps': bw_gbps,
+                        'direction': 'Write' if direction == 'write' else 'Read',
+                        'parent_ip': hw_name,
+                        'dma_name': port_name,
+                        'frame_id': frame_id,
                     })
-        
-        # Add multi-frame data if available
-        if records:
-            num_frames = max(r.frame_id for r in results.task_results) + 1
-            if num_frames > 1:
-                base_records = list(records)
-                for frame_id in range(1, num_frames):
-                    for r in results.task_results:
-                        if r.frame_id != frame_id:
-                            continue
-                    # Re-derive for other frames
-                    for src_id, dst_id, edge_data in scenario.graph.edges(data=True):
-                        if edge_data.get('conn_type', ConnectionType.M2M) != ConnectionType.M2M:
-                            continue
-                        port_pairs = edge_data.get('port_pairs', [])
-                        # Find frame-specific results
-                        src_r = next((r for r in results.task_results 
-                                      if r.task_id == src_id and r.frame_id == frame_id), None)
-                        dst_r = next((r for r in results.task_results 
-                                      if r.task_id == dst_id and r.frame_id == frame_id), None)
-                        if not src_r or not dst_r:
-                            continue
-                        src_settings = ip_settings.get(src_id, {})
-                        dst_settings = ip_settings.get(dst_id, {})
-                        src_outputs = {o.get('port', ''): o for o in src_settings.get('outputs', [])}
-                        dst_inputs = {i.get('port', ''): i for i in dst_settings.get('inputs', [])}
-                        for sp, dp in (port_pairs if port_pairs and port_pairs[0][0] != 'output' 
-                                       else [('output', 'input')]):
-                            port_info = src_outputs.get(sp) or dst_inputs.get(dp) or {}
-                            sz = port_info.get('size', [])
-                            bitwidth = port_info.get('bitwidth', 8)
-                            comp_ratio = port_info.get('comp_ratio', 1.0)
-                            if port_info.get('comp') != 'enable':
-                                comp_ratio = 1.0
-                            if len(sz) >= 4 and sz[2] > 0 and sz[3] > 0:
-                                data_size = sz[2] * sz[3] * (bitwidth / 8) * comp_ratio
-                            else:
-                                continue
-                            if src_r.duration > 0:
-                                records.append({
-                                    'start': src_r.start_time, 'end': src_r.end_time,
-                                    'bw_gbps': (data_size / src_r.duration) / 1e9,
-                                    'direction': 'Write', 'parent_ip': src_r.hw_name,
-                                    'dma_name': sp if sp != 'output' else f"{src_r.hw_name}_WDMA",
-                                    'frame_id': frame_id,
-                                })
-                            if dst_r.duration > 0:
-                                records.append({
-                                    'start': dst_r.start_time, 'end': dst_r.end_time,
-                                    'bw_gbps': (data_size / dst_r.duration) / 1e9,
-                                    'direction': 'Read', 'parent_ip': dst_r.hw_name,
-                                    'dma_name': dp if dp != 'input' else f"{dst_r.hw_name}_RDMA",
-                                    'frame_id': frame_id,
-                                })
         
         return records
 

@@ -292,20 +292,32 @@ def _build_workload_from_ip_settings(ip_settings: dict) -> dict:
     """
     Build workload dict from ip_settings inputs.
     
-    Uses the first (primary) input's size as the workload dimensions.
+    Uses the largest input (by pixel count) as the workload dimensions.
+    This ensures multi-input IPs use the correct resolution for runtime/power.
     Size format: [x, y, width, height] (crop-aware).
     """
     workload = {}
     inputs = ip_settings.get('inputs', [])
-    if inputs:
-        primary_input = inputs[0]
-        size = primary_input.get('size', [0, 0, 0, 0])
+    if not inputs:
+        return workload
+
+    # Find the largest input by pixel count (width × height)
+    best_w, best_h, best_pixels = 0, 0, 0
+    for inp in inputs:
+        size = inp.get('size', [0, 0, 0, 0])
         if len(size) == 4:
-            workload['width'] = size[2]   # width from [x, y, w, h]
-            workload['height'] = size[3]  # height from [x, y, w, h]
+            w, h = size[2], size[3]
         elif len(size) == 2:
-            workload['width'] = size[0]
-            workload['height'] = size[1]
+            w, h = size[0], size[1]
+        else:
+            continue
+        pixels = w * h
+        if pixels > best_pixels:
+            best_w, best_h, best_pixels = w, h, pixels
+
+    if best_pixels > 0:
+        workload['width'] = best_w
+        workload['height'] = best_h
     return workload
 
 
@@ -941,7 +953,8 @@ def main():
     if do_bw:
         visualizer = Visualizer()
         bw_fig = visualizer.create_bw_chart(results, scenario,
-                                            title=f"{scenario.name} - Bandwidth Timeline")
+                                            title=f"{scenario.name} - Bandwidth Timeline",
+                                            hw_registry=hw_registry)
         if bw_fig:
             bw_path = os.path.join(args.output_sim_dir, f"{output_prefix}bw.html")
             visualizer.save_gantt(bw_fig, bw_path)
