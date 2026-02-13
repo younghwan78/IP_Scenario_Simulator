@@ -18,13 +18,20 @@ asv_group: 4   # ASV group for DVFS voltage lookup (default: 4)
 sw_margin: 0.15  # SW margin for clock calculation (15% = 1.15x required clock)
 h_blank_margin: 0.05
 
+# Config file paths (relative to this scenario file)
+# CLI에서 -sc만 지정하면 나머지는 자동으로 찾음
+# CLI로 별도 지정 시 CLI 값이 우선
+config_paths:
+  hw_config: "../hw_config/projectA_hw.yaml"
+  sensor_config: "../hw_config/sensor_config.yaml"
+  hw_info: "../hw_config/projectA_info.csv"
+  hw_dvfs: "../hw_config/projectA_dvfs.csv"
+
 # Sensor configuration for this scenario
+# sensor name + mode → sensor_config.yaml에서 size, fps, v_valid 자동 결정
 sensor:
   hw: "HP2"
-  output_size: [0, 0, 4000, 3000]
-  fps: 30.0
-  sensor_mode: "LN2"
-  v_valid_time: 0.0118      # 11.8ms vValid (vBlank = 21.53ms)
+  mode: "mode1"
 
 # Sensor task
 tasks:
@@ -40,10 +47,10 @@ ip_blocks:
       mode: "Normal"
       inputs:
         - port: "DC_PHY"
-          size: [0, 0, 4000, 3000]
+          size: [0, 0, 4000, 2252]
       outputs:
         - port: "LINK"
-          size: [0, 0, 4000, 3000]
+          size: [0, 0, 4000, 2252]
     tasks:
       - id: "t_csislink"
         hw: "CSIS_LINK"
@@ -60,12 +67,12 @@ ip_blocks:
       mode: "Normal"
       inputs:
         - port: "NFI_DEC"
-          size: [0, 0, 4000, 3000]
+          size: [0, 0, 4000, 2252]
       outputs:
         - port: "COUTFIFO"
-          size: [0, 0, 4000, 3000]
+          size: [0, 0, 4000, 2252]
         - port: "CSIS_WDMA"
-          size: [0, 0, 4000, 3000]
+          size: [0, 0, 4000, 2252]
           format: "BAYER_PACKED"
           bitwidth: 12
           comp: "enable"
@@ -88,20 +95,20 @@ ip_blocks:
       mode: "Normal"
       inputs:
         - port: "REORDER"
-          size: [0, 0, 4000, 3000]
+          size: [0, 0, 4000, 2252]
       outputs:
         - port: "STAT_WDMA"
-          size: [0, 0, 4000, 128]
+          size: [0, 0, 4000, 282]
           format: "STAT"
-          bitwidth: 8
+          bitwidth: 10
         - port: "HPD_WDMA"
-          size: [0, 0, 4000, 1500]
+          size: [0, 0, 4000, 382]
           format: "STAT"
-          bitwidth: 8
+          bitwidth: 10
         - port: "VPD_WDMA"
-          size: [0, 0, 2000, 3000]
+          size: [0, 0, 2000, 382]
           format: "STAT"
-          bitwidth: 8
+          bitwidth: 10
     tasks:
       - id: "t_pdp"
         hw: "PDP"
@@ -120,10 +127,10 @@ ip_blocks:
       mode: "Normal"
       inputs:
         - port: "CINFIFO"
-          size: [0, 0, 4000, 3000]
+          size: [0, 0, 4000, 2252]
       outputs:
         - port: "COUTFIFO"
-          size: [0, 0, 4000, 3000]
+          size: [0, 0, 4000, 2252]
     tasks:
       - id: "t_prep"
         hw: "PREP"
@@ -142,24 +149,24 @@ ip_blocks:
       mode: "Normal"
       inputs:
         - port: "CINFIFO"
-          size: [0, 0, 4000, 3000]
+          size: [0, 0, 4000, 2252]
       outputs:
         - port: "CDAF_WDMA"
-          size: [0, 0, 300, 200]
+          size: [0, 0, 19, 15]
           format: "STAT"
-          bitwidth: 8
+          bitwidth: 384
         - port: "RGBHIST_WDMA"
-          size: [0, 0, 400, 300]
+          size: [0, 0, 40960, 1]
           format: "STAT"
           bitwidth: 8
         - port: "THSTAT_AE_WDMA"
-          size: [0, 0, 500, 300]
+          size: [0, 0, 64, 64]
           format: "STAT"
-          bitwidth: 8
+          bitwidth: 128
         - port: "THSTAT_AWB_WDMA"
-          size: [0, 0, 500, 300]
+          size: [0, 0, 64, 64]
           format: "STAT"
-          bitwidth: 8
+          bitwidth: 128
         - port: "DRC_CLCT_WDMA"
           size: [0, 0, 500, 200]
           format: "STAT"
@@ -214,7 +221,7 @@ ip_blocks:
       mode: "Normal"
       inputs:
         - port: "COMP_RD0_RDMA"
-          size: [0, 0, 4000, 3000]
+          size: [0, 0, 4000, 2252]
           format: "BAYER_PACKED"
           bitwidth: 12
           comp: "enable"
@@ -237,9 +244,9 @@ ip_blocks:
           bitwidth: 8
       outputs:
         - port: "COUTFIFO"
-          size: [0, 0, 4000, 3000]
+          size: [0, 0, 4000, 2252]
         - port: "CROP_DNG_WDMA"
-          size: [0, 0, 4000, 3000]
+          size: [0, 0, 4000, 2252]
           format: "BAYER_UNPACKED"
           bitwidth: 12
           comp: "disable"
@@ -269,12 +276,12 @@ ip_blocks:
       mode: "Normal"
       inputs:
         - port: "CINFIFO"
-          size: [0, 0, 4000, 3000]
+          size: [0, 0, 4000, 2252]
       outputs:
         - port: "COUTFIFO"
-          size: [0, 0, 4000, 3000]
+          size: [0, 0, 4000, 2252]
         - port: "CROP_DNG_WDMA"
-          size: [0, 0, 4000, 3000]
+          size: [0, 0, 4000, 2252]
           format: "BAYER_UNPACKED"
           bitwidth: 12
           comp: "disable"
@@ -296,7 +303,7 @@ ip_blocks:
       mode: "Normal"
       inputs:
         - port: "CINFIFO"
-          size: [0, 0, 1920, 1080]
+          size: [0, 0, 4000, 2252]
       outputs:
         - port: "L0_WDMA"
           size: [0, 0, 1920, 1080]
@@ -464,11 +471,11 @@ ip_blocks:
 
   # 12. YUVP
   - ip_settings:
-      hw: "YUVSC"
+      hw: "YUVP"
       mode: "Normal"
       inputs:
         - port: "CINFIFO"
-          size: [0, 0, 4000, 3000]
+          size: [0, 0, 1920, 1080]
       outputs:
         - port: "COUTFIFO"
           size: [0, 0, 1920, 1080]
