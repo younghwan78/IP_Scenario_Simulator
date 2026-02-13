@@ -29,11 +29,13 @@ Android 기반 SoC의 Multimedia IP(Camera, Video, Display, GPU, NPU 등)들의 
 │    Model     │    Controller    │         View          │
 │  (hw_nodes)  │   (simulator)    │    (text_view)        │
 │  (modules)   │   (analyzers)    │    (visualizer)       │
-│  (scenario)  │                  │                       │
+│  (scenario)  │                  │    (report_generator) │
+│  (hw_info)   │                  │                       │
+│ (hw_resolver)│                  │                       │
 ├──────────────┴──────────────────┴───────────────────────┤
 │                    Core Libraries                        │
 │  SimPy (Events) │ NetworkX (Graph) │ Pandas (Data)      │
-│  Plotly (Viz)   │ PyYAML (Config)  │ NumPy (Compute)    │
+│  Plotly (Viz)   │ PyYAML (Config)  │ Kaleido (PNG)      │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -539,7 +541,32 @@ Bandwidth Timeline Chart는 M2M 연결의 Read/Write BW를 시각화합니다:
 - M2M: cylinder shape으로 포트 정보 (size/format/bitwidth/comp) 표시
 - OTF: thick arrow로 파이프라인 연결 표시
 
-### 5.5 Output Organization
+### 5.5 Report Generator
+
+`report_generator.py`에서 시뮬레이션 결과를 HTML/Markdown 리포트로 생성합니다.
+
+6개 섹션으로 구성:
+- **Section 1: Scenario Description** — 센서, 해상도, FPS, 시나리오명
+- **Section 2: Basic Conditions** — Project Info, DVFS Table, SW Margin, BW Power 등
+- **Section 3: DVFS Guide** — DVFS 도메인별 Set Clock/Level (전치 테이블)
+- **Section 4: Power Results** — VDD 도메인별 Core Power, BW Power, Total
+- **Section 5: Clock Results** — IP별 Req/Set Clock, Voltage, VDD Leader(★) 표시
+- **Section 6: DMA Results** — IP별 포트별 Format, BW, BW Power (Comp/LLC 하이라이트)
+
+디자인 특징:
+- Google Docs 파스텔 톤 CSS (소프트 블루/그린 팔레트)
+- Section 1+2 side-by-side 2-column 레이아웃
+- VDD Leader IP 빨간색 강조, Comp/LLC enable 시 노란 배경
+- Gantt/BW 차트 HTML 링크 포함, 시뮬레이션 타임스탬프 표시
+
+### 5.6 PNG Chart Export
+
+Gantt/BW 차트를 Kaleido를 통해 PNG 이미지로 자동 저장합니다:
+- 해상도: 1920×1080 @2x (3840×2160)
+- HTML과 동시에 자동 생성
+- Kaleido 미설치 시 경고만 출력
+
+### 5.7 Output Organization
 
 모든 출력 파일은 `{project}_{scenario}_` 접두사로 자동 명명됩니다:
 
@@ -554,7 +581,11 @@ output_view/                              # --view flag
 
 output_simulation/                        # --gantt/--bw/--csv/--json flags
   {project}_{scenario}_gantt.html         # Plotly CDN (~11KB)
+  {project}_{scenario}_gantt.png          # PNG (kaleido)
   {project}_{scenario}_bw.html            # Plotly CDN (~24KB)
+  {project}_{scenario}_bw.png             # PNG (kaleido)
+  {project}_{scenario}_report.html        # Simulation Report (HTML)
+  {project}_{scenario}_report.md          # Simulation Report (Markdown)
   {project}_{scenario}_results.csv
   {project}_{scenario}_trace.json         # Perfetto format
 ```
@@ -801,7 +832,30 @@ def _simulate_dma_transfer(self, src_task, dst_task, transfer_config, data_confi
         yield self.env.timeout(read_dma.get_transfer_time(size))
 ```
 
----
+### 7.6 Power Calculation & VDD Alignment
+
+`hw_resolver.py`에서 DVFS 해석, VDD 도메인 정렬, 전력 계산을 수행합니다.
+
+```python
+# Step 1: Required Clock 결정 (OTF: throughput 기반, M2M: 개별)
+# Step 2: DVFS Level 탐색 → set_clock / dvfs_level / required_voltage
+# Step 3: BW Power 계산 (DMA BW × bw_power_coeff)
+# Step 4: VDD Domain Alignment
+for vdd_name, ip_names in vdd_groups.items():
+    max_voltage = max(resolved[n].required_voltage for n in ip_names)
+    leader_ips = sorted([n for n in ip_names
+                         if resolved[n].required_voltage == max_voltage])
+    leader_str = ','.join(leader_ips)   # ★ 표시 대상
+    for ip_name in ip_names:
+        resolved[ip_name].set_voltage = max_voltage
+        resolved[ip_name].vdd_leader = leader_str
+
+# Step 5: Dynamic Power 계산
+req_volt_power = dynamic_power * (required_voltage / REF_VOLTAGE)²
+set_volt_power = dynamic_power * (set_voltage / REF_VOLTAGE)²
+```
+
+**VDD Leader Logic**: 동일 VDD 도메인 내 최대 required_voltage를 가진 IP가 모두 VDD Leader(★)로 표시됩니다.
 
 ## 8. Extension Points
 
@@ -895,6 +949,9 @@ def test_m2m_timing():
 |---------|--------|-------------|
 | **Multi-Frame Pipelined Simulation** | ✅ Done | FPS 기반 프레임 간격으로 파이프라인 중첩 |
 | **DVFS Voltage Resolution** | ✅ Done | CSV 기반 DVFS 테이블 + ASV 그룹 전압 결정 |
+| **Power Calculation** | ✅ Done | VDD 도메인 전압 정렬, req/set_volt_power 동적 전력 계산 |
+| **Simulation Report** | ✅ Done | HTML/Markdown 6-섹션 리포트 (파스텔 스타일) |
+| **PNG Chart Export** | ✅ Done | Gantt/BW 차트 PNG 자동 저장 (kaleido) |
 | **CSV-based HW Config** | ✅ Done | IP info/DVFS를 CSV로 관리 |
 | **BW Timeline Chart** | ✅ Done | M2M Read/Write BW 시각화 |
 | **Multi-Level HTML Views** | ✅ Done | ELK.js 기반 Top/L1/L2 인터랙티브 뷰 |
@@ -922,13 +979,14 @@ def test_m2m_timing():
 | `src/model/modules.py` | Module system (Scaler, Crop, DMA, Generic) |
 | `src/model/scenario.py` | ScenarioGraph (DAG, tasks, edges) |
 | `src/model/hw_info.py` | CSV-based HW info & DVFS database |
-| `src/model/hw_resolver.py` | DVFS voltage/clock resolution |
+| `src/model/hw_resolver.py` | DVFS voltage/clock resolution & power calculation |
 | `src/model/tokens.py` | Token-based dataflow model |
 | `src/controller/simulator.py` | SoCSimulator (SimPy engine) |
 | `src/controller/performance_analyzer.py` | Throughput, FPS, utilization |
 | `src/controller/power_analyzer.py` | Energy, power breakdown |
 | `src/controller/timing_analyzer.py` | Latency, critical path |
 | `src/view/text_view.py` | TextViewer (terminal output) |
-| `src/view/visualizer.py` | Gantt chart, BW chart, Perfetto export |
+| `src/view/visualizer.py` | Gantt chart, BW chart, PNG export, Perfetto |
+| `src/view/report_generator.py` | HTML/Markdown simulation reports |
 | `src/view/html_view.py` | Interactive HTML views (ELK.js) |
 | `src/view/plantuml_view.py` | PlantUML diagram views |

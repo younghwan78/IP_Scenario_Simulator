@@ -10,6 +10,9 @@ SimPy 기반의 Discrete Event Simulator로 Android SoC의 Multimedia IP 성능/
 - **Multi-Frame Pipelined Simulation**: FPS 기반 프레임 간격으로 파이프라인 중첩 지원
 - **CSV-based HW Config**: IP 성능 정보와 DVFS 테이블을 CSV로 관리
 - **DVFS Voltage Resolution**: ASV 그룹 기반 동적 전압/주파수 최적화
+- **Power Calculation**: VDD 도메인 전압 정렬, req/set voltage 기반 동적 전력 계산
+- **Simulation Report**: HTML/Markdown 리포트 자동 생성 (6개 섹션: Scenario, Conditions, DVFS, Power, Clock, DMA)
+- **PNG Chart Export**: Gantt/BW 차트를 PNG 이미지로 자동 저장 (kaleido)
 - **Multi-Level Views**: Top/Level1/Level2 뷰를 HTML(ELK.js) 및 PlantUML로 생성
 - **BW Timeline Chart**: M2M 연결의 Read/Write Bandwidth 시각화
 - **CDN-based HTML**: Plotly CDN으로 경량 HTML 출력 (4.8MB → 11KB)
@@ -90,7 +93,11 @@ output_view/
 
 output_simulation/
   {project}_{scenario}_gantt.html       # Gantt chart (Plotly CDN, ~11KB)
+  {project}_{scenario}_gantt.png        # Gantt chart PNG (kaleido)
   {project}_{scenario}_bw.html          # BW timeline chart (Plotly CDN)
+  {project}_{scenario}_bw.png           # BW chart PNG (kaleido)
+  {project}_{scenario}_report.html      # Simulation report (pastel style)
+  {project}_{scenario}_report.md        # Simulation report (Markdown)
   {project}_{scenario}_results.csv      # Simulation results
   {project}_{scenario}_trace.json       # Perfetto trace format
 ```
@@ -104,7 +111,7 @@ output_simulation/
 │   │   ├── modules.py        # Module system (Scaler, Crop, DMA, Generic)
 │   │   ├── scenario.py       # ScenarioGraph (DAG, tasks, edges)
 │   │   ├── hw_info.py        # CSV-based HW info & DVFS database
-│   │   ├── hw_resolver.py    # DVFS voltage/clock resolution
+│   │   ├── hw_resolver.py    # DVFS voltage/clock resolution & power calculation
 │   │   └── tokens.py         # Token-based dataflow model
 │   ├── controller/
 │   │   ├── simulator.py      # SoCSimulator (SimPy engine)
@@ -113,7 +120,8 @@ output_simulation/
 │   │   └── timing_analyzer.py
 │   └── view/
 │       ├── text_view.py      # TextViewer (terminal output)
-│       ├── visualizer.py     # Gantt/BW chart (Plotly)
+│       ├── visualizer.py     # Gantt/BW chart (Plotly) + PNG export
+│       ├── report_generator.py # HTML/Markdown simulation reports
 │       ├── html_view.py      # HTML views (ELK.js)
 │       └── plantuml_view.py  # PlantUML views
 ├── hw_config/
@@ -122,7 +130,7 @@ output_simulation/
 │   └── projectA_dvfs.csv     # DVFS voltage tables
 ├── scenario_config/
 │   └── projectA_FHD30_recording_scenario.yaml
-├── tests/                    # Unit & Integration tests (128 tests)
+├── tests/                    # Unit & Integration tests (131 tests)
 ├── main.py                   # Entry point
 ├── DESIGN.md                 # Design document
 └── requirements.txt          # Dependencies
@@ -159,7 +167,7 @@ Domain,Level,Frequency,Voltage_ASV0,...,Voltage_ASV15
 ## Testing
 
 ```bash
-# Run all tests (128 tests)
+# Run all tests (131 tests)
 pytest tests/ -v
 
 # Quick run
@@ -174,6 +182,7 @@ pytest tests/ -q
 - Pandas >= 2.0
 - Plotly >= 5.0
 - PyYAML >= 6.0
+- Kaleido >= 1.0 (PNG export)
 
 ## Documentation
 
