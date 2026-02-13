@@ -17,6 +17,9 @@ num_frames: 1  # Multi-frame simulation (default: 1)
 asv_group: 4   # ASV group for DVFS voltage lookup (default: 4)
 sw_margin: 0.15  # SW margin for clock calculation (15% = 1.15x required clock)
 h_blank_margin: 0.05
+bw_power: 80           # mW/GB/s — BW power coefficient
+vBat: 4.0              # Battery voltage (V)
+pmic_efficiency: 0.85  # PMIC efficiency
 
 # Config file paths (relative to this scenario file)
 # CLI에서 -sc만 지정하면 나머지는 자동으로 찾음

@@ -574,12 +574,25 @@ class Visualizer:
                 seen_ips.append(rec['parent_ip'])
 
         # 3. Create subplots: 1 for total + 1 per IP
-        #    Calculate scenario average total BW (sum of all DMA BWs, frame 0)
+        #    Calculate scenario average total BW and power (frame 0)
         frame0_records = [r for r in dma_records if r.get('frame_id', 0) == 0]
         avg_total_gbps = sum(r['bw_gbps'] for r in frame0_records)
+        total_power_mw = sum(r.get('bw_power_mw', 0) for r in frame0_records)
+        total_power_ma = sum(r.get('bw_power_ma', 0) for r in frame0_records)
         
         num_rows = 1 + len(seen_ips)
-        subplot_titles = [f"Total BW (Avg: {avg_total_gbps:.2f} GB/s)"] + [f"{ip} BW" for ip in seen_ips]
+        total_title = f"Total BW (Avg: {avg_total_gbps:.2f} GB/s, Power: {total_power_mw:.1f} mW / {total_power_ma:.1f} mA)"
+        
+        # Per-IP power summaries
+        ip_titles = []
+        for ip in seen_ips:
+            ip_recs = [r for r in frame0_records if r['parent_ip'] == ip]
+            ip_pwr_mw = sum(r.get('bw_power_mw', 0) for r in ip_recs)
+            ip_pwr_ma = sum(r.get('bw_power_ma', 0) for r in ip_recs)
+            ip_bw = sum(r['bw_gbps'] for r in ip_recs)
+            ip_titles.append(f"{ip} BW ({ip_bw:.2f} GB/s, {ip_pwr_mw:.1f} mW / {ip_pwr_ma:.1f} mA)")
+        
+        subplot_titles = [total_title] + ip_titles
         fig = make_subplots(
             rows=num_rows, cols=1,
             shared_xaxes=True,
@@ -662,6 +675,9 @@ class Visualizer:
                 duration_ms = end_ms - start_ms
                 # Total data transferred (GB) = BW (GB/s) × duration (s)
                 total_gb = rec['bw_gbps'] * (duration_ms / 1000)
+                # BW power fields
+                pwr_mw = rec.get('bw_power_mw', 0.0)
+                pwr_ma = rec.get('bw_power_ma', 0.0)
                 
                 fig.add_trace(go.Bar(
                     x=[(start_ms + end_ms) / 2],
@@ -675,11 +691,12 @@ class Visualizer:
                     hovertemplate=(
                         f"{rec['parent_ip']} / {dma_name}<br>"
                         f"Direction: {direction}<br>"
-                        f"BW: {rec['bw_gbps']:.2f} GB/s<br>"
+                        f"BW: {rec['bw_gbps']:.2f} GB/s ({rec.get('bw_mbs', 0):.1f} MB/s)<br>"
                         f"Start: {start_ms:.3f} ms<br>"
                         f"End: {end_ms:.3f} ms<br>"
                         f"Duration: {duration_ms:.3f} ms<br>"
                         f"Total: {total_gb:.4f} GB<br>"
+                        f"Power: {pwr_mw:.2f} mW / {pwr_ma:.2f} mA<br>"
                         f"Frame: {rec['frame_id']}"
                         "<extra></extra>"
                     ),
@@ -743,6 +760,10 @@ class Visualizer:
         BW formula per DMA port (MB/s):
             bw = comp_ratio × fps × W × H × (bitwidth / 8) × BPP_MAP[fmt] × r_w_rate / 1e6
         
+        BW Power formula per DMA port:
+            bw_power_mw = bw (MB/s) × bw_power_coeff (mW/GB/s) / 1000 × llc_weight
+            bw_power_ma = bw_power_mw / vBat / pmic_efficiency
+        
         BW is assumed uniform during task duration.
         """
         from ..model.scenario import ConnectionType
@@ -760,6 +781,11 @@ class Visualizer:
                 if isinstance(hw, SensorNode):
                     fps = hw.fps
                     break
+        
+        # BW power parameters from scenario
+        bw_power_coeff = getattr(scenario, '_bw_power_coeff', 80.0)   # mW/GB/s
+        vBat = getattr(scenario, '_vBat', 4.0)                        # V
+        pmic_eff = getattr(scenario, '_pmic_efficiency', 0.85)
         
         # Build lookup: task_id → TaskResult per frame
         frame_results = {}  # {frame_id: {task_id: TaskResult}}
@@ -795,16 +821,20 @@ class Visualizer:
                             return getattr(module, 'direction', None)
             return None
         
-        def _calc_bw_mbs(port_info):
-            """Calculate DMA bandwidth in MB/s using analytical formula.
+        def _calc_bw_and_power(port_info):
+            """Calculate DMA bandwidth (MB/s) and power (mW, mA).
             
-            Formula:
-                bw (MB/s) = comp_ratio × fps × W × H × (bitwidth / 8)
-                            × BPP_MAP[format] × r_w_rate / 1e6
+            BW (MB/s) = comp_ratio × fps × W × H × (bitwidth/8)
+                        × BPP_MAP[format] × r_w_rate / 1e6
+            BW_power (mW) = bw (MB/s) × bw_power_coeff (mW/GB/s) / 1000 × llc_weight
+            BW_power (mA) = bw_power_mw / vBat / pmic_efficiency
+            
+            Returns:
+                (bw_mbs, bw_power_mw, bw_power_ma) or (0, 0, 0) if invalid
             """
             sz = port_info.get('size', [])
             if len(sz) < 4 or sz[2] <= 0 or sz[3] <= 0:
-                return 0.0
+                return 0.0, 0.0, 0.0
             width, height = sz[2], sz[3]
             bitwidth = port_info.get('bitwidth', 8)
             fmt = port_info.get('format', '')
@@ -816,9 +846,50 @@ class Visualizer:
             if port_info.get('comp') != 'enable':
                 comp_ratio = 1.0
             
-            # BW (MB/s) = comp_ratio × fps × W × H × (bitwidth/8) × BPP × r_w_rate / 1e6
+            # LLC weight (only if llc_enable is enabled)
+            llc_weight = 1.0
+            if port_info.get('llc_enable') == 'enable':
+                llc_weight = port_info.get('llc_weight', 1.0)
+            
+            # BW (MB/s)
             bw_mbs = comp_ratio * fps * width * height * (bitwidth / 8) * bpp * r_w_rate / 1e6
-            return bw_mbs
+            
+            # BW Power (mW) = bw (MB/s) × bw_power_coeff (mW/GB/s) / 1000 × llc_weight
+            bw_power_mw = bw_mbs * bw_power_coeff / 1000 * llc_weight
+            
+            # BW Power (mA) = bw_power_mw / vBat / pmic_efficiency
+            bw_power_ma = bw_power_mw / vBat / pmic_eff if (vBat > 0 and pmic_eff > 0) else 0.0
+            
+            return bw_mbs, bw_power_mw, bw_power_ma
+        
+        def _append_record(records, task_result, port_info, hw_name, direction, frame_id):
+            """Calculate BW/power and append record."""
+            port_name = port_info.get('port', '')
+            if not _is_dma_port(hw_name, port_name):
+                return  # CIN/OTF port — no memory BW
+            
+            bw_mbs, bw_power_mw, bw_power_ma = _calc_bw_and_power(port_info)
+            if bw_mbs <= 0:
+                return
+            
+            # Determine direction from hw.yaml or use default
+            hw_direction = _get_dma_direction(hw_name, port_name)
+            if hw_direction is not None:
+                direction = 'Read' if hw_direction == 'read' else 'Write'
+            
+            bw_gbps = bw_mbs / 1e3  # MB/s → GB/s for chart
+            records.append({
+                'start': task_result.start_time,
+                'end': task_result.end_time,
+                'bw_gbps': bw_gbps,
+                'bw_mbs': bw_mbs,
+                'bw_power_mw': bw_power_mw,
+                'bw_power_ma': bw_power_ma,
+                'direction': direction,
+                'parent_ip': hw_name,
+                'dma_name': port_name,
+                'frame_id': frame_id,
+            })
         
         # Process each frame
         for frame_id, task_map in sorted(frame_results.items()):
@@ -834,55 +905,11 @@ class Visualizer:
                 
                 # Process input ports (potential Read DMA)
                 for port_info in settings.get('inputs', []):
-                    port_name = port_info.get('port', '')
-                    if not _is_dma_port(hw_name, port_name):
-                        continue  # CIN/OTF port — no memory BW
-                    
-                    bw_mbs = _calc_bw_mbs(port_info)
-                    if bw_mbs <= 0:
-                        continue
-                    
-                    # Determine direction from hw.yaml or default to Read for inputs
-                    direction = _get_dma_direction(hw_name, port_name)
-                    if direction is None:
-                        direction = 'read'
-                    
-                    bw_gbps = bw_mbs / 1e3  # MB/s → GB/s for chart
-                    records.append({
-                        'start': task_result.start_time,
-                        'end': task_result.end_time,
-                        'bw_gbps': bw_gbps,
-                        'direction': 'Read' if direction == 'read' else 'Write',
-                        'parent_ip': hw_name,
-                        'dma_name': port_name,
-                        'frame_id': frame_id,
-                    })
+                    _append_record(records, task_result, port_info, hw_name, 'Read', frame_id)
                 
                 # Process output ports (potential Write DMA)
                 for port_info in settings.get('outputs', []):
-                    port_name = port_info.get('port', '')
-                    if not _is_dma_port(hw_name, port_name):
-                        continue  # COUT/OTF port — no memory BW
-                    
-                    bw_mbs = _calc_bw_mbs(port_info)
-                    if bw_mbs <= 0:
-                        continue
-                    
-                    # Determine direction from hw.yaml or default to Write for outputs
-                    direction = _get_dma_direction(hw_name, port_name)
-                    if direction is None:
-                        direction = 'write'
-                    
-                    bw_gbps = bw_mbs / 1e3  # MB/s → GB/s for chart
-                    records.append({
-                        'start': task_result.start_time,
-                        'end': task_result.end_time,
-                        'bw_gbps': bw_gbps,
-                        'direction': 'Write' if direction == 'write' else 'Read',
-                        'parent_ip': hw_name,
-                        'dma_name': port_name,
-                        'frame_id': frame_id,
-                    })
+                    _append_record(records, task_result, port_info, hw_name, 'Write', frame_id)
         
         return records
 

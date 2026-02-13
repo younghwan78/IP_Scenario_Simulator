@@ -445,6 +445,11 @@ def create_scenario_from_blocks(config: dict,
     # Store ip_settings per task for later reference (text view etc.)
     scenario._ip_settings = {}  # task_id -> ip_settings dict
     
+    # BW power parameters
+    scenario._bw_power_coeff = float(config.get('bw_power', 80))        # mW/GB/s
+    scenario._vBat = float(config.get('vBat', 4.0))                     # V
+    scenario._pmic_efficiency = float(config.get('pmic_efficiency', 0.85))
+    
     # Store resolved sensor config for later use (summary, timing constraints)
     scenario._resolved_sensor = resolved_sensor or {}
     
