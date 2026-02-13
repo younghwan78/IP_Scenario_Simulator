@@ -1,0 +1,57 @@
+# Sensor Configuration
+# This file defines sensor specs and constraints that remain constant per project.
+# Sensor name + mode → output_size, fps, pclk, line_length_pck 등 자동 결정
+# v_valid는 자동 계산: (line_length_pck * 1000 / pclk) * height [ms]
+
+sensors:
+  GNG:
+    mode0:
+      sensor_name: "A-24 GNG_4SUM_IDCG_LN1_RAW12_4080x2296_60FPS_3993MSPS"
+      sensor_size: [4080, 2296]
+      sensor_fps: 60.0
+      sensor_pclk: 3532800000
+      sensor_line_length_pck: 17712
+      sensor_format: BAYER
+      sensor_bitwidth: 12
+      sensor_ln_mode: 1
+      sensor_mipi_speed: 3.993
+      sensor_sbwc: enable
+      sensor_phy_type: "CPHY"
+    mode1:
+      sensor_name: "A-26 GNG_4SUM_IDCG_LN4_RAW12_4080x2296_30FPS_3993MSPS"
+      sensor_size: [4080, 2296]
+      sensor_fps: 30.0
+      sensor_pclk: 3532800000
+      sensor_line_length_pck: 29216
+      sensor_format: BAYER
+      sensor_bitwidth: 12
+      sensor_ln_mode: 4
+      sensor_mipi_speed: 3.993
+      sensor_sbwc: enable
+      sensor_phy_type: "CPHY"
+
+  HP2:
+    mode0:
+      sensor_name: "A-08 SENSOR_HP2_4000x2252_60FPS_12BIT"
+      sensor_size: [4000, 2252]
+      sensor_fps: 60.0
+      sensor_pclk: 1760000000
+      sensor_line_length_pck: 6440
+      sensor_format: BAYER
+      sensor_bitwidth: 12
+      sensor_ln_mode: 1
+      sensor_mipi_speed: 3.712
+      sensor_sbwc: enable
+      sensor_phy_type: "CPHY"
+    mode1:
+      sensor_name: "A-10 SENSOR_HP2_4000x2252_30FPS_LN4"
+      sensor_size: [4000, 2252]
+      sensor_fps: 30.0
+      sensor_pclk: 1760000000
+      sensor_line_length_pck: 18304
+      sensor_format: BAYER
+      sensor_bitwidth: 12
+      sensor_ln_mode: 1
+      sensor_mipi_speed: 3.712
+      sensor_sbwc: enable
+      sensor_phy_type: "CPHY"

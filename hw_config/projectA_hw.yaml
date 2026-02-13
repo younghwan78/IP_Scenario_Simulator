@@ -27,10 +27,8 @@
   modules:
     - name: "DC_PHY"
       type: "CIN"
-      latency: 5 #cycles
     - name: "LINK"
       type: "COUT"
-      latency: 5 #cycles
   edges:
     - src: "DC_PHY"
       dst: "LINK"
@@ -48,25 +46,18 @@
   modules:
     - name: "NFI_DEC"
       type: "CIN"
-      latency: 5 #cycles
     - name: "IBUF"
       type: "Generic"
-      latency: 5 #cycles
     - name: "DEGAMMA"
       type: "Generic"
-      latency: 2 #cycles
     - name: "sMCB"
       type: "Generic"
-      latency: 2 #cycles
     - name: "BNS"
       type: "Scaler"
-      latency: 4 #cycles
     - name: "COUTFIFO"
       type: "COUT"
-      latency: 3 #cycles
     - name: "CSIS_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
@@ -103,37 +94,28 @@
   modules:
     - name: "REORDER"
       type: "CIN"
-      latency: 4 #cycles
     - name: "BPC"
       type: "Generic"
-      latency: 3 #cycles
     - name: "CROP"
       type: "Crop"
-      latency: 3 #cycles
     - name: "ALC"
       type: "Generic"
-      latency: 2 #cycles
     - name: "GAMMA"
       type: "Generic"
-      latency: 5 #cycles
     - name: "PDSTAT"
       type: "Generic"
-      latency: 5 #cycles
     - name: "STAT_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "HPD_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "VPD_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
@@ -168,31 +150,23 @@
   modules:
     - name: "CINFIFO"
       type: "CIN"
-      latency: 4 #cycles
     - name: "PREP_RDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "read"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "DTP"
       type: "Generic"
-      latency: 4 #cycles
     - name: "CROPIN"
       type: "Crop"
-      latency: 4 #cycles
     - name: "BITMASK"
       type: "Generic"
-      latency: 4 #cycles
     - name: "GAMMA_SESNOR"
       type: "Generic"
-      latency: 4 #cycles
     - name: "BLCBYR"
       type: "Generic"
-      latency: 4 #cycles
     - name: "COUTFIFO"
       type: "COUT"
-      latency: 4 #cycles
   edges:
     - src: "CINFIFO"
       dst: "DTP"
@@ -226,163 +200,122 @@
   modules:
     - name: "CINFIFO"
       type: "CIN"
-      latency: 4 #cycles
     - name: "DTP"
       type: "Generic"
-      latency: 4 #cycles
     - name: "AF_IDENT"
       type: "Generic"
-      latency: 4 #cycles
     - name: "SBPC"
       type: "Generic"
-      latency: 4 #cycles
     - name: "CGRAS"
       type: "Generic"
-      latency: 4 #cycles
     - name: "CROP_DZOOM"
       type: "Crop"
-      latency: 4 #cycles
     - name: "WBG"
       type: "Generic"
-      latency: 4 #cycles
     - name: "SDNS"
       type: "Generic"
-      latency: 4 #cycles
     - name: "MAKERGB"
       type: "Generic"
-      latency: 4 #cycles
     - name: "GTM"
       type: "Generic"
-      latency: 4 #cycles
     - name: "BLC"
       type: "Generic"
-      latency: 4 #cycles
     - name: "SDRC"
       type: "Generic"
-      latency: 4 #cycles
     - name: "CCM9"
       type: "Generic"
-      latency: 4 #cycles
     - name: "GAMMA_STAT"
       type: "Generic"
-      latency: 4 #cycle
     - name: "RGB_TO_YUV"
       type: "Generic"
-      latency: 4 #cycle
     - name: "DS_LME0"
       type: "Scaler"
-      latency: 4 #cycle
     - name: "MENR"
       type: "Generic"
-      latency: 4 #cycle
     - name: "EDGE_SCORE"
       type: "Generic"
-      latency: 4 #cycle
     - name: "DS_LME1"
       type: "Scaler"
-      latency: 4 #cycle
     - name: "CDAF"
       type: "Generic"
-      latency: 4 #cycle
     - name: "CDAF_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "RGBHIST"
       type: "Generic"
-      latency: 4 #cycle
     - name: "RGBHIST_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "THSTAT_AE"
       type: "Generic"
-      latency: 4 #cycle
     - name: "THSTAT_AE_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "THSTAT_AWB"
       type: "Generic"
-      latency: 4 #cycle
     - name: "THSTAT_AWB_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "DRC_CLCT"
       type: "Generic"
-      latency: 4 #cycle
     - name: "DRC_CLCT_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "SPE_HIST"
       type: "Generic"
-      latency: 4 #cycle
     - name: "SPE_RGB_STAT_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "SPE_Y_HIST_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "DS_FDPIG"
       type: "Scaler"
-      latency: 4 #cycle
     - name: "DS_FDPIG_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "DS_CAV"
       type: "Scaler"
-      latency: 4 #cycle
     - name: "DS_CAV_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "DS_SAT"
       type: "Scaler"
-      latency: 4 #cycle
     - name: "SAT_Y_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "SAT_UV_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "DS_LME0_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "DS_LME1_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
@@ -486,58 +419,47 @@
   modules:
     - name: "COMP_RD0_RDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "read"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "SPE_Y_HIST_RDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "read"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "SPE_AI_STAT_RDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "read"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "SPE_GRID_STAT_RDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "read"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "SPE_FRAME_STAT_RDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "read"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "CROPIN"
       type: "Crop"
-      latency: 3 #cycles
     - name: "COMPUTE"
       type: "Generic"
-      latency: 3 #cycles
     - name: "COUTFIFO"
       type: "COUT"
-      latency: 3 #cycles
     - name: "CROP_DNG_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "SPE_GRID_STAT_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "SPE_FRAME_STAT_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
@@ -580,16 +502,12 @@
   modules:
     - name: "CINFIFO"
       type: "CIN"
-      latency: 4 #cycles
     - name: "COMPUTE"
       type: "Generic"
-      latency: 8 #cycles
     - name: "COUTFIFO"
       type: "COUT"
-      latency: 4 #cycles
     - name: "CROP_DNG_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
@@ -618,37 +536,30 @@
   modules:
     - name: "CINFIFO"
       type: "CIN"
-      latency: 4 #cycles
     - name: "COMPUTE"
       type: "Generic"
-      latency: 8 #cycles
     - name: "L0_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "L1_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "L2_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "L3_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "G4_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
@@ -683,19 +594,15 @@
   modules:
     - name: "L0_CINFIFO"
       type: "CIN"
-      latency: 4 #cycles
     - name: "L0_RDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "read"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "COMPUTE"
       type: "Generic"
-      latency: 8 #cycles
     - name: "L0_COUTFIFO"
       type: "COUT"
-      latency: 4 #cycles
   edges:
     - src: "L0_CINFIFO"
       dst: "COMPUTE"
@@ -721,55 +628,42 @@
   modules:
     - name: "L1_CINFIFO"
       type: "CIN"
-      latency: 4 #cycles
     - name: "L2_CINFIFO"
       type: "CIN"
-      latency: 4 #cycles
     - name: "L3_CINFIFO"
       type: "CIN"
-      latency: 4 #cycles
     - name: "G4_CINFIFO"
       type: "CIN"
-      latency: 4 #cycles
     - name: "L1_RDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "read"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "L2_RDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "read"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "L3_RDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "read"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "G4_RDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "read"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "COMPUTE"
       type: "Generic"
-      latency: 8 #cycles
     - name: "L1_COUTFIFO"
       type: "COUT"
-      latency: 4 #cycles
     - name: "L2_COUTFIFO"
       type: "COUT"
-      latency: 4 #cycles
     - name: "L3_COUTFIFO"
       type: "COUT"
-      latency: 4 #cycles
     - name: "G4_COUTFIFO"
       type: "COUT"
-      latency: 4 #cycles
   edges:
     - src: "L1_CINFIFO"
       dst: "COMPUTE"
@@ -813,25 +707,18 @@
   modules:
     - name: "L0_CINFIFO"
       type: "CIN"
-      latency: 4 #cycles
     - name: "L1_CINFIFO"
       type: "CIN"
-      latency: 4 #cycles
     - name: "L2_CINFIFO"
       type: "CIN"
-      latency: 4 #cycles
     - name: "L3_CINFIFO"
       type: "CIN"
-      latency: 4 #cycles
     - name: "G4_CINFIFO"
       type: "CIN"
-      latency: 4 #cycles
     - name: "COMPUTE"
       type: "Generic"
-      latency: 8 #cycles
     - name: "COUTFIFO"
       type: "COUT"
-      latency: 4 #cycles
   edges:
     - src: "L0_CINFIFO"
       dst: "COMPUTE"
@@ -863,16 +750,12 @@
   modules:
     - name: "CINFIFO"
       type: "CIN"
-      latency: 4 #cycles
     - name: "COMPUTE"
       type: "Generic"
-      latency: 8 #cycles
     - name: "DS_YUVP"
       type: "Scaler"
-      latency: 8 #cycles
     - name: "COUTFIFO"
       type: "COUT"
-      latency: 4 #cycles
   edges:
     - src: "CINFIFO"
       dst: "COMPUTE"
@@ -898,37 +781,30 @@
   modules:
     - name: "CINFIFO"
       type: "CIN"
-      latency: 4 #cycles
     - name: "COMPUTE"
       type: "Generic"
-      latency: 8 #cycles
     - name: "P0_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "P1_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "P2_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "P3_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
     - name: "P4_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
@@ -971,10 +847,8 @@
         Linear: 1.0
     - name: "COMPUTE"
       type: "Generic"
-      latency: 8 #cycles
     - name: "MFC_WDMA"
       type: "DMA"
-      latency: 3 #cycles
       direction: "write"
       max_bandwidth: 25600000000
       multiple_outstanding: 16
@@ -1013,10 +887,8 @@
         SBWC_LOSSY: 0.5
     - name: "COMPUTE"
       type: "Generic"
-      latency: 8 #cycles
     - name: "COUTFIFO"
       type: "COUT"
-      latency: 4 #cycles
   edges:
     - src: "DPU_RDMA"
       dst: "COMPUTE"
