@@ -196,7 +196,8 @@ class Visualizer:
 
     def create_gantt_chart_ms(self, df: pd.DataFrame,
                                title: str = "Simulation Timeline",
-                               hw_order: list = None) -> Optional['go.Figure']:
+                               hw_order: list = None,
+                               scenario: 'ScenarioGraph' = None) -> Optional['go.Figure']:
         """
         Create a Gantt chart with time in milliseconds (numeric axis).
 
@@ -205,6 +206,9 @@ class Visualizer:
             title: Chart title
             hw_order: Optional list of HW names in desired Y-axis order
                       (scenario definition order). If None, ordered by start time.
+            scenario: Optional ScenarioGraph for OTF group merging.
+                      OTF-connected tasks are drawn on a single row with
+                      combined label (e.g., 'HP2~CSIS~PDP').
 
         Returns:
             Plotly Figure object
@@ -218,61 +222,200 @@ class Visualizer:
 
         fig = go.Figure()
 
-        # Get unique HW names in desired order
+        # ── Build OTF group mapping: hw_name → merged label ──
+        hw_to_group_label = {}  # HW name → group label (e.g. "HP2~CSIS_LINK~CSIS")
+        group_member_order = {}  # group_label → [hw_names in order]
+
+        if scenario:
+            otf_groups = scenario.get_otf_groups()
+            for group_tasks in otf_groups:
+                # Get HW names for each task in the group, in hw_order sequence
+                group_hw_names = []
+                seen = set()
+                for tid in group_tasks:
+                    task = scenario.get_task(tid)
+                    if task and task.mapped_hw not in seen:
+                        group_hw_names.append(task.mapped_hw)
+                        seen.add(task.mapped_hw)
+
+                # Sort by hw_order if available, to get consistent ordering
+                if hw_order:
+                    group_hw_names.sort(
+                        key=lambda h: hw_order.index(h) if h in hw_order else 999
+                    )
+
+                group_label = "~".join(group_hw_names)
+                group_member_order[group_label] = group_hw_names
+                for hw in group_hw_names:
+                    hw_to_group_label[hw] = group_label
+
+        # ── Build Y-axis labels ──
         if hw_order:
-            # Use provided scenario order, append any HW not in the list
             seen = set()
-            hw_names = []
+            y_labels = []
             for hw in hw_order:
-                if hw in df['HW'].values and hw not in seen:
-                    hw_names.append(hw)
-                    seen.add(hw)
-            # Append any remaining HW not in hw_order
+                label = hw_to_group_label.get(hw, hw)
+                if label not in seen:
+                    y_labels.append(label)
+                    seen.add(label)
+            # Append any remaining
             for hw in df['HW'].unique():
-                if hw not in seen:
-                    hw_names.append(hw)
+                label = hw_to_group_label.get(hw, hw)
+                if label not in seen:
+                    y_labels.append(label)
+                    seen.add(label)
         else:
-            # Default: order by first start time
             df_sorted = df.sort_values('StartTime')
-            hw_names = df_sorted['HW'].unique().tolist()
+            seen = set()
+            y_labels = []
+            for hw in df_sorted['HW'].unique():
+                label = hw_to_group_label.get(hw, hw)
+                if label not in seen:
+                    y_labels.append(label)
+                    seen.add(label)
 
         # Color palette
         colors = px.colors.qualitative.Set2
         task_colors = {}
 
+        # Build task timing lookup for M2M arrows
+        task_timing = {}  # task_id → {start_ms, end_ms, y_label, frame_id}
+
+        # ── Pre-build OTF group task lists (for combined tooltip) ──
+        otf_task_sets = {}  # group_label → [task_id list in hw_order]
+        if scenario:
+            for group_tasks in scenario.get_otf_groups():
+                group_info = []
+                for tid in group_tasks:
+                    t = scenario.get_task(tid)
+                    if t:
+                        group_info.append({'task_id': tid, 'hw': t.mapped_hw})
+                if not group_info:
+                    continue
+                if hw_order:
+                    group_info.sort(
+                        key=lambda g: hw_order.index(g['hw']) if g['hw'] in hw_order else 999
+                    )
+                first_hw = group_info[0]['hw']
+                label = hw_to_group_label.get(first_hw, first_hw)
+                otf_task_sets[label] = group_info
+
+        # ── Pass 1: Collect per-task timing from simulation data (frame 0) ──
+        task_actual_timing = {}  # task_id → {start_ms, end_ms, runtime_ms}
+        for idx, row in df.iterrows():
+            tid = row['TaskID']
+            fid = row.get('FrameID', 0)
+            if fid == 0 or tid not in task_actual_timing:
+                s = row['StartTime'] * 1000
+                e = row['EndTime'] * 1000
+                task_actual_timing[tid] = {
+                    'start_ms': s, 'end_ms': e, 'runtime_ms': e - s
+                }
+
+        # ── Pre-build OTF group combined hover text ──
+        otf_hover_cache = {}  # group_label → hover_text
+        for label, group_info in otf_task_sets.items():
+            lines = []
+            for g in group_info:
+                t = task_actual_timing.get(g['task_id'])
+                if t:
+                    lines.append(
+                        f"  • {g['task_id']} → {g['hw']}  "
+                        f"({t['start_ms']:.3f} ~ {t['end_ms']:.3f} ms, "
+                        f"Δ{t['runtime_ms']:.3f} ms)"
+                    )
+                else:
+                    lines.append(f"  • {g['task_id']} → {g['hw']}")
+            otf_hover_cache[label] = (
+                "<b>[OTF Group]</b><br>"
+                + "<br>".join(lines)
+                + "<extra></extra>"
+            )
+
+        # ── Pass 2: Draw bars ──
         for idx, row in df.iterrows():
             task_id = row['TaskID']
             hw = row['HW']
-            start = row['StartTime'] * 1000  # Convert to ms
+            start = row['StartTime'] * 1000
             end = row['EndTime'] * 1000
+            runtime = end - start
+            frame_id = row.get('FrameID', 0)
+
+            y_label = hw_to_group_label.get(hw, hw)
 
             if task_id not in task_colors:
                 task_colors[task_id] = colors[len(task_colors) % len(colors)]
 
+            # OTF group → combined tooltip with per-task timing
+            if y_label in otf_hover_cache:
+                hover_text = otf_hover_cache[y_label]
+            else:
+                hover_text = (
+                    f"<b>{task_id}</b> ({hw})<br>"
+                    f"Start: {start:.3f} ms<br>"
+                    f"End: {end:.3f} ms<br>"
+                    f"Runtime: {runtime:.3f} ms"
+                    "<extra></extra>"
+                )
+
             fig.add_trace(go.Bar(
-                x=[end - start],
-                y=[hw],
+                x=[runtime],
+                y=[y_label],
                 base=start,
                 orientation='h',
                 name=task_id,
                 marker_color=task_colors[task_id],
                 text=task_id,
                 textposition='inside',
+                hovertemplate=hover_text,
                 showlegend=task_id not in [t.name for t in fig.data[:-1]] if fig.data else True
             ))
 
+            # Store timing for M2M arrow drawing (use frame 0 only)
+            if frame_id == 0 or task_id not in task_timing:
+                task_timing[task_id] = {
+                    'start_ms': start,
+                    'end_ms': end,
+                    'y_label': y_label,
+                }
+
         # Add frame interval annotations for the last task (periodicity check)
         if 'FrameID' in df.columns:
-            self._add_frame_interval_annotations(fig, df, hw_names)
+            self._add_frame_interval_annotations(fig, df, y_labels)
 
-        # Order Y-axis by start time (first task at top)
+        # ── M2M dependency arrows ──
+        m2m_annotations = []
+        if scenario:
+            m2m_edges = scenario.get_m2m_dependencies()
+            for src_tid, dst_tid in m2m_edges:
+                src_info = task_timing.get(src_tid)
+                dst_info = task_timing.get(dst_tid)
+                if not src_info or not dst_info:
+                    continue
+                # Arrow from end of source to start of destination
+                m2m_annotations.append(dict(
+                    x=dst_info['start_ms'],
+                    y=dst_info['y_label'],
+                    ax=src_info['end_ms'],
+                    ay=src_info['y_label'],
+                    xref='x', yref='y',
+                    axref='x', ayref='y',
+                    showarrow=True,
+                    arrowhead=3,
+                    arrowsize=1.2,
+                    arrowwidth=1.5,
+                    arrowcolor='rgba(80, 80, 80, 0.7)',
+                ))
+
+        # Order Y-axis
         fig.update_layout(
             title=title,
             xaxis_title='Time (ms)',
             yaxis_title='Hardware',
             barmode='overlay',
-            height=300 + len(hw_names) * 40,
-            yaxis={'categoryorder': 'array', 'categoryarray': hw_names[::-1]}
+            height=300 + len(y_labels) * 40,
+            yaxis={'categoryorder': 'array', 'categoryarray': y_labels[::-1]},
+            annotations=m2m_annotations,
         )
 
         return fig
@@ -431,8 +574,12 @@ class Visualizer:
                 seen_ips.append(rec['parent_ip'])
 
         # 3. Create subplots: 1 for total + 1 per IP
+        #    Calculate scenario average total BW (sum of all DMA BWs, frame 0)
+        frame0_records = [r for r in dma_records if r.get('frame_id', 0) == 0]
+        avg_total_gbps = sum(r['bw_gbps'] for r in frame0_records)
+        
         num_rows = 1 + len(seen_ips)
-        subplot_titles = ["Total BW"] + [f"{ip} BW" for ip in seen_ips]
+        subplot_titles = [f"Total BW (Avg: {avg_total_gbps:.2f} GB/s)"] + [f"{ip} BW" for ip in seen_ips]
         fig = make_subplots(
             rows=num_rows, cols=1,
             shared_xaxes=True,
@@ -512,6 +659,10 @@ class Visualizer:
                 if show:
                     legend_shown.add(legend_key)
                 
+                duration_ms = end_ms - start_ms
+                # Total data transferred (GB) = BW (GB/s) × duration (s)
+                total_gb = rec['bw_gbps'] * (duration_ms / 1000)
+                
                 fig.add_trace(go.Bar(
                     x=[(start_ms + end_ms) / 2],
                     y=[rec['bw_gbps']],
@@ -525,7 +676,10 @@ class Visualizer:
                         f"{rec['parent_ip']} / {dma_name}<br>"
                         f"Direction: {direction}<br>"
                         f"BW: {rec['bw_gbps']:.2f} GB/s<br>"
-                        f"Time: {start_ms:.3f} ~ {end_ms:.3f} ms<br>"
+                        f"Start: {start_ms:.3f} ms<br>"
+                        f"End: {end_ms:.3f} ms<br>"
+                        f"Duration: {duration_ms:.3f} ms<br>"
+                        f"Total: {total_gb:.4f} GB<br>"
                         f"Frame: {rec['frame_id']}"
                         "<extra></extra>"
                     ),
@@ -586,16 +740,26 @@ class Visualizer:
         Use hw_registry module type to determine if a port is DMA (generates BW)
         or CIN/COUT (OTF, no memory BW).
         
-        Data size per DMA port:
-            size[2] × size[3] × (bitwidth / 8) × comp_ratio
-        BW = data_size / task_duration
-        IP total BW = sum of all its DMA ports' BW
+        BW formula per DMA port (MB/s):
+            bw = comp_ratio × fps × W × H × (bitwidth / 8) × BPP_MAP[fmt] × r_w_rate / 1e6
+        
+        BW is assumed uniform during task duration.
         """
         from ..model.scenario import ConnectionType
         from ..model.modules import DMAModule
+        from ..model.hw_nodes import SensorNode
+        from ..controller.simulator import BPP_MAP, BPP_DEFAULT
         
         ip_settings = getattr(scenario, '_ip_settings', {})
         records = []
+        
+        # Get fps from sensor node
+        fps = 30.0  # default
+        if hw_registry:
+            for hw in hw_registry.values():
+                if isinstance(hw, SensorNode):
+                    fps = hw.fps
+                    break
         
         # Build lookup: task_id → TaskResult per frame
         frame_results = {}  # {frame_id: {task_id: TaskResult}}
@@ -631,16 +795,30 @@ class Visualizer:
                             return getattr(module, 'direction', None)
             return None
         
-        def _calc_data_size(port_info):
-            """Calculate data size in bytes from port info."""
+        def _calc_bw_mbs(port_info):
+            """Calculate DMA bandwidth in MB/s using analytical formula.
+            
+            Formula:
+                bw (MB/s) = comp_ratio × fps × W × H × (bitwidth / 8)
+                            × BPP_MAP[format] × r_w_rate / 1e6
+            """
             sz = port_info.get('size', [])
             if len(sz) < 4 or sz[2] <= 0 or sz[3] <= 0:
-                return 0
+                return 0.0
+            width, height = sz[2], sz[3]
             bitwidth = port_info.get('bitwidth', 8)
+            fmt = port_info.get('format', '')
+            bpp = BPP_MAP.get(fmt, BPP_DEFAULT)
+            r_w_rate = port_info.get('r_w_rate', 1.0)
+            
+            # Compression ratio (only if comp is enabled)
             comp_ratio = port_info.get('comp_ratio', 1.0)
             if port_info.get('comp') != 'enable':
                 comp_ratio = 1.0
-            return sz[2] * sz[3] * (bitwidth / 8) * comp_ratio
+            
+            # BW (MB/s) = comp_ratio × fps × W × H × (bitwidth/8) × BPP × r_w_rate / 1e6
+            bw_mbs = comp_ratio * fps * width * height * (bitwidth / 8) * bpp * r_w_rate / 1e6
+            return bw_mbs
         
         # Process each frame
         for frame_id, task_map in sorted(frame_results.items()):
@@ -660,8 +838,8 @@ class Visualizer:
                     if not _is_dma_port(hw_name, port_name):
                         continue  # CIN/OTF port — no memory BW
                     
-                    data_size = _calc_data_size(port_info)
-                    if data_size <= 0:
+                    bw_mbs = _calc_bw_mbs(port_info)
+                    if bw_mbs <= 0:
                         continue
                     
                     # Determine direction from hw.yaml or default to Read for inputs
@@ -669,7 +847,7 @@ class Visualizer:
                     if direction is None:
                         direction = 'read'
                     
-                    bw_gbps = (data_size / duration) / 1e9
+                    bw_gbps = bw_mbs / 1e3  # MB/s → GB/s for chart
                     records.append({
                         'start': task_result.start_time,
                         'end': task_result.end_time,
@@ -686,8 +864,8 @@ class Visualizer:
                     if not _is_dma_port(hw_name, port_name):
                         continue  # COUT/OTF port — no memory BW
                     
-                    data_size = _calc_data_size(port_info)
-                    if data_size <= 0:
+                    bw_mbs = _calc_bw_mbs(port_info)
+                    if bw_mbs <= 0:
                         continue
                     
                     # Determine direction from hw.yaml or default to Write for outputs
@@ -695,7 +873,7 @@ class Visualizer:
                     if direction is None:
                         direction = 'write'
                     
-                    bw_gbps = (data_size / duration) / 1e9
+                    bw_gbps = bw_mbs / 1e3  # MB/s → GB/s for chart
                     records.append({
                         'start': task_result.start_time,
                         'end': task_result.end_time,

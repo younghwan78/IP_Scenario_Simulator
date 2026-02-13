@@ -315,8 +315,10 @@ class DMAModule(Module):
         if data_size <= 0 or self.max_bandwidth <= 0:
             return 0.0
 
-        # Effective bandwidth considering MO (Simple model)
-        # Assuming MO=16 is optimal (1.0 efficiency)
+        # TODO: Simplified linear model — not realistic.
+        #   Actual DMA efficiency depends on MO, burst length, DRAM latency,
+        #   bus contention, etc. Replace with table-based or analytical model
+        #   when implementing module-level simulation.
         efficiency = min(1.0, self.multiple_outstanding / 16.0)
         effective_bw = self.max_bandwidth * efficiency
         

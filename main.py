@@ -50,6 +50,101 @@ def load_scenario_config(path: str) -> dict:
         return yaml.safe_load(f)
 
 
+def load_sensor_config(path: str) -> dict:
+    """Load sensor configuration from YAML file."""
+    with open(path, 'r', encoding='utf-8') as f:
+        return yaml.safe_load(f)
+
+
+def resolve_sensor_config(scenario_config: dict,
+                          sensor_config: dict = None) -> dict:
+    """
+    Resolve sensor configuration by merging scenario sensor section
+    with sensor_config.yaml data.
+
+    If sensor_config is provided, looks up sensor name + mode to get
+    full sensor specs and auto-calculates v_valid_time.
+
+    If sensor_config is not provided (backward compatibility),
+    returns the scenario sensor section as-is.
+
+    v_valid calculation:
+        v_valid_ms = (sensor_line_length_pck * 1000 / sensor_pclk) * height
+        v_valid_time = v_valid_ms / 1000  (seconds)
+
+    Args:
+        scenario_config: Scenario configuration dictionary
+        sensor_config: Sensor configuration dictionary (from sensor_config.yaml)
+
+    Returns:
+        Resolved sensor configuration dict with all fields populated
+    """
+    scenario_data = scenario_config.get('scenario', scenario_config)
+    sensor_cfg = scenario_data.get('sensor', {})
+
+    if not sensor_cfg:
+        return {}
+
+    hw_name = sensor_cfg.get('hw', '')
+    mode = sensor_cfg.get('mode', '')
+
+    # If sensor_config provided and mode specified, resolve from sensor_config
+    if sensor_config and hw_name and mode:
+        sensors = sensor_config.get('sensors', {})
+        sensor_def = sensors.get(hw_name, {})
+        mode_def = sensor_def.get(mode, {})
+
+        if not mode_def:
+            print(f"[Warning] Sensor '{hw_name}' mode '{mode}' not found in sensor_config")
+            return sensor_cfg
+
+        # Build resolved config from sensor_config data
+        sensor_size = mode_def.get('sensor_size', [0, 0])
+        width = sensor_size[0] if len(sensor_size) >= 1 else 0
+        height = sensor_size[1] if len(sensor_size) >= 2 else 0
+        fps = mode_def.get('sensor_fps', 30.0)
+        pclk = mode_def.get('sensor_pclk', 0)
+        line_length_pck = mode_def.get('sensor_line_length_pck', 0)
+
+        # Calculate v_valid_time
+        v_valid_ms = 0.0
+        v_valid_time = None
+        if pclk > 0 and line_length_pck > 0 and height > 0:
+            v_valid_ms = (float(line_length_pck) * 1000.0 / float(pclk)) * height
+            v_valid_time = v_valid_ms / 1000.0  # convert to seconds
+
+        resolved = {
+            'hw': hw_name,
+            'mode': mode,
+            'output_size': [0, 0, width, height],
+            'fps': fps,
+            'sensor_mode': mode,
+            'v_valid_time': v_valid_time,
+            'v_valid_ms': v_valid_ms,
+            # Preserve original sensor_config fields for later use
+            'sensor_pclk': pclk,
+            'sensor_line_length_pck': line_length_pck,
+            'sensor_format': mode_def.get('sensor_format', ''),
+            'sensor_bitwidth': mode_def.get('sensor_bitwidth', 0),
+            'sensor_ln_mode': mode_def.get('sensor_ln_mode', 1),
+            'sensor_mipi_speed': mode_def.get('sensor_mipi_speed', 0.0),
+            'sensor_sbwc': mode_def.get('sensor_sbwc', 'disable'),
+            'sensor_phy_type': mode_def.get('sensor_phy_type', ''),
+            'sensor_name': mode_def.get('sensor_name', ''),
+        }
+
+        print(f"[Sensor Config] {hw_name} / {mode}")
+        print(f"  Size: {width}x{height}, FPS: {fps}")
+        print(f"  PCLK: {pclk/1e6:.1f} MHz, Line Length: {line_length_pck} pck")
+        print(f"  v_valid: {v_valid_ms:.3f} ms (auto-calculated)")
+
+        return resolved
+
+    # Backward compatibility: return scenario sensor config as-is
+    # (supports legacy inline format with output_size, fps, v_valid_time)
+    return sensor_cfg
+
+
 def create_hw_node(config: dict) -> HWNode:
     """Create HWNode from configuration dictionary."""
     node_type = config.get('type', 'IP')
@@ -225,14 +320,18 @@ def create_module(config: dict) -> Module:
         )
 
 
-def create_scenario(config: dict) -> ScenarioGraph:
+def create_scenario(config: dict, resolved_sensor: dict = None) -> ScenarioGraph:
     """Create ScenarioGraph from configuration dictionary.
     
     Supports both old format (scenario.tasks/edges) and new format (ip_blocks).
+    
+    Args:
+        config: Configuration dictionary
+        resolved_sensor: Resolved sensor config (from resolve_sensor_config)
     """
     # Auto-detect format
     if 'ip_blocks' in config or ('ip_blocks' not in config and 'scenario' not in config and 'tasks' in config):
-        return create_scenario_from_blocks(config)
+        return create_scenario_from_blocks(config, resolved_sensor=resolved_sensor)
     
     # Old format
     scenario_data = config.get('scenario', config)
@@ -321,18 +420,23 @@ def _build_workload_from_ip_settings(ip_settings: dict) -> dict:
     return workload
 
 
-def create_scenario_from_blocks(config: dict) -> ScenarioGraph:
+def create_scenario_from_blocks(config: dict,
+                                resolved_sensor: dict = None) -> ScenarioGraph:
     """
     Create ScenarioGraph from new ip_blocks-based configuration.
     
     Format:
         name: "..."
-        sensor: { hw, output_size, fps, ... }
+        sensor: { hw, mode }  (resolved via sensor_config.yaml)
         tasks: [{ id, hw, description }]  # sensor task
         ip_blocks:
           - ip_settings: { hw, mode, inputs, outputs }
             tasks: [{ id, hw, description }]
             edges: [{ src, dst, type, src_port, dst_port }]
+    
+    Args:
+        config: Scenario configuration dict
+        resolved_sensor: Resolved sensor config (from resolve_sensor_config)
     """
     name = config.get('name', 'Unnamed')
     h_blank_margin = float(config.get('h_blank_margin', 0.05))
@@ -341,8 +445,13 @@ def create_scenario_from_blocks(config: dict) -> ScenarioGraph:
     # Store ip_settings per task for later reference (text view etc.)
     scenario._ip_settings = {}  # task_id -> ip_settings dict
     
+    # Store resolved sensor config for later use (summary, timing constraints)
+    scenario._resolved_sensor = resolved_sensor or {}
+    
+    # Use resolved sensor config if available, otherwise fall back to inline
+    sensor_cfg = resolved_sensor if resolved_sensor else config.get('sensor', {})
+    
     # Add sensor task(s)
-    sensor_cfg = config.get('sensor', {})
     for task_cfg in config.get('tasks', []):
         workload = {}
         if sensor_cfg and sensor_cfg.get('hw') == task_cfg.get('hw'):
@@ -403,7 +512,8 @@ def create_scenario_from_blocks(config: dict) -> ScenarioGraph:
 
 
 def apply_scenario_settings(hw_nodes: Dict[str, HWNode],
-                            scenario_config: dict) -> None:
+                            scenario_config: dict,
+                            resolved_sensor: dict = None) -> None:
     """
     Apply scenario-specific settings to HW nodes.
 
@@ -414,11 +524,13 @@ def apply_scenario_settings(hw_nodes: Dict[str, HWNode],
     Args:
         hw_nodes: Dictionary mapping HW names to HWNode instances
         scenario_config: Scenario configuration dictionary
+        resolved_sensor: Resolved sensor config (from resolve_sensor_config).
+                        If provided, overrides scenario sensor section.
     """
     scenario_data = scenario_config.get('scenario', scenario_config)
 
-    # Apply sensor settings
-    sensor_cfg = scenario_data.get('sensor', {})
+    # Use resolved sensor config if available, else fall back to inline
+    sensor_cfg = resolved_sensor if resolved_sensor else scenario_data.get('sensor', {})
     if sensor_cfg:
         hw_name = sensor_cfg.get('hw')
         if hw_name and hw_name in hw_nodes:
@@ -443,6 +555,10 @@ def apply_scenario_settings(hw_nodes: Dict[str, HWNode],
                     sensor.sensor_mode = sensor_cfg['sensor_mode']
                 if 'v_valid_time' in sensor_cfg:
                     sensor.v_valid_time = sensor_cfg['v_valid_time']
+
+                # Store resolved sensor info on the node for summary/display
+                if resolved_sensor:
+                    sensor.set_attr('resolved_sensor', resolved_sensor)
 
     # Apply module settings (old format)
     for mod_setting in scenario_data.get('module_settings', []):
@@ -632,6 +748,12 @@ def main():
         help='Path to scenario configuration YAML file (e.g., scenario_config/projectA_FHD30_recording_scenario.yaml)'
     )
     parser.add_argument(
+        '--sensor-config',
+        type=str,
+        default=None,
+        help='Path to sensor configuration YAML file (e.g., hw_config/sensor_config.yaml)'
+    )
+    parser.add_argument(
         '--demo',
         action='store_true',
         help='Run demonstration with built-in sample configuration'
@@ -743,8 +865,39 @@ def main():
         return
 
     # Load configurations
-    if args.hw_config:
-        hw_config = load_hw_config(args.hw_config)
+    # Step 1: Load scenario config first (needed for config_paths resolution)
+    if args.scenario_config:
+        scenario_config = load_scenario_config(args.scenario_config)
+    else:
+        print("Error: --scenario-config required when not in demo mode")
+        return
+
+    # Step 2: Resolve config_paths from scenario config
+    # CLI args take priority; if not specified, use config_paths from scenario
+    scenario_dir = os.path.dirname(os.path.abspath(args.scenario_config))
+    config_paths = scenario_config.get('config_paths', {})
+
+    def _resolve_path(cli_arg, config_key):
+        """Return CLI arg if specified, else resolve relative path from scenario."""
+        if cli_arg:
+            return cli_arg
+        rel_path = config_paths.get(config_key)
+        if rel_path:
+            resolved = os.path.normpath(os.path.join(scenario_dir, rel_path))
+            if os.path.exists(resolved):
+                return resolved
+            else:
+                print(f"[Warning] config_paths.{config_key}: {resolved} not found")
+        return None
+
+    hw_config_path = _resolve_path(args.hw_config, 'hw_config')
+    sensor_config_path = _resolve_path(args.sensor_config, 'sensor_config')
+    hw_info_path = _resolve_path(args.hw_info, 'hw_info')
+    hw_dvfs_path = _resolve_path(args.hw_dvfs, 'hw_dvfs')
+
+    # Step 3: Load HW config
+    if hw_config_path:
+        hw_config = load_hw_config(hw_config_path)
         # Support both formats: direct list or wrapped in 'hardware' key
         if isinstance(hw_config, list):
             hw_list = hw_config
@@ -754,35 +907,40 @@ def main():
         # Keep raw config for Level2 HTML view (module info)
         hw_raw = {item['name']: item for item in hw_list}
     else:
-        print("Error: --hw-config required when not in demo mode")
+        print("Error: --hw-config required (or set config_paths.hw_config in scenario)")
         return
 
-    if args.scenario_config:
-        scenario_config = load_scenario_config(args.scenario_config)
-        scenario = create_scenario(scenario_config)
+    # ── Sensor Config Resolution ──
+    resolved_sensor = None
+    if sensor_config_path:
+        sensor_config_data = load_sensor_config(sensor_config_path)
+        resolved_sensor = resolve_sensor_config(scenario_config, sensor_config_data)
     else:
-        print("Error: --scenario-config required when not in demo mode")
-        return
+        # Backward compatibility: resolve from inline scenario sensor section
+        resolved_sensor = resolve_sensor_config(scenario_config)
+
+    # Create scenario (pass resolved sensor for workload setup)
+    scenario = create_scenario(scenario_config, resolved_sensor=resolved_sensor)
 
     # Build HW registry and apply scenario settings
     hw_registry = {node.name: node for node in hw_nodes}
-    apply_scenario_settings(hw_registry, scenario_config)
+    apply_scenario_settings(hw_registry, scenario_config, resolved_sensor=resolved_sensor)
 
     # ── Derive output prefix: {project}_{scenario}_ ──
     # Project name from hw_config filename (e.g., projectA_hw.yaml → projectA)
-    hw_basename = os.path.splitext(os.path.basename(args.hw_config))[0]
+    hw_basename = os.path.splitext(os.path.basename(hw_config_path))[0]
     project_name = hw_basename.replace('_hw', '')
     scenario_name = scenario.name.replace(' ', '_')
     output_prefix = f"{project_name}_{scenario_name}_"
 
     # ── CSV-based HW Info Integration ──────────────────────────
     resolved_configs = None
-    if args.hw_info and args.hw_dvfs:
+    if hw_info_path and hw_dvfs_path:
         from src.model.hw_info import create_hw_info_db
         from src.model.hw_resolver import HWResolver
 
         print("\n[CSV HW Config Loading]")
-        hw_info_db = create_hw_info_db(args.hw_info, args.hw_dvfs)
+        hw_info_db = create_hw_info_db(hw_info_path, hw_dvfs_path)
         print(f"  Project: {hw_info_db.project_name}")
         print(f"  IPs loaded: {len(hw_info_db.ip_infos)}")
         print(f"  DVFS tables loaded: {len(hw_info_db.dvfs_tables)} "
@@ -808,7 +966,7 @@ def main():
 
         # Print exploration report
         print(resolver.get_exploration_report(resolved_configs))
-    elif args.hw_info or args.hw_dvfs:
+    elif hw_info_path or hw_dvfs_path:
         print("Warning: Both --hw-info and --hw-dvfs must be specified together. "
               "Skipping CSV-based HW config.")
 
@@ -938,7 +1096,7 @@ def main():
             if task and task.mapped_hw not in seen_hw:
                 hw_order.append(task.mapped_hw)
                 seen_hw.add(task.mapped_hw)
-        fig = visualizer.create_gantt_chart_ms(df, title=results.scenario_name, hw_order=hw_order)
+        fig = visualizer.create_gantt_chart_ms(df, title=results.scenario_name, hw_order=hw_order, scenario=scenario)
         if fig:
             gantt_path = os.path.join(args.output_sim_dir, f"{output_prefix}gantt.html")
             visualizer.save_gantt(fig, gantt_path)

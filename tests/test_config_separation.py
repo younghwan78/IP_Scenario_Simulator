@@ -242,3 +242,113 @@ class TestApplyScenarioSettings:
 
         # Verify crop was updated
         assert crop.crop_region == (100, 50, 1920, 1080)
+
+
+class TestSensorConfigResolution:
+    """Test sensor_config.yaml resolution and v_valid auto-calculation."""
+
+    def test_resolve_sensor_config(self):
+        """Test resolving sensor config with v_valid auto-calculation."""
+        import sys
+        sys.path.insert(0, '.')
+        from main import resolve_sensor_config
+
+        scenario_config = {
+            'sensor': {
+                'hw': 'HP2',
+                'mode': 'mode1',
+            }
+        }
+
+        sensor_config = {
+            'sensors': {
+                'HP2': {
+                    'mode1': {
+                        'sensor_name': 'HP2_30FPS',
+                        'sensor_size': [4000, 2252],
+                        'sensor_fps': 30.0,
+                        'sensor_pclk': 1760000000,
+                        'sensor_line_length_pck': 18304,
+                        'sensor_format': 'BAYER',
+                        'sensor_bitwidth': 12,
+                    }
+                }
+            }
+        }
+
+        resolved = resolve_sensor_config(scenario_config, sensor_config)
+
+        assert resolved['hw'] == 'HP2'
+        assert resolved['mode'] == 'mode1'
+        assert resolved['output_size'] == [0, 0, 4000, 2252]
+        assert resolved['fps'] == 30.0
+        assert resolved['sensor_mode'] == 'mode1'
+
+        # v_valid = (18304 * 1000 / 1760000000) * 2252
+        expected_v_valid_ms = (18304.0 * 1000.0 / 1760000000.0) * 2252
+        assert resolved['v_valid_ms'] == pytest.approx(expected_v_valid_ms, rel=1e-3)
+        assert resolved['v_valid_time'] == pytest.approx(expected_v_valid_ms / 1000.0, rel=1e-3)
+
+    def test_apply_sensor_settings_from_sensor_config(self):
+        """Test applying resolved sensor config to SensorNode."""
+        from main import apply_scenario_settings
+
+        sensor = SensorNode(
+            name="HP2",
+            frame_width=1920,
+            frame_height=1080,
+            fps=60.0,
+            supported_sensor_modes=["mode0", "mode1"]
+        )
+
+        hw_nodes = {"HP2": sensor}
+        scenario_config = {'sensor': {'hw': 'HP2', 'mode': 'mode1'}}
+
+        # Simulated resolved sensor config
+        resolved_sensor = {
+            'hw': 'HP2',
+            'mode': 'mode1',
+            'output_size': [0, 0, 4000, 2252],
+            'fps': 30.0,
+            'sensor_mode': 'mode1',
+            'v_valid_time': 0.023421,
+        }
+
+        apply_scenario_settings(hw_nodes, scenario_config, resolved_sensor=resolved_sensor)
+
+        assert sensor.frame_width == 4000
+        assert sensor.frame_height == 2252
+        assert sensor.fps == 30.0
+        assert sensor.sensor_mode == 'mode1'
+        assert sensor.v_valid_time == pytest.approx(0.023421)
+
+    def test_sensor_config_backward_compat(self):
+        """Test backward compatibility: inline sensor config without sensor_config.yaml."""
+        from main import resolve_sensor_config, apply_scenario_settings
+
+        # Old-style inline sensor config
+        scenario_config = {
+            'sensor': {
+                'hw': 'HP2',
+                'output_size': [0, 0, 4000, 3000],
+                'fps': 30.0,
+                'sensor_mode': 'LN2',
+                'v_valid_time': 0.0118
+            }
+        }
+
+        # resolve without sensor_config should return as-is
+        resolved = resolve_sensor_config(scenario_config)
+        assert resolved['hw'] == 'HP2'
+        assert resolved['v_valid_time'] == 0.0118
+
+        # Apply should work the same way
+        sensor = SensorNode(name="HP2", supported_sensor_modes=["LN2"])
+        hw_nodes = {"HP2": sensor}
+        apply_scenario_settings(hw_nodes, scenario_config, resolved_sensor=resolved)
+
+        assert sensor.frame_width == 4000
+        assert sensor.frame_height == 3000
+        assert sensor.fps == 30.0
+        assert sensor.v_valid_time == 0.0118
+

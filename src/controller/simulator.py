@@ -26,14 +26,24 @@ from ..model.tokens import (
 BPP_MAP = {
     "NV12": 1.5,
     "YUV420": 1.5,
+    "YUV422": 2.0,
+    "YUV444": 3.0,
     "RGB888": 3.0,
     "RGB": 3.0,
+    "ARGB": 4.0,
+    "RGBA": 4.0,
     "RAW10": 1.25,
     "RAW12": 1.5,
     "RAW14": 1.75,
     "RAW16": 2.0,
-    "P010": 2.0
+    "P010": 2.0,
+    "P210": 3.2,
+    "BAYER_PACKED": 1.0,
+    "BAYER_UNPACKED": 2.0,
+    "STAT": 1.0,
+    "UV8": 2.0,
 }
+BPP_DEFAULT = 1.0  # Default BPP for unknown formats
 
 
 @dataclass
@@ -244,7 +254,7 @@ class SoCSimulator:
     def _calculate_transfer_size(self, width: int, height: int, fmt: str, 
                                compression: str, dma_module: DMAModule) -> int:
         """Calculate transfer size based on resolution, format, and compression."""
-        bpp = BPP_MAP.get(fmt, 1.0)
+        bpp = BPP_MAP.get(fmt, BPP_DEFAULT)
         base_size = width * height * bpp
         
         # Apply compression ratio if supported
