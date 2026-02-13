@@ -1106,6 +1106,13 @@ def main():
             gantt_path = os.path.join(args.output_sim_dir, f"{output_prefix}gantt.html")
             visualizer.save_gantt(fig, gantt_path)
             print(f"Gantt chart saved to: {gantt_path}")
+            # PNG export
+            gantt_png = os.path.join(args.output_sim_dir, f"{output_prefix}gantt.png")
+            try:
+                fig.write_image(gantt_png, width=1920, height=1080, scale=2)
+                print(f"Gantt chart PNG saved to: {gantt_png}")
+            except Exception as e:
+                print(f"[Warning] PNG export failed (pip install kaleido): {e}")
 
     if do_json:
         visualizer = Visualizer()
@@ -1122,7 +1129,41 @@ def main():
             bw_path = os.path.join(args.output_sim_dir, f"{output_prefix}bw.html")
             visualizer.save_gantt(bw_fig, bw_path)
             print(f"BW chart saved to: {bw_path}")
+            # PNG export
+            bw_png = os.path.join(args.output_sim_dir, f"{output_prefix}bw.png")
+            try:
+                bw_fig.write_image(bw_png, width=1920, height=1080, scale=2)
+                print(f"BW chart PNG saved to: {bw_png}")
+            except Exception as e:
+                print(f"[Warning] PNG export failed (pip install kaleido): {e}")
+
+    # ── Generate Simulation Report (HTML + Markdown) ──
+    if resolved_configs is not None:
+        from src.view.report_generator import ReportGenerator
+        # Collect chart file links (relative to output dir)
+        chart_links = {}
+        gantt_file = os.path.join(args.output_sim_dir, f"{output_prefix}gantt.html")
+        bw_file = os.path.join(args.output_sim_dir, f"{output_prefix}bw.html")
+        if os.path.exists(gantt_file):
+            chart_links['Gantt Chart'] = gantt_file
+        if os.path.exists(bw_file):
+            chart_links['BW Chart'] = bw_file
+        rgen = ReportGenerator(
+            scenario_config=scenario_config,
+            resolved_configs=resolved_configs,
+            scenario=scenario,
+            hw_registry=hw_registry,
+            resolved_sensor=resolved_sensor,
+            link_files=chart_links,
+        )
+        report_html = os.path.join(args.output_sim_dir, f"{output_prefix}report.html")
+        report_md = os.path.join(args.output_sim_dir, f"{output_prefix}report.md")
+        rgen.save_html(report_html)
+        rgen.save_markdown(report_md)
+        print(f"Report saved to: {report_html}")
+        print(f"Report saved to: {report_md}")
 
 
 if __name__ == "__main__":
     main()
+

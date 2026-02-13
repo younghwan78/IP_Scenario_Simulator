@@ -285,10 +285,9 @@ class TestHWResolver:
 
         # IP_A: ppc=4, 1920*1080=2073600 pixels, fps=30
         # base_clock = 2073600 * 30 / (4 * 1e6) = 15.552 MHz
-        # required_clock = 15.552 * 1.15 = 17.8848 MHz
+        # required_clock = 15.552 / (1 - 0.15) = 18.296 MHz
         cfg = resolved['IP_A']
-        expected_base = 1920 * 1080 * 30 / (4 * 1e6)
-        expected_req = expected_base * 1.15
+        expected_req = 1920 * 1080 * 30 / (1.0 - 0.15) / (4 * 1e6)
         assert abs(cfg.required_clock - expected_req) < 0.01
 
         # DVFS level: 200 MHz is lowest >= 17.88 → level 3
@@ -356,9 +355,14 @@ class TestHWResolver:
         expected_active = 10.5 * resolution_mp * v_scale * (30.0 / 30.0)
         assert abs(cfg.get_active_power() - expected_active) < 0.001
 
-        # Idle Power = IDC × (V/710)²
-        expected_idle = 2.0 * v_scale
-        assert abs(cfg.get_idle_power() - expected_idle) < 0.001
+        # Idle Power = 0.0 (static_power deferred)
+        assert cfg.get_idle_power() == 0.0
+        
+        # req_volt_power and set_volt_power should be populated
+        assert cfg.req_volt_power > 0
+        assert cfg.set_volt_power > 0
+        # For single IP in VDD domain, req == set
+        assert abs(cfg.req_volt_power - cfg.set_volt_power) < 0.001
 
     def test_apply_to_hw(self, hw_info_db, hw_registry):
         """Test that resolved configs are applied to HW nodes."""

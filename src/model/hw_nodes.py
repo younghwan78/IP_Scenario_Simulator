@@ -187,6 +187,19 @@ class SensorNode(ExternalNode):
             return float('inf')
         return self.frame_size / self.effective_v_valid_time
 
+    def get_processing_time(self, workload: Dict[str, Any]) -> float:
+        """
+        Sensor processing time equals vValid time.
+
+        Sensor outputs pixel data during the vValid period. OTF-connected
+        IPs are bound by this data delivery rate - even if their clock is
+        fast enough for quicker processing, they must wait for sensor data.
+
+        Returns:
+            effective_v_valid_time in seconds
+        """
+        return self.effective_v_valid_time
+
     def get_frame_timing(self) -> Dict[str, float]:
         """Get detailed timing information for sensor interface."""
         return {

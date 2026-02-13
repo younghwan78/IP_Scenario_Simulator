@@ -76,7 +76,7 @@ class DVFSTable:
                 return lvl
         return None
     
-    def find_min_level_for_speed(self, required_speed: float) -> Optional[DVFSLevel]:
+    def find_min_level_for_speed(self, required_speed: float, asv_group: int = None) -> Optional[DVFSLevel]:
         """Find the minimum DVFS level whose speed >= required_speed.
         
         Levels are sorted so level 0 = highest speed.
@@ -84,13 +84,15 @@ class DVFSTable:
         
         Args:
             required_speed: Required clock speed in MHz
+            asv_group: If provided, exclude levels with voltage=0 for this ASV group
             
         Returns:
             DVFSLevel with speed >= required_speed, or None if impossible
         """
-        # Filter valid levels (speed > 0 and speed >= required)
+        # Filter valid levels (speed > 0, speed >= required, voltage > 0 for ASV group)
         candidates = [lvl for lvl in self.levels 
-                       if lvl.speed > 0 and lvl.speed >= required_speed]
+                       if lvl.speed > 0 and lvl.speed >= required_speed
+                       and (asv_group is None or lvl.voltages.get(asv_group, 0.0) > 0)]
         if not candidates:
             return None
         # Return the one with lowest speed (highest level number) among candidates

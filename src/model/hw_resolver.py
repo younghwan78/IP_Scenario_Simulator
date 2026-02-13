@@ -3,7 +3,7 @@ HW Resolver - DVFS & Voltage Domain resolution.
 
 Determines clock frequency and voltage for each IP based on:
 1. Scenario workload (pixels, fps, ppc) → required_clock
-2. sw_margin → required_clock * (1 + sw_margin)
+2. sw_margin → required_clock = pixels×fps / (1-sw_margin) / ppc
 3. DVFS table → set_clock (minimum level meeting required_clock)
 4. Same DVFS group → highest required_clock wins
 5. Same VDD domain → highest voltage wins
@@ -39,7 +39,7 @@ class ResolvedIPConfig:
         set_clock: Actual clock from DVFS table [MHz]
         dvfs_level: Selected DVFS level number
         dvfs_group: DVFS table name
-        required_voltage: Voltage for set_clock level [mV]
+        required_voltage: Voltage for set_clock level from DVFS table [mV]
         set_voltage: Final voltage after VDD domain alignment [mV]
         vdd: Voltage domain name
         unit_power: Power coefficient [mW/MP@30fps]
@@ -47,6 +47,9 @@ class ResolvedIPConfig:
         idc: Idle power coefficient
         input_resolution_mp: Input resolution in megapixels
         fps: Scenario FPS
+        req_volt_power: Dynamic power at required_voltage [mW]
+        set_volt_power: Dynamic power at set_voltage (VDD-aligned) [mW]
+        vdd_leader: IP name(s) that determine this VDD domain's voltage (comma-separated)
     """
     ip_name: str
     mode: str = "Normal"
@@ -62,30 +65,32 @@ class ResolvedIPConfig:
     idc: float = 0.0
     input_resolution_mp: float = 0.0
     fps: float = 30.0
+    req_volt_power: float = 0.0
+    set_volt_power: float = 0.0
+    vdd_leader: str = ""
     
-    def get_active_power(self) -> float:
-        """Calculate active power [mW].
+    def _calc_dynamic_power(self, voltage_mv: float) -> float:
+        """Calculate dynamic power at a given voltage [mW].
         
-        Formula: unit_power × resolution_MP × (V/0.71)² × (FPS/30)
+        Formula: unit_power × resolution_MP × (V/0.71V)² × (FPS/30)
+        V in Volts (voltage_mv / 1000)
         """
-        if self.unit_power <= 0 or self.input_resolution_mp <= 0:
+        if self.unit_power <= 0 or self.input_resolution_mp <= 0 or voltage_mv <= 0:
             return 0.0
-        v_scale = (self.set_voltage / REFERENCE_VOLTAGE_MV) ** 2
+        v_scale = (voltage_mv / REFERENCE_VOLTAGE_MV) ** 2
         fps_scale = self.fps / REFERENCE_FPS
         return self.unit_power * self.input_resolution_mp * v_scale * fps_scale
     
+    def get_active_power(self) -> float:
+        """Calculate active power using set_voltage (VDD-aligned) [mW]."""
+        return self._calc_dynamic_power(self.set_voltage)
+    
     def get_idle_power(self) -> float:
-        """Calculate idle power [mW].
-        
-        Formula: IDC × (V/0.71)²
-        """
-        if self.idc <= 0:
-            return 0.0
-        v_scale = (self.set_voltage / REFERENCE_VOLTAGE_MV) ** 2
-        return self.idc * v_scale
+        """Calculate idle power [mW]. (static_power = 0 for now)"""
+        return 0.0
     
     def get_total_power(self) -> float:
-        """Calculate total power [mW]."""
+        """Calculate total power [mW] = dynamic + static."""
         return self.get_active_power() + self.get_idle_power()
 
 
@@ -142,7 +147,7 @@ class HWResolver:
         
         Steps:
             1. For each IP, get mode → IPInfo (unit_power, ppc, dvfs_group)
-            2. Calculate required_clock = pixels×fps/ppc × (1+sw_margin)
+            2. Calculate required_clock = pixels×fps / (1-sw_margin) / ppc
             3. Same DVFS group → align to highest required_clock
             4. DVFS table → select set_clock (min level ≥ required)
             5. Same VDD domain → align to highest voltage
@@ -180,8 +185,8 @@ class HWResolver:
             
             # Calculate required clock
             if ip_info.ppc > 0 and fps > 0 and input_pixels > 0:
-                base_clock = (input_pixels * fps) / (ip_info.ppc * 1e6)  # MHz
-                required_clock = base_clock * (1.0 + sw_margin)
+                # req_freq = resolution × FPS / (1 - SW_MARGIN) / PPC
+                required_clock = (input_pixels * fps) / (1.0 - sw_margin) / (ip_info.ppc * 1e6)  # MHz
             else:
                 required_clock = 0.0
             
@@ -197,6 +202,42 @@ class HWResolver:
                 input_resolution_mp=input_resolution_mp,
                 fps=fps
             )
+        # Step 1.5: CSIS clock correction for sensor-OTF-connected IPs
+        #   req_csis_clock depends on sensor phy_type, sbwc, mipi_speed, bitwidth
+        #   Apply: req_freq = max(req_freq, req_csis_clock) for OTF-connected IPs
+        resolved_sensor = getattr(scenario, '_resolved_sensor', {})
+        sensor_mipi_speed = resolved_sensor.get('sensor_mipi_speed', 0)
+        sensor_phy_type = resolved_sensor.get('sensor_phy_type', 'DPHY')
+        sensor_sbwc = resolved_sensor.get('sensor_sbwc', 'disable')
+        sensor_bitwidth = resolved_sensor.get('sensor_bitwidth', 12)
+        
+        if sensor_mipi_speed > 0:
+            # Find all IPs connected to sensor via OTF chain
+            otf_connected_hws = self._get_sensor_otf_connected_hws(scenario)
+            
+            for hw_name in otf_connected_hws:
+                if hw_name not in resolved:
+                    continue
+                config = resolved[hw_name]
+                ppc = config.ppc
+                if ppc <= 0:
+                    continue
+                
+                # Calculate req_csis_clock (MHz)
+                if sensor_phy_type.upper() == "CPHY":
+                    if sensor_sbwc == "enable":
+                        req_csis_clock = sensor_mipi_speed * 16 / 7 * 3 / ppc * 1000 / sensor_bitwidth
+                    else:
+                        req_csis_clock = sensor_mipi_speed * 16 / 7 * 3 / (sensor_bitwidth * ppc) * 1000
+                else:  # DPHY
+                    if sensor_sbwc == "enable":
+                        req_csis_clock = sensor_mipi_speed * 4 / ppc * 1000 / sensor_bitwidth
+                    else:
+                        req_csis_clock = sensor_mipi_speed * 4 / (sensor_bitwidth * ppc) * 1000
+                
+                # Apply correction: max(req_freq, req_csis_clock)
+                if req_csis_clock > config.required_clock:
+                    config.required_clock = req_csis_clock
         
         # Step 2: Align same DVFS group to highest required_clock
         dvfs_groups: Dict[str, List[str]] = defaultdict(list)
@@ -219,7 +260,7 @@ class HWResolver:
                 print(f"[Warning] DVFS table '{config.dvfs_group}' not found for '{ip_name}'")
                 continue
             
-            level = dvfs_table.find_min_level_for_speed(config.required_clock)
+            level = dvfs_table.find_min_level_for_speed(config.required_clock, asv_group=self.asv_group)
             if level is None:
                 # Use highest available speed
                 if dvfs_table.levels:
@@ -241,14 +282,25 @@ class HWResolver:
                 vdd_groups[config.vdd].append(ip_name)
         
         for vdd_name, ip_names in vdd_groups.items():
+            # Find all IPs at highest required_voltage (VDD leaders)
             max_voltage = max(resolved[n].required_voltage for n in ip_names)
+            leader_ips = sorted([n for n in ip_names
+                                 if resolved[n].required_voltage == max_voltage])
+            leader_str = ','.join(leader_ips)
             for ip_name in ip_names:
                 resolved[ip_name].set_voltage = max_voltage
+                resolved[ip_name].vdd_leader = leader_str
         
         # IPs with no VDD group: use their own required_voltage
         for ip_name, config in resolved.items():
             if not config.vdd:
                 config.set_voltage = config.required_voltage
+                config.vdd_leader = ip_name
+        
+        # Step 5: Calculate req_volt_power and set_volt_power
+        for ip_name, config in resolved.items():
+            config.req_volt_power = config._calc_dynamic_power(config.required_voltage)
+            config.set_volt_power = config._calc_dynamic_power(config.set_voltage)
         
         return resolved
     
@@ -308,9 +360,9 @@ class HWResolver:
             Formatted report string
         """
         lines = []
-        lines.append("=" * 90)
+        lines.append("=" * 120)
         lines.append("HW Configuration Report (CSV-based DVFS Resolution)")
-        lines.append("=" * 90)
+        lines.append("=" * 120)
         lines.append("")
         
         # Group by DVFS group
@@ -321,28 +373,49 @@ class HWResolver:
         for group_name, configs in sorted(dvfs_groups.items()):
             lines.append(f"  DVFS Group: {group_name}")
             lines.append(f"  {'IP Name':<15} {'Mode':<10} {'Req.Clk':>10} {'Set.Clk':>10} "
-                         f"{'DVFS Lv':>8} {'Req.Volt':>10} {'Set.Volt':>10} {'VDD':<12}")
-            lines.append(f"  {'-'*15} {'-'*10} {'-'*10} {'-'*10} {'-'*8} {'-'*10} {'-'*10} {'-'*12}")
+                         f"{'DVFS Lv':>8} {'Req.Volt':>10} {'Set.Volt':>10} {'VDD':<12} "
+                         f"{'ReqV.Pwr':>10} {'SetV.Pwr':>10} {'Leader':<12}")
+            lines.append(f"  {'-'*15} {'-'*10} {'-'*10} {'-'*10} {'-'*8} {'-'*10} {'-'*10} {'-'*12} "
+                         f"{'-'*10} {'-'*10} {'-'*12}")
             
             for c in sorted(configs, key=lambda x: x.ip_name):
+                # Mark VDD leader with '*'
+                leader_mark = "*" if c.ip_name in c.vdd_leader.split(',') else ""
+                volt_delta = c.set_voltage - c.required_voltage
+                volt_info = f"{c.set_voltage:>7.1f}mV" if volt_delta == 0 else f"{c.set_voltage:>7.1f}mV(+{volt_delta:.1f})"
                 lines.append(
                     f"  {c.ip_name:<15} {c.mode:<10} "
                     f"{c.required_clock:>8.1f}M {c.set_clock:>8.1f}M "
                     f"{c.dvfs_level:>8d} "
-                    f"{c.required_voltage:>8.1f}mV {c.set_voltage:>8.1f}mV "
-                    f"{c.vdd:<12}"
+                    f"{c.required_voltage:>8.1f}mV {volt_info:<14} "
+                    f"{c.vdd:<12} "
+                    f"{c.req_volt_power:>8.2f}mW {c.set_volt_power:>8.2f}mW "
+                    f"{c.vdd_leader}{leader_mark}"
                 )
             lines.append("")
         
+        # VDD Domain Summary
+        lines.append("-" * 120)
+        lines.append("  VDD Domain Summary:")
+        vdd_groups: Dict[str, List[ResolvedIPConfig]] = defaultdict(list)
+        for c in resolved_configs.values():
+            if c.vdd:
+                vdd_groups[c.vdd].append(c)
+        for vdd_name, configs in sorted(vdd_groups.items()):
+            leader = configs[0].vdd_leader
+            voltage = configs[0].set_voltage
+            lines.append(f"    {vdd_name:<12}: {voltage:>7.1f}mV (determined by {leader})")
+        lines.append("")
+        
         # Power summary
-        lines.append("-" * 90)
+        lines.append("-" * 120)
         lines.append("  Power Summary:")
-        total_active = sum(c.get_active_power() for c in resolved_configs.values())
-        total_idle = sum(c.get_idle_power() for c in resolved_configs.values())
-        lines.append(f"    Active Power: {total_active:>10.2f} mW")
-        lines.append(f"    Idle Power:   {total_idle:>10.2f} mW")
-        lines.append(f"    Total Power:  {total_active + total_idle:>10.2f} mW")
-        lines.append("=" * 90)
+        total_req = sum(c.req_volt_power for c in resolved_configs.values())
+        total_set = sum(c.set_volt_power for c in resolved_configs.values())
+        lines.append(f"    Req.Volt Power (pre-VDD align):  {total_req:>10.2f} mW")
+        lines.append(f"    Set.Volt Power (post-VDD align): {total_set:>10.2f} mW")
+        lines.append(f"    VDD Alignment Overhead:          {total_set - total_req:>10.2f} mW (+{((total_set/total_req - 1)*100) if total_req > 0 else 0:.1f}%)")
+        lines.append("=" * 120)
         
         return "\n".join(lines)
     
@@ -406,3 +479,51 @@ class HWResolver:
                 max_pixels = max(max_pixels, pixels)
         
         return max_pixels
+    
+    def _get_sensor_otf_connected_hws(self, scenario: Any) -> set:
+        """Find all HW names connected to sensor via OTF chain.
+        
+        Traverses from sensor tasks following OTF edges to collect
+        all downstream IP names that need CSIS clock correction.
+        
+        Returns:
+            Set of HW names connected to sensor via OTF
+        """
+        from .hw_nodes import SensorNode
+        if scenario is None:
+            return set()
+        
+        # Find sensor task IDs
+        sensor_tasks = set()
+        for task in scenario.get_tasks():
+            if hasattr(scenario, '_resolved_sensor'):
+                sensor_hw = getattr(scenario, '_resolved_sensor', {}).get('hw', '')
+                if task.mapped_hw == sensor_hw:
+                    sensor_tasks.add(task.task_id)
+        
+        if not sensor_tasks:
+            return set()
+        
+        # BFS: follow OTF edges from sensor tasks
+        from .scenario import ConnectionType
+        visited = set()
+        queue = list(sensor_tasks)
+        otf_hws = set()
+        
+        while queue:
+            tid = queue.pop(0)
+            if tid in visited:
+                continue
+            visited.add(tid)
+            
+            task = scenario.get_task(tid)
+            if task and task.task_id not in sensor_tasks:
+                otf_hws.add(task.mapped_hw)
+            
+            # Follow OTF successors
+            for succ_id in scenario.get_successors(tid):
+                edge_data = scenario.graph[tid][succ_id]
+                if edge_data.get('conn_type') == ConnectionType.OTF:
+                    queue.append(succ_id)
+        
+        return otf_hws
