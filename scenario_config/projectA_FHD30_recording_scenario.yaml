@@ -20,6 +20,9 @@ h_blank_margin: 0.05
 bw_power: 80           # mW/GB/s — BW power coefficient
 vBat: 4.0              # Battery voltage (V)
 pmic_efficiency: 0.85  # PMIC efficiency
+bw_margin: 1.25        # BW margin for MIF level determination (default: 1.25)
+mem_util: 0.55         # Memory utilization for MIF BW calculation (default: 0.55)
+mif_channel_width: 16  # MIF channel width in bytes (default: 16)
 
 # Config file paths (relative to this scenario file)
 # CLI에서 -sc만 지정하면 나머지는 자동으로 찾음

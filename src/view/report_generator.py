@@ -99,6 +99,7 @@ class ReportGenerator:
         hw_registry: Dict[str, Any] = None,
         resolved_sensor: dict = None,
         link_files: Dict[str, str] = None,
+        hw_info_db: Any = None,
     ):
         self.config = scenario_config
         self.resolved = resolved_configs
@@ -106,6 +107,7 @@ class ReportGenerator:
         self.hw_registry = hw_registry or {}
         self.resolved_sensor = resolved_sensor or getattr(scenario, '_resolved_sensor', {})
         self.link_files = link_files or {}
+        self.hw_info_db = hw_info_db
         self.generated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         # Extract basic params
@@ -121,6 +123,11 @@ class ReportGenerator:
         self.pmic_eff = float(sc.get('pmic_efficiency', 0.85))
         self.asv_group = int(sc.get('asv_group', 4))
         self.temperature = sc.get('temperature', '-')
+
+        # MIF level determination params
+        self.bw_margin = float(sc.get('bw_margin', 1.25))
+        self.mem_util = float(sc.get('mem_util', 0.55))
+        self.mif_channel_width = int(sc.get('mif_channel_width', 16))
 
         # Config file paths
         self.config_paths = sc.get('config_paths', {})
@@ -158,6 +165,9 @@ class ReportGenerator:
             'asv_group': self.asv_group,
             'vBat': self.vBat,
             'pmic_efficiency': self.pmic_eff,
+            'bw_margin': self.bw_margin,
+            'mem_util': self.mem_util,
+            'mif_channel_width': self.mif_channel_width,
         }
 
     # ------------------------------------------------------------------
@@ -259,6 +269,66 @@ class ReportGenerator:
         return dict(sorted(dvfs_groups.items()))
 
     # ------------------------------------------------------------------
+    # MIF Level Determination
+    # ------------------------------------------------------------------
+    def _determine_mif_level(self, total_bw_mbs: float) -> dict:
+        """Determine MIF DVFS level based on total BW requirement.
+
+        mif_bw (MB/s) = freq_mhz * mif_channel_width * mem_util
+        Find highest level (lowest freq) where mif_bw >= total_bw * bw_margin.
+
+        Returns dict with level, freq, mif_bw, required_bw, voltage, or None values.
+        """
+        required_bw = total_bw_mbs * self.bw_margin
+        result = {
+            'required_bw_mbs': required_bw,
+            'total_bw_mbs': total_bw_mbs,
+            'bw_margin': self.bw_margin,
+            'mem_util': self.mem_util,
+            'mif_channel_width': self.mif_channel_width,
+            'mif_level': None,
+            'mif_freq': None,
+            'mif_bw': None,
+            'mif_voltage': None,
+        }
+
+        if not self.hw_info_db:
+            return result
+
+        mif_table = self.hw_info_db.get_dvfs_table('MIF')
+        if not mif_table or not mif_table.levels:
+            return result
+
+        # Sort levels by speed descending (level 0 typically has highest speed)
+        sorted_levels = sorted(mif_table.levels, key=lambda l: l.speed, reverse=True)
+
+        # Find the highest level number (lowest freq) that still satisfies the BW
+        selected = None
+        for lvl in sorted_levels:
+            if lvl.speed <= 0:
+                continue
+            mif_bw = lvl.speed * self.mif_channel_width * self.mem_util
+            if mif_bw >= required_bw:
+                selected = lvl
+            else:
+                break  # Freq too low, stop searching
+
+        if selected is None and sorted_levels:
+            # All levels too slow — use highest speed
+            for lvl in sorted_levels:
+                if lvl.speed > 0:
+                    selected = lvl
+                    break
+
+        if selected:
+            result['mif_level'] = selected.level
+            result['mif_freq'] = selected.speed
+            result['mif_bw'] = selected.speed * self.mif_channel_width * self.mem_util
+            result['mif_voltage'] = mif_table.get_voltage(selected, self.asv_group)
+
+        return result
+
+    # ------------------------------------------------------------------
     # Section 6: DMA Results
     # ------------------------------------------------------------------
     def _collect_dma_records(self) -> List[dict]:
@@ -344,6 +414,9 @@ class ReportGenerator:
         lines.append(f"| H_Blank Margin | {s2['h_blank_margin']} |")
         lines.append(f"| vBat [V] | {s2['vBat']} |")
         lines.append(f"| PMIC Efficiency | {s2['pmic_efficiency']} |")
+        lines.append(f"| BW Margin | {s2['bw_margin']} |")
+        lines.append(f"| MIF Mem Util | {s2['mem_util']} |")
+        lines.append(f"| MIF Channel Width [B] | {s2['mif_channel_width']} |")
         lines.append("")
 
         # Section 3
@@ -395,6 +468,26 @@ class ReportGenerator:
                     f"| {delta} | {ip['vdd']} | {ip['req_volt_power']:.2f} | {ip['set_volt_power']:.2f} |"
                 )
             lines.append("")
+
+        # MIF Level determination
+        dma_records = self._collect_dma_records()
+        total_bw_mbs = sum(r['bw_mbs'] for r in dma_records)
+        mif = self._determine_mif_level(total_bw_mbs)
+        lines.append("### DVFS Group: MIF")
+        lines.append("")
+        lines.append("| Parameter | Value |")
+        lines.append("|-----------|-------|")
+        lines.append(f"| Total DMA BW | {mif['total_bw_mbs']:.1f} MB/s |")
+        lines.append(f"| BW Margin | ×{mif['bw_margin']} |")
+        lines.append(f"| Required BW | {mif['required_bw_mbs']:.1f} MB/s |")
+        if mif['mif_level'] is not None:
+            lines.append(f"| MIF Level | **{mif['mif_level']}** |")
+            lines.append(f"| MIF Freq | {mif['mif_freq']:.1f} MHz |")
+            lines.append(f"| MIF BW | {mif['mif_bw']:.1f} MB/s |")
+            lines.append(f"| MIF Voltage (ASV{self.asv_group}) | {mif['mif_voltage']:.2f} mV |")
+        else:
+            lines.append("| MIF Level | N/A (no MIF DVFS table) |")
+        lines.append("")
 
         # Section 6
         s6 = self._section_dma()
@@ -478,7 +571,10 @@ class ReportGenerator:
                       ('BW Power [mW/GB/s]', s2['bw_power']),
                       ('H_Blank Margin', s2['h_blank_margin']),
                       ('vBat [V]', s2['vBat']),
-                      ('PMIC Efficiency', s2['pmic_efficiency'])]:
+                      ('PMIC Efficiency', s2['pmic_efficiency']),
+                      ('BW Margin', s2['bw_margin']),
+                      ('MIF Mem Util', s2['mem_util']),
+                      ('MIF Channel Width [B]', s2['mif_channel_width'])]:
             html.append(f"<tr><th>{k}</th><td>{v}</td></tr>")
         html.append("</table>")
         html.append("</div>")
@@ -558,6 +654,24 @@ class ReportGenerator:
                     f"<td>{ip['req_volt_power']:.2f}</td><td>{ip['set_volt_power']:.2f}</td></tr>"
                 )
             html.append("</tbody></table>")
+
+        # MIF Level determination
+        dma_records_html = self._collect_dma_records()
+        total_bw_html = sum(r['bw_mbs'] for r in dma_records_html)
+        mif_html = self._determine_mif_level(total_bw_html)
+        html.append("<h3>DVFS Group: MIF</h3>")
+        html.append("<table class='info'>")
+        html.append(f"<tr><th>Total DMA BW</th><td>{mif_html['total_bw_mbs']:.1f} MB/s</td></tr>")
+        html.append(f"<tr><th>BW Margin</th><td>×{mif_html['bw_margin']}</td></tr>")
+        html.append(f"<tr><th>Required BW</th><td>{mif_html['required_bw_mbs']:.1f} MB/s</td></tr>")
+        if mif_html['mif_level'] is not None:
+            html.append(f"<tr><th>MIF Level</th><td><b>{mif_html['mif_level']}</b></td></tr>")
+            html.append(f"<tr><th>MIF Freq</th><td>{mif_html['mif_freq']:.1f} MHz</td></tr>")
+            html.append(f"<tr><th>MIF BW</th><td>{mif_html['mif_bw']:.1f} MB/s</td></tr>")
+            html.append(f"<tr><th>MIF Voltage (ASV{self.asv_group})</th><td>{mif_html['mif_voltage']:.2f} mV</td></tr>")
+        else:
+            html.append("<tr><th>MIF Level</th><td>N/A (no MIF DVFS table)</td></tr>")
+        html.append("</table>")
 
         # Section 6
         html.append("<h2>6. DMA Results</h2>")

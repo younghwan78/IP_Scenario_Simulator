@@ -1,15 +1,6 @@
 # Hardware Configuration (Static HW Capabilities)
 # This file defines HW specs and constraints that remain constant per project.
 
-# Sensor Module (SensorNode)
-- name: "HP2"
-  type: "Sensor"
-  # Supported sensor modes (for validation)
-  supported_sensor_modes:
-  - "LN2"
-  - "LN4"
-  # frame_width, frame_height, fps, sensor_mode, v_valid_time -> scenario config
-
 #########################
 # Block CSIS
 #########################

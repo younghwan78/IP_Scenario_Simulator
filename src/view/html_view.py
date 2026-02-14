@@ -274,17 +274,336 @@ def generate_level1_html(hw_registry, scenario, output_path):
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  Level 2: Module-level detail
+#  Level 2: I/O Module detail (CIN / COUT / DMA only)
 # ═══════════════════════════════════════════════════════════════════
 
+# Module types shown in Level 2 (I/O interfaces only)
+_IO_MODULE_TYPES = {'CIN', 'COUT', 'DMA', 'DMA_READ', 'DMA_WRITE'}
+
+# Input-side module types (placed at top)
+_INPUT_TYPES = {'CIN', 'DMA_READ'}
+# Output-side module types (placed at bottom)
+_OUTPUT_TYPES = {'COUT', 'DMA_WRITE'}
+
+
+def _classify_dma_direction(mod):
+    """Classify a DMA module as input (read) or output (write)."""
+    mt = mod.get('type', 'Generic')
+    if mt in _INPUT_TYPES:
+        return 'input'
+    if mt in _OUTPUT_TYPES:
+        return 'output'
+    if mt == 'DMA':
+        d = mod.get('direction', '').lower()
+        return 'input' if d == 'read' else 'output'
+    return 'output'
+
+
+def _get_used_port_names(tid, ip_settings):
+    """Get the set of port names used in ip_settings for a task."""
+    settings = ip_settings.get(tid, {})
+    used = set()
+    for inp in settings.get('inputs', []):
+        p = inp.get('port', '')
+        if p:
+            used.add(p)
+    for out in settings.get('outputs', []):
+        p = out.get('port', '')
+        if p:
+            used.add(p)
+    return used
+
+
+def _get_port_comp_info(tid, port_name, ip_settings):
+    """Check if a port has SBWC/compression or LLC enabled in ip_settings."""
+    settings = ip_settings.get(tid, {})
+    for port_list in (settings.get('inputs', []), settings.get('outputs', [])):
+        for p in port_list:
+            if p.get('port', '') == port_name:
+                comp = p.get('comp', 'disable')
+                llc = p.get('llc', 'disable')
+                return comp == 'enable', llc == 'enable'
+    return False, False
+
+
+# Level 2 module color scheme:
+#   RDMA (read DMA)      : light green
+#   WDMA (write DMA)     : light blue
+#   RDMA/WDMA + SBWC     : orange tint
+#   RDMA/WDMA + LLC      : purple tint
+#   RDMA/WDMA + SBWC+LLC : pink tint
+#   CIN                  : light gray-blue (input)
+#   COUT                 : light gray-green (output)
+def _l2_mod_color(mod, tid, ip_settings):
+    """Determine module color for Level 2 based on type, direction and SBWC/LLC."""
+    mt = mod.get('type', 'Generic')
+    mn = mod.get('name', '')
+    direction = _classify_dma_direction(mod)
+    has_comp, has_llc = _get_port_comp_info(tid, mn, ip_settings)
+
+    if mt == 'CIN':
+        return '#CEEAD6'   # pastel green (input FIFO)
+    if mt == 'COUT':
+        return '#E8DAEF'   # pastel purple (output FIFO)
+
+    # DMA types
+    if has_comp and has_llc:
+        return '#F8BBD0'   # pink — SBWC + LLC
+    if has_comp:
+        return '#FFE0B2'   # orange — SBWC/compression
+    if has_llc:
+        return '#E1BEE7'   # purple — LLC
+    if direction == 'input':
+        return '#D2E3FC'   # pastel blue — RDMA
+    return '#FEEFC3'       # pastel orange — WDMA
+
+
+def _build_cross_edges_level2(elk, meta, scenario, ip_settings, hw_raw, task_hw):
+    """Build cross-IP edges, routing to specific module nodes where possible."""
+    eidx = 0
+
+    # Build a map: (task_id, module_name) -> ELK node id
+    # ONLY include modules that are actually rendered in Level 2
+    mod_node_map = {}
+    for tid, hw_name in task_hw.items():
+        raw = hw_raw.get(hw_name, {})
+        used_ports = _get_used_port_names(tid, ip_settings)
+        for mod in raw.get('modules', []):
+            mn = mod.get('name', '')
+            mt = mod.get('type', 'Generic')
+            # Only map if this module is an I/O type AND was rendered
+            if mt in _IO_MODULE_TYPES:
+                if not used_ports or mn in used_ports:
+                    mod_node_map[(tid, mn)] = f"{tid}_{_safe_id(mn)}"
+
+    for src_id, dst_id, edge_data in scenario.graph.edges(data=True):
+        conn_type = edge_data.get('conn_type', ConnectionType.M2M)
+        port_pairs = edge_data.get('port_pairs', [])
+
+        if conn_type == ConnectionType.OTF:
+            # OTF: connect src_port module → dst_port module if possible
+            if port_pairs and port_pairs[0][0] != 'output':
+                for sp, dp in port_pairs:
+                    src_node = mod_node_map.get((src_id, sp), src_id)
+                    dst_node = mod_node_map.get((dst_id, dp), dst_id)
+                    lbl = f"OTF: {sp}→{dp}"
+                    eid = f"eo_{eidx}"
+                    lw = max(len(lbl) * 6, 40)
+                    elk["edges"].append({
+                        "id": eid, "sources": [src_node], "targets": [dst_node],
+                        "labels": [{"text": lbl, "width": lw, "height": 14}]
+                    })
+                    meta[eid] = {"type": "otf", "label": lbl}
+                    eidx += 1
+            else:
+                eid = f"eo_{eidx}"
+                elk["edges"].append({
+                    "id": eid, "sources": [src_id], "targets": [dst_id],
+                    "labels": [{"text": "OTF", "width": 30, "height": 14}]
+                })
+                meta[eid] = {"type": "otf", "label": "OTF"}
+                eidx += 1
+        else:
+            # M2M: connect src_port (WDMA) → dst_port (RDMA)
+            src_s = ip_settings.get(src_id, {})
+            dst_s = ip_settings.get(dst_id, {})
+            src_out = {o.get('port', ''): o for o in src_s.get('outputs', [])}
+            dst_in = {i.get('port', ''): i for i in dst_s.get('inputs', [])}
+
+            if port_pairs and port_pairs[0][0] != 'output':
+                for sp, dp in port_pairs:
+                    src_node = mod_node_map.get((src_id, sp), src_id)
+                    dst_node = mod_node_map.get((dst_id, dp), dst_id)
+                    info = src_out.get(sp) or dst_in.get(dp) or {}
+                    parts = [f"{sp}→{dp}"]
+                    sz = info.get('size', [])
+                    if len(sz) == 4 and sz[2] > 0:
+                        parts.append(f"{sz[2]}×{sz[3]}")
+                    if info.get('format'):
+                        parts.append(info['format'])
+                    if info.get('bitwidth'):
+                        parts.append(f"{info['bitwidth']}bit")
+                    if info.get('comp') == 'enable':
+                        parts.append("COMP")
+                    lbl = " | ".join(parts)
+                    eid = f"em_{eidx}"
+                    lw = max(len(lbl) * 6, 60)
+                    elk["edges"].append({
+                        "id": eid, "sources": [src_node], "targets": [dst_node],
+                        "labels": [{"text": lbl, "width": lw, "height": 14}]
+                    })
+                    meta[eid] = {"type": "m2m", "label": lbl}
+                    eidx += 1
+            else:
+                eid = f"em_{eidx}"
+                elk["edges"].append({
+                    "id": eid, "sources": [src_id], "targets": [dst_id],
+                    "labels": [{"text": "M2M", "width": 30, "height": 14}]
+                })
+                meta[eid] = {"type": "m2m", "label": "M2M"}
+                eidx += 1
+
+
 def generate_level2_html(hw_registry, scenario, hw_raw, output_path):
+    """Level 2: Show only used CIN/COUT/DMA modules per IP for inter-IP connectivity.
+
+    Improvements over basic I/O view:
+    - Only modules referenced in ip_settings are shown (actually used)
+    - Input modules (CIN, RDMA) placed at top; output modules (COUT, WDMA) at bottom
+    - Cross-IP edges connect directly to module nodes, not IP packages
+    """
     groups, task_hw, task_hier, task_ipg = _build_groups(scenario, hw_registry)
     ip_settings = getattr(scenario, '_ip_settings', {})
     meta = {}
 
     elk = _make_elk_root()
 
-    # Build hierarchy groups
+    for grp in HIERARCHY_ORDER:
+        if grp not in groups:
+            continue
+        grp_id = f"grp_{grp}"
+        grp_node = {
+            "id": grp_id,
+            "layoutOptions": {
+                "elk.padding": "[top=30,left=12,bottom=12,right=12]",
+                "elk.algorithm": "layered",
+                "elk.direction": "DOWN",
+                "elk.edgeRouting": "ORTHOGONAL",
+                "elk.spacing.nodeNode": "15",
+                "elk.layered.spacing.nodeNodeBetweenLayers": "20"
+            },
+            "children": [], "edges": []
+        }
+        meta[grp_id] = {"type": "group", "label": grp,
+                        "color": HIERARCHY_COLORS.get(grp, "#FAFAFA")}
+
+        for tid in groups[grp]:
+            hw_name = task_hw[tid]
+            hw = hw_registry.get(hw_name)
+            raw = hw_raw.get(hw_name, {})
+            all_modules = raw.get('modules', [])
+            # Filter to I/O modules only
+            io_modules = [m for m in all_modules
+                          if m.get('type', 'Generic') in _IO_MODULE_TYPES]
+            # Further filter to only modules actually used in ip_settings
+            used_ports = _get_used_port_names(tid, ip_settings)
+            if used_ports:
+                io_modules = [m for m in io_modules
+                              if m.get('name', '') in used_ports]
+            ipg = task_ipg[tid]
+            ip_bg = IP_GROUP_COLORS.get(ipg, "#E0E0E0")
+
+            if io_modules:
+                # Separate into input-side and output-side modules
+                input_mods = [m for m in io_modules
+                              if _classify_dma_direction(m) == 'input']
+                output_mods = [m for m in io_modules
+                               if _classify_dma_direction(m) == 'output']
+
+                ip_node = {
+                    "id": tid,
+                    "layoutOptions": {
+                        "elk.padding": "[top=24,left=8,bottom=8,right=8]",
+                        "elk.algorithm": "layered",
+                        "elk.direction": "DOWN",
+                        "elk.edgeRouting": "ORTHOGONAL",
+                        "elk.spacing.nodeNode": "6",
+                        "elk.layered.spacing.nodeNodeBetweenLayers": "10"
+                    },
+                    "children": [], "edges": []
+                }
+                ip_label = f"{hw_name} (BLK_{ipg})"
+                meta[tid] = {"type": "ip", "label": ip_label, "color": ip_bg}
+
+                # Add input modules first (with FIRST layer constraint)
+                for mod in input_mods:
+                    mn = mod.get('name', '?')
+                    mt = mod.get('type', 'Generic')
+                    mid = f"{tid}_{_safe_id(mn)}"
+                    short = _mod_type_short(mt)
+                    color = _l2_mod_color(mod, tid, ip_settings)
+                    w = max(len(mn) * 7 + 16, 65)
+                    ip_node["children"].append({
+                        "id": mid, "width": w, "height": 30,
+                        "layoutOptions": {
+                            "elk.layered.layerConstraint": "FIRST"
+                        }
+                    })
+                    meta[mid] = {"type": "mod", "label": mn, "sub": short,
+                                 "color": color}
+
+                # Add output modules (with LAST layer constraint)
+                for mod in output_mods:
+                    mn = mod.get('name', '?')
+                    mt = mod.get('type', 'Generic')
+                    mid = f"{tid}_{_safe_id(mn)}"
+                    short = _mod_type_short(mt)
+                    color = _l2_mod_color(mod, tid, ip_settings)
+                    w = max(len(mn) * 7 + 16, 65)
+                    ip_node["children"].append({
+                        "id": mid, "width": w, "height": 30,
+                        "layoutOptions": {
+                            "elk.layered.layerConstraint": "LAST"
+                        }
+                    })
+                    meta[mid] = {"type": "mod", "label": mn, "sub": short,
+                                 "color": color}
+
+                # Add internal edges from input modules to output modules
+                io_names = {m.get('name') for m in io_modules}
+                for ie in raw.get('edges', []):
+                    s_name = ie.get('src', '')
+                    d_name = ie.get('dst', '')
+                    if s_name in io_names and d_name in io_names:
+                        s = f"{tid}_{_safe_id(s_name)}"
+                        d = f"{tid}_{_safe_id(d_name)}"
+                        eid = f"ie_{s}_{d}"
+                        ip_node["edges"].append({
+                            "id": eid, "sources": [s], "targets": [d]})
+                        meta[eid] = {"type": "int"}
+
+                # If no internal edges but both input and output exist,
+                # create implicit edges from each input to each output
+                if not ip_node["edges"] and input_mods and output_mods:
+                    for im in input_mods:
+                        for om in output_mods:
+                            s = f"{tid}_{_safe_id(im.get('name', ''))}"
+                            d = f"{tid}_{_safe_id(om.get('name', ''))}"
+                            eid = f"ie_{s}_{d}"
+                            ip_node["edges"].append({
+                                "id": eid, "sources": [s], "targets": [d]})
+                            meta[eid] = {"type": "int"}
+
+                grp_node["children"].append(ip_node)
+            else:
+                lbl = hw_name
+                if isinstance(hw, SensorNode):
+                    lbl = f"{hw_name}\\n{hw.frame_width}x{hw.frame_height}@{hw.fps:.0f}fps"
+                w = max(len(hw_name) * 8 + 20, 100)
+                grp_node["children"].append({"id": tid, "width": w, "height": 40})
+                meta[tid] = {"type": "leaf", "label": lbl, "color": ip_bg}
+
+        elk["children"].append(grp_node)
+
+    # Cross-IP edges: route to module nodes
+    _build_cross_edges_level2(elk, meta, scenario, ip_settings, hw_raw, task_hw)
+
+    _render_html("Level 2 View (I/O Modules)", elk, meta, output_path)
+    print(f"Level 2 HTML -> {output_path}")
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Level 3: Full module detail (all modules + intra-IP edges)
+# ═══════════════════════════════════════════════════════════════════
+
+def generate_level3_html(hw_registry, scenario, hw_raw, output_path):
+    """Level 3: Show all modules and intra-IP edges."""
+    groups, task_hw, task_hier, task_ipg = _build_groups(scenario, hw_registry)
+    ip_settings = getattr(scenario, '_ip_settings', {})
+    meta = {}
+
+    elk = _make_elk_root()
+
     for grp in HIERARCHY_ORDER:
         if grp not in groups:
             continue
@@ -356,11 +675,10 @@ def generate_level2_html(hw_registry, scenario, hw_raw, output_path):
 
         elk["children"].append(grp_node)
 
-    # Cross-IP edges
     _build_cross_edges(elk, meta, scenario, ip_settings)
 
-    _render_html("Level 2 View (Module Detail)", elk, meta, output_path)
-    print(f"Level 2 HTML -> {output_path}")
+    _render_html("Level 3 View (Full Module Detail)", elk, meta, output_path)
+    print(f"Level 3 HTML -> {output_path}")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -428,10 +746,15 @@ const NP={};
 function ce(t,a){const e=document.createElementNS(NS,t);if(a)Object.entries(a).forEach(([k,v])=>e.setAttribute(k,v));return e}
 
 async function main(){
+  try{
   const elk=new ELK();
   const layout=await elk.layout(G);
   const pad=30;
-  const svg=ce('svg',{width:layout.width+pad*2,height:layout.height+pad*2});
+  const totalW=layout.width+pad*2, totalH=layout.height+pad*2;
+  /* Use viewBox for scalability; clamp display size for very large diagrams */
+  const dispW=Math.min(totalW,window.innerWidth-40);
+  const dispH=Math.min(totalH,window.innerHeight-80);
+  const svg=ce('svg',{width:dispW,height:dispH,viewBox:`0 0 ${totalW} ${totalH}`});
   const gMain=ce('g',{transform:`translate(${pad},${pad})`});
   svg.appendChild(gMain);
   /* Pass 1: collect absolute positions for all nodes */
@@ -448,6 +771,11 @@ async function main(){
   svg.addEventListener('mouseup',()=>drag=false);
   svg.addEventListener('mouseleave',()=>drag=false);
   document.getElementById('canvas').appendChild(svg);
+  }catch(err){
+    document.getElementById('canvas').innerHTML=
+      '<p style="color:red;padding:20px">ELK layout error: '+err.message+'</p>';
+    console.error('ELK layout failed:',err);
+  }
 }
 
 /* Recursively collect absolute positions of every node */
@@ -567,4 +895,5 @@ if __name__ == "__main__":
     generate_top_html(hw_registry, scenario, f"{out_dir}/scenario_top.html")
     generate_level1_html(hw_registry, scenario, f"{out_dir}/scenario_level1.html")
     generate_level2_html(hw_registry, scenario, hw_raw, f"{out_dir}/scenario_level2.html")
-    print("\nAll 3 HTML diagrams generated!")
+    generate_level3_html(hw_registry, scenario, hw_raw, f"{out_dir}/scenario_level3.html")
+    print("\nAll 4 HTML diagrams generated!")

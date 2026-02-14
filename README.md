@@ -10,12 +10,15 @@ SimPy 기반의 Discrete Event Simulator로 Android SoC의 Multimedia IP 성능/
 - **Multi-Frame Pipelined Simulation**: FPS 기반 프레임 간격으로 파이프라인 중첩 지원
 - **CSV-based HW Config**: IP 성능 정보와 DVFS 테이블을 CSV로 관리
 - **DVFS Voltage Resolution**: ASV 그룹 기반 동적 전압/주파수 최적화
+- **MIF DVFS Level Determination**: Total DMA BW 기반 MIF 레벨 자동 결정 (`mif_bw = freq × channel_width × mem_util`)
 - **Power Calculation**: VDD 도메인 전압 정렬, req/set voltage 기반 동적 전력 계산
-- **Simulation Report**: HTML/Markdown 리포트 자동 생성 (6개 섹션: Scenario, Conditions, DVFS, Power, Clock, DMA)
+- **Simulation Report**: HTML/Markdown 리포트 자동 생성 (6개 섹션 + MIF Level)
 - **PNG Chart Export**: Gantt/BW 차트를 PNG 이미지로 자동 저장 (kaleido)
-- **Multi-Level Views**: Top/Level1/Level2 뷰를 HTML(ELK.js) 및 PlantUML로 생성
+- **Multi-Level Views**: Top/Level1/Level2/Level3 뷰를 HTML(ELK.js) 및 PlantUML로 생성
+- **Level 2 Module Coloring**: RDMA/WDMA/CIN/COUT 및 SBWC/LLC 상태별 색상 구분
 - **BW Timeline Chart**: M2M 연결의 Read/Write Bandwidth 시각화
 - **CDN-based HTML**: Plotly CDN으로 경량 HTML 출력 (4.8MB → 11KB)
+- **Verbose Mode**: `-v` 플래그로 상세 로그 출력 제어 (기본: 파일 저장 메시지만)
 - **MVC Architecture**: Model-View-Controller 패턴으로 확장성 확보
 - **Multiple Analyzers**: Performance, Power, Timing 분석 분리
 
@@ -65,6 +68,7 @@ python main.py -hw ... -sc ... --hw-info ... --hw-dvfs ... --bw
 | `--num-frames` | Number of frames for multi-frame simulation |
 | `--graph-only` | Show graph structure and exit (no simulation) |
 | `--demo` | Run built-in demo |
+| `-v`, `--verbose` | Enable verbose output (show all diagnostic info) |
 
 ### Output Flags
 
@@ -78,28 +82,34 @@ python main.py -hw ... -sc ... --hw-info ... --hw-dvfs ... --bw
 | `--output-view-dir` | Output directory for views (default: `output_view`) |
 | `--output-sim-dir` | Output directory for simulation (default: `output_simulation`) |
 
+> **Verbose mode**: By default, only file-save messages are printed. Use `-v` for full diagnostic output.
+
 > **Default behavior**: No flags specified → generate ALL outputs.
 
 ## Output Structure
 
 ```
 output_view/
-  {project}_{scenario}_top.html         # Top-level block diagram (ELK.js)
-  {project}_{scenario}_level1.html      # IP-level detail (ELK.js)
-  {project}_{scenario}_level2.html      # Module-level detail (ELK.js)
-  {project}_{scenario}_top.puml         # PlantUML top view
-  {project}_{scenario}_level1.puml      # PlantUML level 1
-  {project}_{scenario}_level2.puml      # PlantUML level 2
+  {project}_{scenario}_top.html             # Top-level block diagram (ELK.js)
+  {project}_{scenario}_level1.html          # IP-level detail (ELK.js)
+  {project}_{scenario}_level2.html          # Module-level detail (ELK.js, color-coded)
+  {project}_{scenario}_level3.html          # Connection detail (ELK.js)
+  {project}_{scenario}_task_topology.html    # Task DAG topology (ELK.js)
+  {project}_{scenario}_top.puml             # PlantUML top view
+  {project}_{scenario}_level1.puml          # PlantUML level 1
+  {project}_{scenario}_level2.puml          # PlantUML level 2
+  {project}_{scenario}_level3.puml          # PlantUML level 3
+  {project}_{scenario}_task_topology.puml   # PlantUML task topology
 
 output_simulation/
-  {project}_{scenario}_gantt.html       # Gantt chart (Plotly CDN, ~11KB)
-  {project}_{scenario}_gantt.png        # Gantt chart PNG (kaleido)
-  {project}_{scenario}_bw.html          # BW timeline chart (Plotly CDN)
-  {project}_{scenario}_bw.png           # BW chart PNG (kaleido)
-  {project}_{scenario}_report.html      # Simulation report (pastel style)
-  {project}_{scenario}_report.md        # Simulation report (Markdown)
-  {project}_{scenario}_results.csv      # Simulation results
-  {project}_{scenario}_trace.json       # Perfetto trace format
+  {project}_{scenario}_gantt.html           # Gantt chart (Plotly CDN, ~11KB)
+  {project}_{scenario}_gantt.png            # Gantt chart PNG (kaleido)
+  {project}_{scenario}_bw.html              # BW timeline chart (Plotly CDN)
+  {project}_{scenario}_bw.png               # BW chart PNG (kaleido)
+  {project}_{scenario}_report.html          # Simulation report (pastel style)
+  {project}_{scenario}_report.md            # Simulation report (Markdown)
+  {project}_{scenario}_results.csv          # Simulation results
+  {project}_{scenario}_trace.json           # Perfetto trace format
 ```
 
 ## Project Structure

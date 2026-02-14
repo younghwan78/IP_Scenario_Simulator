@@ -312,11 +312,258 @@ def generate_level1(hw_registry, scenario, output_path):
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  Level 2: Module-level detail
+#  Level 2: I/O Module detail (CIN / COUT / DMA only)
 # ═══════════════════════════════════════════════════════════════════
 
-def _emit_edges_level2(lines, scenario, task_hw):
-    """Emit edges at Level 2 with M2M detail (size/format/bitwidth/comp)."""
+# Module types shown in Level 2 (I/O interfaces only)
+_IO_MODULE_TYPES = {'CIN', 'COUT', 'DMA', 'DMA_READ', 'DMA_WRITE'}
+_INPUT_TYPES_P = {'CIN', 'DMA_READ'}
+_OUTPUT_TYPES_P = {'COUT', 'DMA_WRITE'}
+
+
+def _classify_dma_dir(mod):
+    """Classify a DMA module as input or output."""
+    mt = mod.get('type', 'Generic')
+    if mt in _INPUT_TYPES_P:
+        return 'input'
+    if mt in _OUTPUT_TYPES_P:
+        return 'output'
+    if mt == 'DMA':
+        return 'input' if mod.get('direction', '').lower() == 'read' else 'output'
+    return 'output'
+
+
+def _get_used_ports(tid, ip_settings):
+    """Get port names used in ip_settings for a task."""
+    settings = ip_settings.get(tid, {})
+    used = set()
+    for inp in settings.get('inputs', []):
+        p = inp.get('port', '')
+        if p:
+            used.add(p)
+    for out in settings.get('outputs', []):
+        p = out.get('port', '')
+        if p:
+            used.add(p)
+    return used
+
+
+def _get_port_comp_puml(tid, port_name, ip_settings):
+    """Check if a port has SBWC/compression or LLC enabled."""
+    settings = ip_settings.get(tid, {})
+    for port_list in (settings.get('inputs', []), settings.get('outputs', [])):
+        for p in port_list:
+            if p.get('port', '') == port_name:
+                comp = p.get('comp', 'disable')
+                llc = p.get('llc', 'disable')
+                return comp == 'enable', llc == 'enable'
+    return False, False
+
+
+def _l2_puml_color(mod, tid, ip_settings):
+    """Determine module color for Level 2 PlantUML."""
+    mt = mod.get('type', 'Generic')
+    mn = mod.get('name', '')
+    direction = _classify_dma_dir(mod)
+    has_comp, has_llc = _get_port_comp_puml(tid, mn, ip_settings)
+
+    if mt == 'CIN':
+        return '#CEEAD6'
+    if mt == 'COUT':
+        return '#E8DAEF'
+    if has_comp and has_llc:
+        return '#F8BBD0'
+    if has_comp:
+        return '#FFE0B2'
+    if has_llc:
+        return '#E1BEE7'
+    if direction == 'input':
+        return '#D2E3FC'
+    return '#FEEFC3'
+
+
+def _emit_edges_level2(lines, scenario, task_hw, hw_raw):
+    """Emit edges at Level 2, connecting to module aliases where possible."""
+    ip_settings = getattr(scenario, '_ip_settings', {})
+
+    # Build module alias map: (tid, mod_name) -> puml alias
+    mod_alias_map = {}
+    for tid, hw_name in task_hw.items():
+        raw = hw_raw.get(hw_name, {})
+        for mod in raw.get('modules', []):
+            mn = mod.get('name', '')
+            mod_alias_map[(tid, mn)] = f"{_safe_id(tid)}_{_safe_id(mn)}"
+
+    m2m_idx = 0
+    for src_id, dst_id, edge_data in scenario.graph.edges(data=True):
+        conn_type = edge_data.get('conn_type', ConnectionType.M2M)
+        port_pairs = edge_data.get('port_pairs', [])
+
+        if conn_type == ConnectionType.OTF:
+            if port_pairs and port_pairs[0][0] != 'output':
+                for sp, dp in port_pairs:
+                    src_alias = mod_alias_map.get((src_id, sp), _safe_id(src_id))
+                    dst_alias = mod_alias_map.get((dst_id, dp), _safe_id(dst_id))
+                    lines.append(f'{src_alias} ==> {dst_alias} : OTF\\n{sp}->{dp}')
+            else:
+                lines.append(f'{_safe_id(src_id)} ==> {_safe_id(dst_id)} : OTF')
+        else:
+            src_s = ip_settings.get(src_id, {})
+            dst_s = ip_settings.get(dst_id, {})
+            src_out = {o.get('port', ''): o for o in src_s.get('outputs', [])}
+            dst_in = {i.get('port', ''): i for i in dst_s.get('inputs', [])}
+
+            if port_pairs and port_pairs[0][0] != 'output':
+                for sp, dp in port_pairs:
+                    src_alias = mod_alias_map.get((src_id, sp), _safe_id(src_id))
+                    dst_alias = mod_alias_map.get((dst_id, dp), _safe_id(dst_id))
+                    mem_id = f"mem_{m2m_idx}"
+                    detail = _m2m_detail_label(sp, dp, src_out.get(sp), dst_in.get(dp))
+                    lines.append(f'database "{detail}" as {mem_id}')
+                    lines.append(f'{src_alias} --> {mem_id}')
+                    lines.append(f'{mem_id} --> {dst_alias}')
+                    m2m_idx += 1
+            else:
+                mem_id = f"mem_{m2m_idx}"
+                lines.append(f'database "M2M" as {mem_id}')
+                lines.append(f'{_safe_id(src_id)} --> {mem_id}')
+                lines.append(f'{mem_id} --> {_safe_id(dst_id)}')
+                m2m_idx += 1
+
+
+def generate_level2(hw_registry, scenario, hw_raw, output_path):
+    """Level 2: Show only used CIN/COUT/DMA modules per IP.
+
+    - Only modules referenced in ip_settings are shown
+    - Input modules (CIN, RDMA) listed first, output (COUT, WDMA) last
+    - Edges connect to specific module aliases
+    """
+    groups, task_hw, task_hier, task_ipg = _build_groups(scenario, hw_registry)
+    ip_settings = getattr(scenario, '_ip_settings', {})
+    lines = ["@startuml", _skinparam()]
+    lines.append("top to bottom direction")
+    lines.append("skinparam rectangle {")
+    lines.append("    FontSize 9")
+    lines.append("}")
+    lines.append("skinparam package {")
+    lines.append("    padding 10")
+    lines.append("}")
+    lines.append("title Level 2 View (I/O Modules)\\n")
+    lines.append("")
+
+    grp_tids = {}
+
+    for grp in HIERARCHY_ORDER:
+        if grp not in groups:
+            continue
+        bg = HIERARCHY_COLORS.get(grp, "#FAFAFA")
+        task_ids = groups[grp]
+        lines.append(f'package "{grp}" as pkg_{grp} {bg} {{')
+
+        ip_subgroups = {}
+        for tid in task_ids:
+            ipg = task_ipg[tid]
+            ip_subgroups.setdefault(ipg, []).append(tid)
+
+        ordered_tids = []
+        for ipg, tids in ip_subgroups.items():
+            ip_bg = IP_GROUP_COLORS.get(ipg, "#E0E0E0")
+
+            for tid in tids:
+                hw_name = task_hw[tid]
+                hw = hw_registry.get(hw_name)
+                raw = hw_raw.get(hw_name, {})
+                all_modules = raw.get('modules', [])
+                # Filter to I/O modules only
+                io_modules = [m for m in all_modules
+                              if m.get('type', 'Generic') in _IO_MODULE_TYPES]
+                # Further filter to used modules
+                used_ports = _get_used_ports(tid, ip_settings)
+                if used_ports:
+                    io_modules = [m for m in io_modules
+                                  if m.get('name', '') in used_ports]
+                ordered_tids.append(tid)
+
+                if io_modules:
+                    # Separate input/output modules
+                    input_mods = [m for m in io_modules
+                                  if _classify_dma_dir(m) == 'input']
+                    output_mods = [m for m in io_modules
+                                   if _classify_dma_dir(m) == 'output']
+
+                    lines.append(f'    package "{hw_name} (BLK_{ipg})" as {_safe_id(tid)} {ip_bg} {{')
+
+                    # Input modules first
+                    for mod in input_mods:
+                        mod_name = mod.get('name', '?')
+                        mod_type = mod.get('type', 'Generic')
+                        mod_id = f"{_safe_id(tid)}_{_safe_id(mod_name)}"
+                        mod_clr = _l2_puml_color(mod, tid, ip_settings)
+                        short_type = _mod_type_short(mod_type)
+                        lines.append(f'        rectangle "{mod_name}\\n<size:8>{short_type}</size>" as {mod_id} {mod_clr}')
+
+                    # Output modules last
+                    for mod in output_mods:
+                        mod_name = mod.get('name', '?')
+                        mod_type = mod.get('type', 'Generic')
+                        mod_id = f"{_safe_id(tid)}_{_safe_id(mod_name)}"
+                        mod_clr = _l2_puml_color(mod, tid, ip_settings)
+                        short_type = _mod_type_short(mod_type)
+                        lines.append(f'        rectangle "{mod_name}\\n<size:8>{short_type}</size>" as {mod_id} {mod_clr}')
+
+                    # Intra-IP edges between I/O modules
+                    io_names = {m.get('name') for m in io_modules}
+                    edges = raw.get('edges', [])
+                    has_internal = False
+                    for edge in edges:
+                        s_name = edge.get('src', '')
+                        d_name = edge.get('dst', '')
+                        if s_name in io_names and d_name in io_names:
+                            e_src = f"{_safe_id(tid)}_{_safe_id(s_name)}"
+                            e_dst = f"{_safe_id(tid)}_{_safe_id(d_name)}"
+                            lines.append(f'        {e_src} --> {e_dst}')
+                            has_internal = True
+
+                    # If no internal edges, create implicit input→output
+                    if not has_internal and input_mods and output_mods:
+                        for im in input_mods:
+                            for om in output_mods:
+                                e_src = f"{_safe_id(tid)}_{_safe_id(im.get('name', ''))}"
+                                e_dst = f"{_safe_id(tid)}_{_safe_id(om.get('name', ''))}"
+                                lines.append(f'        {e_src} --> {e_dst}')
+
+                    lines.append("    }")
+                else:
+                    label = _ip_label(hw_name, hw, scenario, tid)
+                    lines.append(f'    rectangle "{label}" as {_safe_id(tid)} {ip_bg}')
+
+        grp_tids[grp] = ordered_tids
+        lines.append("}")
+        lines.append("")
+
+    # Hidden links between hierarchy groups
+    lines.append("' === Hidden links for vertical ordering ===")
+    active_grps = [g for g in HIERARCHY_ORDER if g in grp_tids]
+    for i in range(len(active_grps) - 1):
+        lines.append(f'pkg_{active_grps[i]} -[hidden]down-> pkg_{active_grps[i+1]}')
+
+    lines.append("")
+    lines.append("' === Connections (Task Topology) ===")
+    _emit_edges_level2(lines, scenario, task_hw, hw_raw)
+    lines.append("")
+    lines.append("@enduml")
+
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write("\n".join(lines))
+    print(f"Level 2 -> {output_path}")
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Level 3: Full module detail (all modules + intra-IP edges)
+# ═══════════════════════════════════════════════════════════════════
+
+def _emit_edges_level3(lines, scenario, task_hw):
+    """Emit edges at Level 3 with M2M detail (size/format/bitwidth/comp)."""
     m2m_idx = 0
     for src_id, dst_id, edge_data in scenario.graph.edges(data=True):
         conn_type = edge_data.get('conn_type', ConnectionType.M2M)
@@ -354,7 +601,8 @@ def _emit_edges_level2(lines, scenario, task_hw):
                 m2m_idx += 1
 
 
-def generate_level2(hw_registry, scenario, hw_raw, output_path):
+def generate_level3(hw_registry, scenario, hw_raw, output_path):
+    """Level 3: Show all modules and intra-IP edges."""
     groups, task_hw, task_hier, task_ipg = _build_groups(scenario, hw_registry)
     lines = ["@startuml", _skinparam()]
     lines.append("top to bottom direction")
@@ -364,10 +612,9 @@ def generate_level2(hw_registry, scenario, hw_raw, output_path):
     lines.append("skinparam package {")
     lines.append("    padding 10")
     lines.append("}")
-    lines.append("title Level 2 View (Module Detail)\\n")
+    lines.append("title Level 3 View (Full Module Detail)\\n")
     lines.append("")
 
-    # Collect ordered task IDs per group for hidden links
     grp_tids = {}
 
     for grp in HIERARCHY_ORDER:
@@ -377,7 +624,6 @@ def generate_level2(hw_registry, scenario, hw_raw, output_path):
         task_ids = groups[grp]
         lines.append(f'package "{grp}" as pkg_{grp} {bg} {{')
 
-        # Sub-group by ip_group
         ip_subgroups = {}
         for tid in task_ids:
             ipg = task_ipg[tid]
@@ -395,7 +641,6 @@ def generate_level2(hw_registry, scenario, hw_raw, output_path):
                 ordered_tids.append(tid)
 
                 if modules:
-                    # Use _safe_id(tid) as alias so edges connect to packages
                     lines.append(f'    package "{hw_name}" as {_safe_id(tid)} {ip_bg} {{')
                     for mod in modules:
                         mod_name = mod.get('name', '?')
@@ -404,7 +649,6 @@ def generate_level2(hw_registry, scenario, hw_raw, output_path):
                         mod_color = _mod_color(mod_type)
                         short_type = _mod_type_short(mod_type)
                         lines.append(f'        rectangle "{mod_name}\\n<size:8>{short_type}</size>" as {mod_id} {mod_color}')
-                    # Show intra-IP edges if defined
                     edges = raw.get('edges', [])
                     for edge in edges:
                         e_src = f"{_safe_id(tid)}_{_safe_id(edge.get('src', ''))}"
@@ -419,7 +663,6 @@ def generate_level2(hw_registry, scenario, hw_raw, output_path):
         lines.append("}")
         lines.append("")
 
-    # Hidden links between hierarchy groups (top-down ordering)
     lines.append("' === Hidden links for vertical ordering ===")
     active_grps = [g for g in HIERARCHY_ORDER if g in grp_tids]
     for i in range(len(active_grps) - 1):
@@ -427,13 +670,13 @@ def generate_level2(hw_registry, scenario, hw_raw, output_path):
 
     lines.append("")
     lines.append("' === Connections (Task Topology) ===")
-    _emit_edges_level2(lines, scenario, task_hw)
+    _emit_edges_level3(lines, scenario, task_hw)
     lines.append("")
     lines.append("@enduml")
 
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write("\n".join(lines))
-    print(f"Level 2 -> {output_path}")
+    print(f"Level 3 -> {output_path}")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -537,13 +780,15 @@ if __name__ == "__main__":
     hw_registry, scenario, hw_raw = _load_data(args.hw, args.sc)
 
     if args.format == "html":
-        from src.view.html_view import generate_top_html, generate_level1_html, generate_level2_html
+        from src.view.html_view import generate_top_html, generate_level1_html, generate_level2_html, generate_level3_html
         generate_top_html(hw_registry, scenario, f"{args.output_dir}/scenario_top.html")
         generate_level1_html(hw_registry, scenario, f"{args.output_dir}/scenario_level1.html")
         generate_level2_html(hw_registry, scenario, hw_raw, f"{args.output_dir}/scenario_level2.html")
-        print("\nAll 3 HTML diagrams generated!")
+        generate_level3_html(hw_registry, scenario, hw_raw, f"{args.output_dir}/scenario_level3.html")
+        print("\nAll 4 HTML diagrams generated!")
     else:
         generate_top_view(hw_registry, scenario, f"{args.output_dir}/scenario_top.puml")
         generate_level1(hw_registry, scenario, f"{args.output_dir}/scenario_level1.puml")
         generate_level2(hw_registry, scenario, hw_raw, f"{args.output_dir}/scenario_level2.puml")
-        print("\nAll 3 PlantUML diagrams generated!")
+        generate_level3(hw_registry, scenario, hw_raw, f"{args.output_dir}/scenario_level3.puml")
+        print("\nAll 4 PlantUML diagrams generated!")

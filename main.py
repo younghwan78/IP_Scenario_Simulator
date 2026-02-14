@@ -38,6 +38,16 @@ from src.view.text_view import TextViewer
 from src.view.visualizer import Monitor, Visualizer
 
 
+# Verbose output control
+VERBOSE = False
+
+
+def vprint(*args, **kwargs):
+    """Print only when verbose mode is enabled."""
+    if VERBOSE:
+        print(*args, **kwargs)
+
+
 def load_hw_config(path: str) -> dict:
     """Load hardware configuration from YAML file."""
     with open(path, 'r', encoding='utf-8') as f:
@@ -133,10 +143,10 @@ def resolve_sensor_config(scenario_config: dict,
             'sensor_name': mode_def.get('sensor_name', ''),
         }
 
-        print(f"[Sensor Config] {hw_name} / {mode}")
-        print(f"  Size: {width}x{height}, FPS: {fps}")
-        print(f"  PCLK: {pclk/1e6:.1f} MHz, Line Length: {line_length_pck} pck")
-        print(f"  v_valid: {v_valid_ms:.3f} ms (auto-calculated)")
+        vprint(f"[Sensor Config] {hw_name} / {mode}")
+        vprint(f"  Size: {width}x{height}, FPS: {fps}")
+        vprint(f"  PCLK: {pclk/1e6:.1f} MHz, Line Length: {line_length_pck} pck")
+        vprint(f"  v_valid: {v_valid_ms:.3f} ms (auto-calculated)")
 
         return resolved
 
@@ -606,14 +616,14 @@ def apply_scenario_settings(hw_nodes: Dict[str, HWNode],
                 if isinstance(hw, IPNode) and clock:
                     hw.clock_freq = float(clock)
                     hw.target_freq = float(clock)  # Mark as manually set
-                    print(f"[Config] Manual clock set for {hw_name}: {clock/1e6:.1f} MHz")
+                    vprint(f"[Config] Manual clock set for {hw_name}: {clock/1e6:.1f} MHz")
 
 
 def run_demo():
     """Run a demonstration with sample configuration."""
-    print("=" * 60)
-    print("SoC Multimedia Architecture Simulator - Demo")
-    print("=" * 60)
+    vprint("=" * 60)
+    vprint("SoC Multimedia Architecture Simulator - Demo")
+    vprint("=" * 60)
 
     # Create hardware nodes with STATIC HW config only (no sensor settings)
     hw_nodes = [
@@ -677,19 +687,19 @@ def run_demo():
     scenario.add_dependency("t_isp_be", "t_venc", "M2M")
 
     # Check and align OTF/Sensor timing (Clock Optimization)
-    print("\n[Clock Optimization]")
+    vprint("\n[Clock Optimization]")
     opt_messages = scenario.optimize_otf_clocks(hw_registry)
     for msg in opt_messages:
-        print(msg)
-    print()
+        vprint(msg)
+    vprint()
 
     # Constraint Validation
-    print("[Validation]")
+    vprint("[Validation]")
     errors = scenario.validate_constraints(hw_registry)
     if errors:
-        print("Error: Scenario validation failed:")
+        vprint("Error: Scenario validation failed:")
         for err in errors:
-            print(f"  - {err}")
+            vprint(f"  - {err}")
         sys.exit(1)
 
     # Create simulator
@@ -709,28 +719,28 @@ def run_demo():
 
     # Text view before simulation
     text_viewer = TextViewer()
-    print()
-    print(text_viewer.print_hw_hierarchy(simulator.hw_registry))
-    print()
-    print(text_viewer.print_scenario_graph(scenario, hw_registry=hw_registry))
-    print()
+    vprint()
+    vprint(text_viewer.print_hw_hierarchy(simulator.hw_registry))
+    vprint()
+    vprint(text_viewer.print_scenario_graph(scenario, hw_registry=hw_registry))
+    vprint()
 
     # Run simulation
-    print("Running simulation...")
+    vprint("Running simulation...")
     output = simulator.run_with_analysis()
     results = output['results']
 
     # Print results
-    print()
-    print(text_viewer.print_simulation_summary(results))
-    print()
+    vprint()
+    vprint(text_viewer.print_simulation_summary(results))
+    vprint()
 
     # Print analysis reports
-    print(perf_analyzer.format_report(output['analysis']['PerformanceAnalyzer']))
-    print()
-    print(power_analyzer.format_report(output['analysis']['PowerAnalyzer']))
-    print()
-    print(timing_analyzer.format_report(output['analysis']['TimingAnalyzer']))
+    vprint(perf_analyzer.format_report(output['analysis']['PerformanceAnalyzer']))
+    vprint()
+    vprint(power_analyzer.format_report(output['analysis']['PowerAnalyzer']))
+    vprint()
+    vprint(timing_analyzer.format_report(output['analysis']['TimingAnalyzer']))
 
     return results
 
@@ -827,8 +837,17 @@ def main():
         default='output_simulation',
         help='Directory for simulation outputs (default: output_simulation)'
     )
+    parser.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Enable verbose output (show all diagnostic info)'
+    )
 
     args = parser.parse_args()
+
+    # Set global verbose flag
+    global VERBOSE
+    VERBOSE = args.verbose
 
     # Determine output flags: default (no flags) = all outputs
     any_flag = args.view or args.gantt or args.bw or args.csv or args.json
@@ -874,7 +893,7 @@ def main():
     if args.scenario_config:
         scenario_config = load_scenario_config(args.scenario_config)
     else:
-        print("Error: --scenario-config required when not in demo mode")
+        vprint("Error: --scenario-config required when not in demo mode")
         return
 
     # Step 2: Resolve config_paths from scenario config
@@ -912,7 +931,7 @@ def main():
         # Keep raw config for Level2 HTML view (module info)
         hw_raw = {item['name']: item for item in hw_list}
     else:
-        print("Error: --hw-config required (or set config_paths.hw_config in scenario)")
+        vprint("Error: --hw-config required (or set config_paths.hw_config in scenario)")
         return
 
     # ── Sensor Config Resolution ──
@@ -927,8 +946,43 @@ def main():
     # Create scenario (pass resolved sensor for workload setup)
     scenario = create_scenario(scenario_config, resolved_sensor=resolved_sensor)
 
-    # Build HW registry and apply scenario settings
+    # Build HW registry
     hw_registry = {node.name: node for node in hw_nodes}
+
+    # ── Auto-create SensorNode from sensor_config if not in hw.yaml ──
+    # When sensor is defined only in sensor_config.yaml (not in hw.yaml),
+    # we auto-create a SensorNode so the scenario can reference it.
+    # All resolved_sensor fields are preserved for BW/MIPI clock calculations.
+    if resolved_sensor and resolved_sensor.get('hw'):
+        sensor_hw_name = resolved_sensor['hw']
+        if sensor_hw_name not in hw_registry:
+            output_size = resolved_sensor.get('output_size', [0, 0, 1920, 1080])
+            if len(output_size) == 4:
+                width, height = output_size[2], output_size[3]
+            elif len(output_size) == 2:
+                width, height = output_size[0], output_size[1]
+            else:
+                width, height = 1920, 1080
+
+            sensor_node = SensorNode(
+                name=sensor_hw_name,
+                frame_width=width,
+                frame_height=height,
+                fps=resolved_sensor.get('fps', 30.0),
+                sensor_mode=resolved_sensor.get('sensor_mode',
+                                                resolved_sensor.get('mode', '')),
+                v_valid_time=resolved_sensor.get('v_valid_time'),
+            )
+            # Store full resolved_sensor for downstream use
+            # (BW calculation, MIPI clock, report generation, etc.)
+            sensor_node.set_attr('resolved_sensor', resolved_sensor)
+            hw_registry[sensor_hw_name] = sensor_node
+            hw_nodes.append(sensor_node)
+            vprint(f"[Sensor] Auto-created SensorNode '{sensor_hw_name}' "
+                  f"from sensor_config ({width}x{height} @ "
+                  f"{resolved_sensor.get('fps', 30.0)}fps)")
+
+    # Apply scenario settings to HW nodes
     apply_scenario_settings(hw_registry, scenario_config, resolved_sensor=resolved_sensor)
 
     # ── Derive output prefix: {project}_{scenario}_ ──
@@ -944,11 +998,11 @@ def main():
         from src.model.hw_info import create_hw_info_db
         from src.model.hw_resolver import HWResolver
 
-        print("\n[CSV HW Config Loading]")
+        vprint("\n[CSV HW Config Loading]")
         hw_info_db = create_hw_info_db(hw_info_path, hw_dvfs_path)
-        print(f"  Project: {hw_info_db.project_name}")
-        print(f"  IPs loaded: {len(hw_info_db.ip_infos)}")
-        print(f"  DVFS tables loaded: {len(hw_info_db.dvfs_tables)} "
+        vprint(f"  Project: {hw_info_db.project_name}")
+        vprint(f"  IPs loaded: {len(hw_info_db.ip_infos)}")
+        vprint(f"  DVFS tables loaded: {len(hw_info_db.dvfs_tables)} "
               f"({', '.join(hw_info_db.dvfs_tables.keys())})")
 
         # Validate: all IPs in hw_registry must exist in info.csv
@@ -956,9 +1010,9 @@ def main():
         if validation_errors:
             print("\n[Error] CSV validation failed:")
             for err in validation_errors:
-                print(f"  - {err}")
+                vprint(f"  - {err}")
             sys.exit(1)
-        print("  Validation: PASSED")
+        vprint("  Validation: PASSED")
 
         # Resolve DVFS/Voltage
         scenario_data = scenario_config.get('scenario', scenario_config)
@@ -970,7 +1024,7 @@ def main():
         resolver.apply_to_hw(hw_registry, resolved_configs)
 
         # Print exploration report
-        print(resolver.get_exploration_report(resolved_configs))
+        vprint(resolver.get_exploration_report(resolved_configs))
     elif hw_info_path or hw_dvfs_path:
         print("Warning: Both --hw-info and --hw-dvfs must be specified together. "
               "Skipping CSV-based HW config.")
@@ -981,64 +1035,68 @@ def main():
     if do_view:
         from src.view.html_view import (
             generate_top_html, generate_level1_html, generate_level2_html,
-            generate_task_topology_html
+            generate_level3_html, generate_task_topology_html
         )
         from src.view.plantuml_view import (
             generate_top_view, generate_level1, generate_level2,
-            generate_task_topology
+            generate_level3, generate_task_topology
         )
         os.makedirs(args.output_view_dir, exist_ok=True)
         # HTML views
         top_path = os.path.join(args.output_view_dir, f"{output_prefix}top.html")
         l1_path = os.path.join(args.output_view_dir, f"{output_prefix}level1.html")
         l2_path = os.path.join(args.output_view_dir, f"{output_prefix}level2.html")
+        l3_path = os.path.join(args.output_view_dir, f"{output_prefix}level3.html")
         topo_html = os.path.join(args.output_view_dir, f"{output_prefix}task_topology.html")
         generate_top_html(hw_registry, scenario, top_path)
         generate_level1_html(hw_registry, scenario, l1_path)
         generate_level2_html(hw_registry, scenario, hw_raw, l2_path)
+        generate_level3_html(hw_registry, scenario, hw_raw, l3_path)
         generate_task_topology_html(hw_registry, scenario, topo_html)
         # PlantUML views
         puml_top = os.path.join(args.output_view_dir, f"{output_prefix}top.puml")
         puml_l1 = os.path.join(args.output_view_dir, f"{output_prefix}level1.puml")
         puml_l2 = os.path.join(args.output_view_dir, f"{output_prefix}level2.puml")
+        puml_l3 = os.path.join(args.output_view_dir, f"{output_prefix}level3.puml")
         puml_topo = os.path.join(args.output_view_dir, f"{output_prefix}task_topology.puml")
         generate_top_view(hw_registry, scenario, puml_top)
         generate_level1(hw_registry, scenario, puml_l1)
         generate_level2(hw_registry, scenario, hw_raw, puml_l2)
+        generate_level3(hw_registry, scenario, hw_raw, puml_l3)
         generate_task_topology(hw_registry, scenario, puml_topo)
 
     # Graph-only mode: show structure and exit
     if args.graph_only:
-        print("=" * 70)
-        print(f"  Graph Structure: {scenario.name}")
-        print("=" * 70)
-        print()
-        print(text_viewer.print_hw_hierarchy(hw_registry))
-        print()
-        print(text_viewer.print_scenario_graph(scenario, hw_registry=hw_registry))
-        print()
-        print(text_viewer.print_scenario_flow(scenario, hw_registry=hw_registry))
+        vprint("=" * 70)
+        vprint(f"  Graph Structure: {scenario.name}")
+        vprint("=" * 70)
+        vprint()
+        vprint(text_viewer.print_hw_hierarchy(hw_registry))
+        vprint()
+        vprint(text_viewer.print_scenario_graph(scenario, hw_registry=hw_registry))
+        vprint()
+        vprint(text_viewer.print_scenario_flow(scenario, hw_registry=hw_registry))
         return
 
     # Check and align OTF/Sensor timing (Clock Optimization)
     # Skip if CSV-based resolution already set clocks
     if resolved_configs is None:
-        print("\n[Clock Optimization]")
+        vprint("\n[Clock Optimization]")
         opt_messages = scenario.optimize_otf_clocks(hw_registry)
         for msg in opt_messages:
-            print(msg)
-        print()
+            vprint(msg)
+        vprint()
     else:
-        print("\n[Clock Optimization] Skipped (CSV-based DVFS resolution active)")
-        print()
+        vprint("\n[Clock Optimization] Skipped (CSV-based DVFS resolution active)")
+        vprint()
 
     # Constraint Validation
-    print("[Validation]")
+    vprint("[Validation]")
     errors = scenario.validate_constraints(hw_registry)
     if errors:
-        print("Error: Scenario validation failed:")
+        vprint("Error: Scenario validation failed:")
         for err in errors:
-            print(f"  - {err}")
+            vprint(f"  - {err}")
         sys.exit(1)
 
     # Run simulation
@@ -1050,22 +1108,22 @@ def main():
     simulator.add_analyzer(PowerAnalyzer())
     simulator.add_analyzer(TimingAnalyzer())
 
-    print(text_viewer.print_hw_hierarchy(simulator.hw_registry))
-    print()
-    print(text_viewer.print_scenario_graph(scenario, hw_registry=simulator.hw_registry))
-    print()
+    vprint(text_viewer.print_hw_hierarchy(simulator.hw_registry))
+    vprint()
+    vprint(text_viewer.print_scenario_graph(scenario, hw_registry=simulator.hw_registry))
+    vprint()
 
     # Determine num_frames: CLI arg > scenario config > default (1)
     scenario_data = scenario_config.get('scenario', scenario_config)
     num_frames = args.num_frames or scenario_data.get('num_frames', 1)
     
     if num_frames > 1:
-        print(f"[Multi-Frame Simulation] Running {num_frames} frames...")
+        vprint(f"[Multi-Frame Simulation] Running {num_frames} frames...")
     
     output = simulator.run_with_analysis(num_frames=num_frames)
     results = output['results']
 
-    print(text_viewer.print_simulation_summary(results))
+    vprint(text_viewer.print_simulation_summary(results))
 
     # ── Export simulation results ──
     os.makedirs(args.output_sim_dir, exist_ok=True)
@@ -1155,6 +1213,7 @@ def main():
             hw_registry=hw_registry,
             resolved_sensor=resolved_sensor,
             link_files=chart_links,
+            hw_info_db=hw_info_db,
         )
         report_html = os.path.join(args.output_sim_dir, f"{output_prefix}report.html")
         report_md = os.path.join(args.output_sim_dir, f"{output_prefix}report.md")

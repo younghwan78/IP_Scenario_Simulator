@@ -39,7 +39,7 @@ class IPInfo:
     mode: str
     unit_power: float
     idc: float
-    ppc: int
+    ppc: float
     vdd: str
     dvfs_group: str
 
@@ -254,7 +254,7 @@ def load_info_csv(path: str) -> Tuple[str, Dict[str, List[IPInfo]]]:
             mode = row[1].strip() if len(row) > 1 else "Normal"
             unit_power = float(row[2].strip()) if len(row) > 2 and row[2].strip() else 0.0
             idc = float(row[3].strip()) if len(row) > 3 and row[3].strip() else 0.0
-            ppc = int(row[4].strip()) if len(row) > 4 and row[4].strip() else 1
+            ppc = float(row[4].strip()) if len(row) > 4 and row[4].strip() else 1.0
             vdd = row[5].strip() if len(row) > 5 else ""
             dvfs_group = row[6].strip() if len(row) > 6 else ""
             

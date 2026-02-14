@@ -533,13 +533,22 @@ Bandwidth Timeline Chart는 M2M 연결의 Read/Write BW를 시각화합니다:
 - **Top View**: Hierarchy group 블록 (Sensor, ISP, CODEC, DPU)
 - **Level 1**: IP-level detail within hierarchy groups
 - **Level 2**: Module-level detail (DMA, Scaler, Crop 등)
+  - 활성화된 모듈만 표시 (미사용 모듈 숨김)
+  - BLK 이름 표시: `IP_Name (BLK_BlockName)`
+  - RDMA/WDMA 모듈 색상 구분 (RDMA: pastel blue, WDMA: pastel orange)
+  - CIN/COUT 모듈 색상 구분 (CIN: pastel green, COUT: pastel purple)
+  - SBWC/LLC 상태별 추가 색상 (SBWC: orange, LLC: purple, 둘다: pink)
+  - Direct arrow: 모듈 노드 직접 연결 (부모 IP 패키지 대신)
+- **Level 3**: Connection-level detail
+- **Task Topology**: Task DAG 토폴로지 뷰
 
 ### 5.4 PlantUML Views
 
 `plantuml_view.py`에서 PlantUML 다이어그램을 생성합니다:
-- Top / Level 1 / Level 2 3단계 뷰
+- Top / Level 1 / Level 2 / Level 3 / Task Topology 5단계 뷰
 - M2M: cylinder shape으로 포트 정보 (size/format/bitwidth/comp) 표시
 - OTF: thick arrow로 파이프라인 연결 표시
+- Level 2: HTML 뷰와 동일한 모듈 색상 체계 적용
 
 ### 5.5 Report Generator
 
@@ -547,10 +556,10 @@ Bandwidth Timeline Chart는 M2M 연결의 Read/Write BW를 시각화합니다:
 
 6개 섹션으로 구성:
 - **Section 1: Scenario Description** — 센서, 해상도, FPS, 시나리오명
-- **Section 2: Basic Conditions** — Project Info, DVFS Table, SW Margin, BW Power 등
+- **Section 2: Basic Conditions** — Project Info, DVFS Table, SW Margin, BW Margin, MIF Mem Util, MIF Channel Width 등
 - **Section 3: DVFS Guide** — DVFS 도메인별 Set Clock/Level (전치 테이블)
 - **Section 4: Power Results** — VDD 도메인별 Core Power, BW Power, Total
-- **Section 5: Clock Results** — IP별 Req/Set Clock, Voltage, VDD Leader(★) 표시
+- **Section 5: Clock Results** — IP별 Req/Set Clock, Voltage, VDD Leader(★) + DVFS Group: MIF (자동 MIF 레벨 결정)
 - **Section 6: DMA Results** — IP별 포트별 Format, BW, BW Power (Comp/LLC 하이라이트)
 
 디자인 특징:
@@ -591,6 +600,37 @@ output_simulation/                        # --gantt/--bw/--csv/--json flags
 ```
 
 HTML 파일은 `include_plotlyjs='cdn'`으로 생성되어 파일 크기가 4.8MB → ~11KB로 대폭 감소합니다.
+
+### 5.8 MIF DVFS Level Determination
+
+Total DMA BW를 기반으로 MIF DVFS 레벨을 자동으로 결정합니다.
+
+```
+mif_bw (MB/s) = freq_mhz × mif_channel_width × mem_util
+required_bw = total_dma_bw × bw_margin
+
+MIF DVFS table의 가장 높은 주파수부터 순회하여
+mif_bw >= required_bw를 만족하는 가장 낮은 주파수 레벨 선택
+```
+
+Scenario Config 파라미터:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `bw_margin` | 1.25 | BW 마진 (total BW에 곱하는 계수) |
+| `mem_util` | 0.55 | MIF 메모리 활용률 |
+| `mif_channel_width` | 16 | MIF 채널 폭 (bytes) |
+
+결과는 Report Section 2 (Basic Conditions)와 Section 5 (Clock Results)에 표시됩니다.
+
+### 5.9 Verbose Output Control
+
+`-v`/`--verbose` 플래그로 터미널 출력을 제어합니다:
+
+| Mode | Output |
+|------|--------|
+| Default (기본) | 파일 저장/경고/에러 메시지만 출력 |
+| `-v` (verbose) | 전체 진단 정보 (센서 설정, DVFS 테이블, HW 계층, 시뮬레이션 결과 등) |
 
 ---
 
@@ -949,15 +989,18 @@ def test_m2m_timing():
 |---------|--------|-------------|
 | **Multi-Frame Pipelined Simulation** | ✅ Done | FPS 기반 프레임 간격으로 파이프라인 중첩 |
 | **DVFS Voltage Resolution** | ✅ Done | CSV 기반 DVFS 테이블 + ASV 그룹 전압 결정 |
+| **MIF DVFS Level Determination** | ✅ Done | Total DMA BW 기반 MIF 레벨 자동 결정 |
 | **Power Calculation** | ✅ Done | VDD 도메인 전압 정렬, req/set_volt_power 동적 전력 계산 |
-| **Simulation Report** | ✅ Done | HTML/Markdown 6-섹션 리포트 (파스텔 스타일) |
+| **Simulation Report** | ✅ Done | HTML/Markdown 6-섹션 리포트 + MIF Level (파스텔 스타일) |
 | **PNG Chart Export** | ✅ Done | Gantt/BW 차트 PNG 자동 저장 (kaleido) |
 | **CSV-based HW Config** | ✅ Done | IP info/DVFS를 CSV로 관리 |
 | **BW Timeline Chart** | ✅ Done | M2M Read/Write BW 시각화 |
-| **Multi-Level HTML Views** | ✅ Done | ELK.js 기반 Top/L1/L2 인터랙티브 뷰 |
-| **PlantUML Views** | ✅ Done | 3단계 PlantUML 다이어그램 |
+| **Multi-Level HTML Views** | ✅ Done | ELK.js 기반 Top/L1/L2/L3/Task Topology 인터랙티브 뷰 |
+| **Level 2 Module Coloring** | ✅ Done | RDMA/WDMA/CIN/COUT 및 SBWC/LLC 상태별 색상 구분 |
+| **PlantUML Views** | ✅ Done | 5단계 PlantUML 다이어그램 (HTML 뷰와 색상 동기화) |
 | **CDN-based HTML** | ✅ Done | Plotly CDN으로 경량 HTML (4.8MB → 11KB) |
 | **Output Reorganization** | ✅ Done | output_view/ + output_simulation/ 분리, 자동 네이밍 |
+| **Verbose Mode** | ✅ Done | `-v` 플래그로 출력 제어 (기본: 파일 저장만) |
 
 ### Future Enhancements
 
