@@ -231,6 +231,9 @@ def create_hw_node(config: dict) -> HWNode:
             latency=config.get('latency', 0.0),
             ip_group=config.get('ip_group', ''),
             hierarchy_group=config.get('hierarchy_group', ''),
+            line_buffer=float(config.get('line_buffer', 0.0)),
+            strip_overhead=float(config.get('strip_overhead', 0.0)),
+            v_blank_ratio=float(config.get('v_blank_ratio', 0.0)),
         )
 
         # Add modules if present

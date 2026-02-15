@@ -1,13 +1,14 @@
 """
 Report Generator — HTML & Markdown reports for simulation results.
 
-Generates structured reports with 6 sections:
+Generates structured reports with 7 sections:
 1. Scenario Description (sensor, size, fps, scenario name)
 2. Basic Conditions (project, DVFS table, temperature, SW margin, etc.)
 3. DVFS Guide (per DVFS domain, set clock & level)
 4. Power Results (VDD domain summary with dynamic power & BW power)
 5. Clock Results (per IP: mode, req/set clock, voltage, VDD)
-6. DMA Results (per IP: port, format, BW, BW power, etc.)
+6. IP Details (sensor detail table + general IP detail table)
+7. DMA Results (per IP: port, format, BW, BW power, etc.)
 """
 
 from __future__ import annotations
@@ -269,6 +270,124 @@ class ReportGenerator:
         return dict(sorted(dvfs_groups.items()))
 
     # ------------------------------------------------------------------
+    # Section 6: IP Details
+    # ------------------------------------------------------------------
+    def _section_ip_details(self) -> dict:
+        """Collect sensor detail and per-IP detail records.
+
+        Returns dict with 'sensor_records' and 'ip_records' lists.
+        """
+        from src.model.hw_nodes import IPNode, SensorNode
+
+        # ── Sensor records ──────────────────────────────────────
+        sensor_records = []
+        rs = self.resolved_sensor
+        if rs and rs.get('hw'):
+            # Get vvalid from SensorNode in hw_registry
+            vvalid_ms = 0.0
+            sensor_hw = self.hw_registry.get(rs.get('hw'))
+            if sensor_hw and isinstance(sensor_hw, SensorNode):
+                vvalid_ms = sensor_hw.effective_v_valid_time * 1000
+
+            sensor_records.append({
+                'sensor_name': rs.get('sensor_name', '-'),
+                'sensor_mode': rs.get('sensor_mode', rs.get('mode', '-')),
+                'format': rs.get('sensor_format', '-'),
+                'bit_width': rs.get('sensor_bitwidth', 0),
+                'mipi_type': rs.get('sensor_phy_type', '-'),
+                'mipi_speed': rs.get('sensor_mipi_speed', 0),
+                'vvalid_time_ms': vvalid_ms,
+            })
+
+        # ── General IP records ──────────────────────────────────
+        ip_records = []
+        dma_records = self._collect_dma_records()
+        ip_settings = getattr(self.scenario, '_ip_settings', {})
+
+        # Pre-aggregate DMA per IP
+        ip_bw: dict = {}  # hw_name -> {bw, bw_power, read_bw, write_bw}
+        for r in dma_records:
+            hw = r['hw']
+            if hw not in ip_bw:
+                ip_bw[hw] = {'bw': 0.0, 'bw_power': 0.0, 'read_bw': 0.0, 'write_bw': 0.0}
+            ip_bw[hw]['bw'] += r['bw_mbs']
+            ip_bw[hw]['bw_power'] += r['bw_power_mw']
+            if r.get('direction') == 'Read':
+                ip_bw[hw]['read_bw'] += r['bw_mbs']
+            else:
+                ip_bw[hw]['write_bw'] += r['bw_mbs']
+
+        for ip_name, cfg in sorted(self.resolved.items(), key=lambda x: x[0]):
+            hw = self.hw_registry.get(ip_name)
+            ip_group = ''
+            line_buffer = 0.0
+            strip_overhead = 0.0
+            v_blank_ratio = 0.0
+            if hw and isinstance(hw, IPNode):
+                ip_group = hw.ip_group
+                line_buffer = getattr(hw, 'line_buffer', 0.0)
+                strip_overhead = getattr(hw, 'strip_overhead', 0.0)
+                v_blank_ratio = getattr(hw, 'v_blank_ratio', 0.0)
+
+            # Color format & input resolution from ip_settings (first input)
+            color_format = '-'
+            input_w, input_h = 0, 0
+            num_strips = 1
+            for _tid, sett in ip_settings.items():
+                if sett.get('hw') == ip_name:
+                    inputs = sett.get('inputs', [])
+                    if inputs:
+                        first_in = inputs[0]
+                        color_format = first_in.get('format', '-')
+                        sz = first_in.get('size', [])
+                        if len(sz) >= 4:
+                            input_w, input_h = sz[2], sz[3]
+                    num_strips = int(sett.get('num_strips', 1))
+                    break
+
+            # HW time from processing_time
+            hw_time_ms = 0.0
+            if hw and isinstance(hw, IPNode):
+                workload = {'width': input_w, 'height': input_h,
+                            'h_blank_margin': self.h_blank_margin}
+                hw_time_ms = hw.get_processing_time(workload) * 1000
+
+            current_ma = cfg.set_volt_power / self.vBat / self.pmic_eff if self.vBat > 0 else 0.0
+            bw_info = ip_bw.get(ip_name, {'bw': 0, 'bw_power': 0, 'read_bw': 0, 'write_bw': 0})
+
+            ip_records.append({
+                'ip_group': ip_group,
+                'ip_name': ip_name,
+                'ppc': cfg.ppc,
+                'mode': cfg.mode,
+                'unit_power': cfg.unit_power,
+                'idle_power': cfg.idc,
+                'asv_group': self.asv_group,
+                'color_format': color_format,
+                'input_resolution': f"{input_w}×{input_h}",
+                'vdd': cfg.vdd,
+                'dvfs': cfg.dvfs_group,
+                'line_buffer': line_buffer,
+                'strip_overhead': strip_overhead,
+                'v_blank_ratio': v_blank_ratio,
+                'req_freq': cfg.required_clock,
+                'req_voltage': cfg.required_voltage,
+                'power_req': cfg.req_volt_power,
+                'set_freq': cfg.set_clock,
+                'set_voltage': cfg.set_voltage,
+                'power_set': cfg.set_volt_power,
+                'current_ma': current_ma,
+                'hw_time_ms': hw_time_ms,
+                'num_strips': num_strips,
+                'bw': bw_info['bw'],
+                'bw_power': bw_info['bw_power'],
+                'read_bw': bw_info['read_bw'],
+                'write_bw': bw_info['write_bw'],
+            })
+
+        return {'sensor_records': sensor_records, 'ip_records': ip_records}
+
+    # ------------------------------------------------------------------
     # MIF Level Determination
     # ------------------------------------------------------------------
     def _determine_mif_level(self, total_bw_mbs: float) -> dict:
@@ -489,13 +608,63 @@ class ReportGenerator:
             lines.append("| MIF Level | N/A (no MIF DVFS table) |")
         lines.append("")
 
-        # Section 6
-        s6 = self._section_dma()
-        lines.append("## 6. DMA Results")
+        # Section 6: IP Details
+        s6_ip = self._section_ip_details()
+        lines.append("## 6. IP Details")
+        lines.append("")
+
+        # 6-1. Sensor Detail
+        if s6_ip['sensor_records']:
+            lines.append("### 6-1. Sensor Detail")
+            lines.append("")
+            lines.append("| Sensor Name | Sensor Mode | Format | Bit Width | Mipi Type | Mipi Speed (Gbps) | Vvalid Time (ms) |")
+            lines.append("|-------------|-------------|--------|:---------:|-----------|:-----------------:|:----------------:|")
+            for sr in s6_ip['sensor_records']:
+                lines.append(
+                    f"| {sr['sensor_name']} | {sr['sensor_mode']} | {sr['format']} "
+                    f"| {sr['bit_width']} | {sr['mipi_type']} | {sr['mipi_speed']} "
+                    f"| {sr['vvalid_time_ms']:.3f} |"
+                )
+            lines.append("")
+
+        # 6-2. IP Detail
+        lines.append("### 6-2. IP Detail")
+        lines.append("")
+        lines.append(
+            "| IP Group | IP Name | PPC | Mode | Unit Power | Idle Power | ASV | Color Fmt "
+            "| Input Res | VDD | DVFS "
+            "| Req Freq | Req Volt | Pwr@Req | Set Freq | Set Volt | Pwr@Set "
+            "| mA@Vbat | HW Time(ms) | Line Buf | Strip OH | VB Ratio | Strips "
+            "| BW(MB/s) | BW Pwr(mW) | RdBW | WrBW |"
+        )
+        lines.append(
+            "|----------|---------|:---:|------|:----------:|:----------:|:---:|---------- "
+            "|:---------:|-----|------"
+            "|:--------:|:--------:|:-------:|:--------:|:--------:|:-------:"
+            "|:-------:|:-----------:|:--------:|:--------:|:--------:|:------:"
+            "|:--------:|:----------:|:----:|:----:|"
+        )
+        for ip in s6_ip['ip_records']:
+            lines.append(
+                f"| {ip['ip_group']} | {ip['ip_name']} | {ip['ppc']} | {ip['mode']} "
+                f"| {ip['unit_power']:.3f} | {ip['idle_power']:.3f} | {ip['asv_group']} | {ip['color_format']} "
+                f"| {ip['input_resolution']} | {ip['vdd']} | {ip['dvfs']} "
+                f"| {ip['req_freq']:.1f} | {ip['req_voltage']:.1f} | {ip['power_req']:.2f} "
+                f"| {ip['set_freq']:.1f} | {ip['set_voltage']:.1f} | {ip['power_set']:.2f} "
+                f"| {ip['current_ma']:.2f} | {ip['hw_time_ms']:.3f} "
+                f"| {ip['line_buffer']:.1f} | {ip['strip_overhead']:.1f} | {ip['v_blank_ratio']:.2f} "
+                f"| {ip['num_strips']} "
+                f"| {ip['bw']:.1f} | {ip['bw_power']:.2f} | {ip['read_bw']:.1f} | {ip['write_bw']:.1f} |"
+            )
+        lines.append("")
+
+        # Section 7
+        s7 = self._section_dma()
+        lines.append("## 7. DMA Results")
         lines.append("")
         lines.append("| IP Group | Name | In/Out | Format | Bitwidth | LLC | LLC Hit | Comp | Comp Ratio | R/W Rate | W×H | BW (MB/s) | BW Power (mW) |")
         lines.append("|----------|------|:------:|--------|:--------:|:---:|:-------:|:----:|:----------:|:--------:|:---:|:---------:|:-------------:|")
-        for hw, ports in s6.items():
+        for hw, ports in s7.items():
             for p in ports:
                 lines.append(
                     f"| {hw} | {p['port']} | {p['direction']} | {p.get('format', '-')} "
@@ -506,8 +675,8 @@ class ReportGenerator:
                 )
         lines.append("")
 
-        total_bw = sum(p['bw_mbs'] for ports in s6.values() for p in ports)
-        total_bw_pwr = sum(p['bw_power_mw'] for ports in s6.values() for p in ports)
+        total_bw = sum(p['bw_mbs'] for ports in s7.values() for p in ports)
+        total_bw_pwr = sum(p['bw_power_mw'] for ports in s7.values() for p in ports)
         lines.append(f"**Total DMA BW: {total_bw:.1f} MB/s | Total BW Power: {total_bw_pwr:.2f} mW**")
         lines.append("")
 
@@ -522,7 +691,6 @@ class ReportGenerator:
         s3 = self._section_dvfs_guide()
         s4 = self._section_power()
         s5 = self._section_clock()
-        s6 = self._section_dma()
 
         html = []
         html.append("<!DOCTYPE html>")
@@ -673,9 +841,68 @@ class ReportGenerator:
             html.append("<tr><th>MIF Level</th><td>N/A (no MIF DVFS table)</td></tr>")
         html.append("</table>")
 
-        # Section 6
-        html.append("<h2>6. DMA Results</h2>")
-        html.append("<table><thead><tr>"
+        # Section 6: IP Details
+        s6_ip_html = self._section_ip_details()
+        html.append("<h2>6. IP Details</h2>")
+
+        # 6-1. Sensor Detail
+        if s6_ip_html['sensor_records']:
+            html.append("<h3>6-1. Sensor Detail</h3>")
+            html.append("<table><thead><tr>"
+                         "<th>Sensor Name</th><th>Sensor Mode</th><th>Format</th>"
+                         "<th>Bit Width</th><th>Mipi Type</th>"
+                         "<th>Mipi Speed (Gbps)</th><th>Vvalid Time (ms)</th>"
+                         "</tr></thead><tbody>")
+            for sr in s6_ip_html['sensor_records']:
+                html.append(
+                    f"<tr><td>{sr['sensor_name']}</td><td>{sr['sensor_mode']}</td>"
+                    f"<td>{sr['format']}</td><td>{sr['bit_width']}</td>"
+                    f"<td>{sr['mipi_type']}</td><td>{sr['mipi_speed']}</td>"
+                    f"<td>{sr['vvalid_time_ms']:.3f}</td></tr>"
+                )
+            html.append("</tbody></table>")
+
+        # 6-2. IP Detail
+        html.append("<h3>6-2. IP Detail</h3>")
+        html.append(self._filter_bar_html('ip-detail'))
+        html.append("<div style='overflow-x:auto'>")
+        html.append("<table id='ip-detail'><thead><tr>"
+                     "<th>IP Group</th><th>IP Name</th><th>PPC</th><th>Mode</th>"
+                     "<th>Unit Power</th><th>Idle Power</th><th>ASV</th>"
+                     "<th>Color Fmt</th><th>Input Res</th><th>VDD</th><th>DVFS</th>"
+                     "<th>Req Freq</th><th>Req Volt</th><th>Pwr@Req</th>"
+                     "<th>Set Freq</th><th>Set Volt</th><th>Pwr@Set</th>"
+                     "<th>mA@Vbat</th><th>HW Time(ms)</th>"
+                     "<th>Line Buf</th><th>Strip OH</th><th>VB Ratio</th>"
+                     "<th>Strips</th>"
+                     "<th>BW(MB/s)</th><th>BW Pwr(mW)</th><th>RdBW</th><th>WrBW</th>"
+                     "</tr></thead><tbody>")
+        for ip in s6_ip_html['ip_records']:
+            html.append(
+                f"<tr><td>{ip['ip_group']}</td><td>{ip['ip_name']}</td>"
+                f"<td>{ip['ppc']}</td><td>{ip['mode']}</td>"
+                f"<td>{ip['unit_power']:.3f}</td><td>{ip['idle_power']:.3f}</td>"
+                f"<td>{ip['asv_group']}</td><td>{ip['color_format']}</td>"
+                f"<td>{ip['input_resolution']}</td><td>{ip['vdd']}</td><td>{ip['dvfs']}</td>"
+                f"<td>{ip['req_freq']:.1f}</td><td>{ip['req_voltage']:.1f}</td>"
+                f"<td>{ip['power_req']:.2f}</td>"
+                f"<td>{ip['set_freq']:.1f}</td><td>{ip['set_voltage']:.1f}</td>"
+                f"<td>{ip['power_set']:.2f}</td>"
+                f"<td>{ip['current_ma']:.2f}</td><td>{ip['hw_time_ms']:.3f}</td>"
+                f"<td>{ip['line_buffer']:.1f}</td><td>{ip['strip_overhead']:.1f}</td>"
+                f"<td>{ip['v_blank_ratio']:.2f}</td>"
+                f"<td>{ip['num_strips']}</td>"
+                f"<td>{ip['bw']:.1f}</td><td>{ip['bw_power']:.2f}</td>"
+                f"<td>{ip['read_bw']:.1f}</td><td>{ip['write_bw']:.1f}</td></tr>"
+            )
+        html.append("</tbody></table>")
+        html.append("</div>")
+
+        # Section 7: DMA Results
+        s7_html = self._section_dma()
+        html.append("<h2>7. DMA Results</h2>")
+        html.append(self._filter_bar_html('dma-detail'))
+        html.append("<table id='dma-detail'><thead><tr>"
                      "<th>IP Group</th><th>Name</th><th>In/Out</th>"
                      "<th>Format</th><th>Bitwidth</th>"
                      "<th>LLC</th><th>LLC Hit</th>"
@@ -685,7 +912,7 @@ class ReportGenerator:
                      "</tr></thead><tbody>")
         total_bw = 0
         total_bw_pwr = 0
-        for hw, ports in s6.items():
+        for hw, ports in s7_html.items():
             for p in ports:
                 total_bw += p['bw_mbs']
                 total_bw_pwr += p['bw_power_mw']
@@ -709,8 +936,76 @@ class ReportGenerator:
         )
         html.append("</tbody></table>")
 
+        html.append("<script>")
+        html.append(self._filter_js())
+        html.append("</script>")
         html.append("</body></html>")
         return "\n".join(html)
+
+    # ------------------------------------------------------------------
+    # Filter UI helpers (HTML)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _filter_bar_html(table_id: str) -> str:
+        """Generate a filter bar (IP Group dropdown + IP Name search) for a table."""
+        return (
+            f"<div class='filter-bar' data-table='{table_id}'>"
+            f"<label>🔍 IP Group:</label>"
+            f"<select class='filter-group' onchange=\"filterTable('{table_id}')\">"
+            f"<option value=''>All</option></select>"
+            f"<label>IP Name:</label>"
+            f"<input class='filter-name' type='text' placeholder='Search...' "
+            f"oninput=\"filterTable('{table_id}')\">"
+            f"<span class='filter-count'></span>"
+            f"</div>"
+        )
+
+    @staticmethod
+    def _filter_js() -> str:
+        """JavaScript for Excel-like table filtering."""
+        return """
+// Auto-populate IP Group dropdown options from table data
+document.querySelectorAll('.filter-bar').forEach(function(bar) {
+    var tid = bar.getAttribute('data-table');
+    var tbl = document.getElementById(tid);
+    if (!tbl) return;
+    var rows = tbl.querySelectorAll('tbody tr');
+    var groups = new Set();
+    rows.forEach(function(r) {
+        var g = r.cells[0] ? r.cells[0].textContent.trim() : '';
+        if (g) groups.add(g);
+    });
+    var sel = bar.querySelector('.filter-group');
+    Array.from(groups).sort().forEach(function(g) {
+        var opt = document.createElement('option');
+        opt.value = g; opt.textContent = g;
+        sel.appendChild(opt);
+    });
+    // Initial count
+    filterTable(tid);
+});
+
+function filterTable(tableId) {
+    var bar = document.querySelector(".filter-bar[data-table='" + tableId + "']");
+    var tbl = document.getElementById(tableId);
+    if (!bar || !tbl) return;
+    var groupVal = bar.querySelector('.filter-group').value.toLowerCase();
+    var nameVal = bar.querySelector('.filter-name').value.toLowerCase();
+    var rows = tbl.querySelectorAll('tbody tr');
+    var shown = 0;
+    rows.forEach(function(row) {
+        if (row.classList.contains('total')) { row.style.display = ''; return; }
+        var group = row.cells[0] ? row.cells[0].textContent.trim().toLowerCase() : '';
+        var name = row.cells[1] ? row.cells[1].textContent.trim().toLowerCase() : '';
+        var matchGroup = !groupVal || group === groupVal;
+        var matchName = !nameVal || name.indexOf(nameVal) >= 0;
+        if (matchGroup && matchName) { row.style.display = ''; shown++; }
+        else { row.style.display = 'none'; }
+    });
+    var countEl = bar.querySelector('.filter-count');
+    countEl.textContent = shown + ' / ' + (rows.length) + ' rows';
+}
+"""
 
     # ------------------------------------------------------------------
     # CSS
@@ -789,6 +1084,21 @@ tr.total {
     margin: 0 4px;
 }
 .chart-links a:hover { text-decoration: underline; }
+.filter-bar {
+    display: flex; gap: 12px; align-items: center;
+    margin: 8px 0 4px; padding: 8px 14px;
+    background: #e8f0fe; border-radius: 8px;
+    font-size: 0.85em; flex-wrap: wrap;
+}
+.filter-bar label { color: #1967d2; font-weight: 500; white-space: nowrap; }
+.filter-bar select, .filter-bar input {
+    padding: 4px 8px; border: 1px solid #d2e3fc; border-radius: 4px;
+    font-size: 0.95em; font-family: inherit; background: #fff;
+}
+.filter-bar input { min-width: 160px; }
+.filter-bar .filter-count {
+    margin-left: auto; color: #5f6368; font-size: 0.9em;
+}
 """
 
     # ------------------------------------------------------------------

@@ -323,6 +323,11 @@ class IPNode(HWNode):
     required_voltage: float = 0.0  # mV
     dvfs_level: int = -1         # selected DVFS level
 
+    # ── Optional HW spec attributes (from hw.yaml) ─────────────
+    line_buffer: float = 0.0       # Line buffer size (project-specific)
+    strip_overhead: float = 0.0    # Strip processing overhead (project-specific)
+    v_blank_ratio: float = 0.0     # V-blank ratio (project-specific)
+
     # Strategy callbacks for extensible calculation
     # See hw_resolver.py docstring for extension examples
     _power_calculator: Optional[Any] = field(default=None, repr=False)
