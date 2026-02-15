@@ -306,7 +306,8 @@ class HWResolver:
                 if c.set_clock < max_set_clock:
                     c.set_clock = max_set_clock
                     c.dvfs_level = target_level.level
-                    c.required_voltage = target_voltage
+                    # Keep c.required_voltage from its own req_clock (Step 3)
+                    # — VDD alignment (Step 4) will handle set_voltage
         
         # Step 4: Align same VDD domain to highest voltage
         vdd_groups: Dict[str, List[str]] = defaultdict(list)
