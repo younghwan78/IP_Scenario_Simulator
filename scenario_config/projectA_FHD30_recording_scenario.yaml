@@ -369,7 +369,7 @@ ip_blocks:
   - ip_settings:
       hw: "MTNR0"
       mode: "Normal"
-      manual_clock: 533
+      #manual_clock: 533
       inputs:
         - port: "L0_RDMA"
           size: [0, 0, 1920, 1080]

@@ -557,8 +557,8 @@ class ReportGenerator:
         s4 = self._section_power()
         lines.append("## 4. Power Results")
         lines.append("")
-        lines.append("| VDD | Set Volt (V) | Core Power (mW) | Current (mA@Vbat) | BW (MB/s) | BW Power (mW) | BW Current (mA@Vbat) | Total Power (mW) | Total Current (mA@Vbat) |")
-        lines.append("|-----|:------------:|:---------------:|:-----------------:|:---------:|:-------------:|:--------------------:|:----------------:|:-----------------------:|")
+        lines.append("| VDD | Set Volt (V) | Core Power (mW) | Current (mA) | BW (MB/s) | BW Power (mW) | BW Current (mA) | Total Power (mW) | Total Current (mA) |")
+        lines.append("|-----|:------------:|:---------------:|:------------:|:---------:|:-------------:|:---------------:|:----------------:|:------------------:|")
         for v in s4['vdd_domains']:
             lines.append(
                 f"| {v['vdd']} | {v['set_volt_v']:.4f} | {v['core_power_mw']:.2f} | {v['core_current_ma']:.2f} "
@@ -581,7 +581,7 @@ class ReportGenerator:
         for group, ips in s5.items():
             lines.append(f"### DVFS Group: {group}")
             lines.append("")
-            lines.append("| IP | Mode | Req.Clk (MHz) | Set.Clk (MHz) | DVFS Lv | Req.Volt (mV) | Set.Volt (mV) | Δ Volt | VDD | ReqV Power (mW) | SetV Power (mW) |")
+            lines.append("| IP | Mode | Req.Clk (MHz) | Set.Clk (MHz) | DVFS Lv | Req.Volt (mV) | Set.Volt (mV) | Δ Volt (mV) | VDD | ReqV Pwr (mW) | SetV Pwr (mW) |")
             lines.append("|----|----- |:-------------:|:-------------:|:-------:|:-------------:|:-------------:|:------:|-----|:---------------:|:---------------:|")
             for ip in ips:
                 delta = f"+{ip['volt_delta']:.1f}" if ip['volt_delta'] > 0 else f"{ip['volt_delta']:.1f}"
@@ -668,16 +668,16 @@ class ReportGenerator:
         s7 = self._section_dma()
         lines.append("## 7. DMA Results")
         lines.append("")
-        lines.append("| IP Group | Name | In/Out | Format | Bitwidth | LLC | LLC Hit | Comp | Comp Ratio | R/W Rate | W×H | BW (MB/s) | BW Power (mW) |")
-        lines.append("|----------|------|:------:|--------|:--------:|:---:|:-------:|:----:|:----------:|:--------:|:---:|:---------:|:-------------:|")
+        lines.append("| IP Group | Name | In/Out | W×H | Format | Bitwidth | Comp | Comp Ratio | LLC | LLC Hit | BW (MB/s) | BW Power (mW) | R/W Rate |")
+        lines.append("|----------|------|:------:|:---:|--------|:--------:|:----:|:----------:|:---:|:-------:|:---------:|:-------------:|:--------:|")
         for hw, ports in s7.items():
             for p in ports:
                 lines.append(
-                    f"| {hw} | {p['port']} | {p['direction']} | {p.get('format', '-')} "
-                    f"| {p.get('bitwidth', 0)} | {p.get('llc_enable', 'disable')} | {p.get('llc_hit_ratio', 0):.2f} "
+                    f"| {hw} | {p['port']} | {p['direction']} | {p.get('width', 0)}×{p.get('height', 0)} "
+                    f"| {p.get('format', '-')} | {p.get('bitwidth', 0)} "
                     f"| {p.get('comp', 'disable')} | {p.get('comp_ratio', 1.0):.2f} "
-                    f"| {p.get('r_w_rate', 1.0):.1f} | {p.get('width', 0)}×{p.get('height', 0)} "
-                    f"| {p['bw_mbs']:.1f} | {p['bw_power_mw']:.2f} |"
+                    f"| {p.get('llc_enable', 'disable')} | {p.get('llc_hit_ratio', 0):.2f} "
+                    f"| {p['bw_mbs']:.1f} | {p['bw_power_mw']:.2f} | {p.get('r_w_rate', 1.0):.1f} |"
                 )
         lines.append("")
 
@@ -782,7 +782,7 @@ class ReportGenerator:
         html.append("<h2>4. Power Results</h2>")
         html.append("<table><thead><tr>"
                      "<th>VDD</th><th>Set Volt (V)</th>"
-                     "<th>Core Power (mW)</th><th>Current (mA@Vbat)</th>"
+                     "<th>Core Power (mW)</th><th>Current (mA)</th>"
                      "<th>BW (MB/s)</th><th>BW Power (mW)</th><th>BW Current (mA)</th>"
                      "<th>Total Power (mW)</th><th>Total Current (mA)</th>"
                      "</tr></thead><tbody>")
@@ -809,10 +809,10 @@ class ReportGenerator:
         for group, ips in s5.items():
             html.append(f"<h3>DVFS Group: {group}</h3>")
             html.append("<table><thead><tr>"
-                         "<th>IP</th><th>Mode</th><th>Req.Clk</th><th>Set.Clk</th>"
-                         "<th>DVFS Lv</th><th>Req.Volt</th><th>Set.Volt</th>"
-                         "<th>Δ Volt</th><th>VDD</th>"
-                         "<th>ReqV Pwr</th><th>SetV Pwr</th>"
+                         "<th>IP</th><th>Mode</th><th>Req.Clk (MHz)</th><th>Set.Clk (MHz)</th>"
+                         "<th>DVFS Lv</th><th>Req.Volt (mV)</th><th>Set.Volt (mV)</th>"
+                         "<th>Δ Volt (mV)</th><th>VDD</th>"
+                         "<th>ReqV Pwr (mW)</th><th>SetV Pwr (mW)</th>"
                          "</tr></thead><tbody>")
             for ip in ips:
                 delta = ip['volt_delta']
@@ -918,11 +918,10 @@ class ReportGenerator:
         html.append(self._filter_bar_html('dma-detail'))
         html.append("<table id='dma-detail'><thead><tr>"
                      "<th>IP Group</th><th>Name</th><th>In/Out</th>"
-                     "<th>Format</th><th>Bitwidth</th>"
-                     "<th>LLC</th><th>LLC Hit</th>"
+                     "<th>W×H</th><th>Format</th><th>Bitwidth</th>"
                      "<th>Comp</th><th>Comp Ratio</th>"
-                     "<th>R/W Rate</th><th>W×H</th>"
-                     "<th>BW (MB/s)</th><th>BW Power (mW)</th>"
+                     "<th>LLC</th><th>LLC Hit</th>"
+                     "<th>BW (MB/s)</th><th>BW Power (mW)</th><th>R/W Rate</th>"
                      "</tr></thead><tbody>")
         total_bw = 0
         total_bw_pwr = 0
@@ -937,16 +936,16 @@ class ReportGenerator:
                 comp_cls = ' class="highlight-on"' if comp_val == 'enable' else ''
                 html.append(
                     f"<tr><td>{hw}</td><td>{p['port']}</td><td>{p['direction']}</td>"
-                    f"<td>{p.get('format', '-')}</td><td>{p.get('bitwidth', 0)}</td>"
-                    f"<td{llc_cls}>{llc_val}</td><td{llc_cls}>{p.get('llc_hit_ratio', 0):.2f}</td>"
-                    f"<td{comp_cls}>{comp_val}</td><td{comp_cls}>{p.get('comp_ratio', 1.0):.2f}</td>"
-                    f"<td>{p.get('r_w_rate', 1.0):.1f}</td>"
                     f"<td>{p.get('width', 0)}×{p.get('height', 0)}</td>"
-                    f"<td>{p['bw_mbs']:.1f}</td><td>{p['bw_power_mw']:.2f}</td></tr>"
+                    f"<td>{p.get('format', '-')}</td><td>{p.get('bitwidth', 0)}</td>"
+                    f"<td{comp_cls}>{comp_val}</td><td{comp_cls}>{p.get('comp_ratio', 1.0):.2f}</td>"
+                    f"<td{llc_cls}>{llc_val}</td><td{llc_cls}>{p.get('llc_hit_ratio', 0):.2f}</td>"
+                    f"<td>{p['bw_mbs']:.1f}</td><td>{p['bw_power_mw']:.2f}</td>"
+                    f"<td>{p.get('r_w_rate', 1.0):.1f}</td></tr>"
                 )
         html.append(
-            f"<tr class='total'><td colspan='11'><b>Total</b></td>"
-            f"<td><b>{total_bw:.1f}</b></td><td><b>{total_bw_pwr:.2f}</b></td></tr>"
+            f"<tr class='total'><td colspan='10'><b>Total</b></td>"
+            f"<td><b>{total_bw:.1f}</b></td><td><b>{total_bw_pwr:.2f}</b></td><td></td></tr>"
         )
         html.append("</tbody></table>")
 
