@@ -457,6 +457,7 @@ def create_scenario_from_blocks(config: dict,
     
     # Store ip_settings per task for later reference (text view etc.)
     scenario._ip_settings = {}  # task_id -> ip_settings dict
+    scenario._manual_clocks = {}  # hw_name -> manual_clock MHz
     
     # BW power parameters
     scenario._bw_power_coeff = float(config.get('bw_power', 80))        # mW/GB/s
@@ -515,6 +516,11 @@ def create_scenario_from_blocks(config: dict,
             
             # Store ip_settings for this task (for text view)
             scenario._ip_settings[task_id] = ip_settings
+        
+        # Collect manual_clock override
+        manual_clk = ip_settings.get('manual_clock')
+        if manual_clk is not None:
+            scenario._manual_clocks[hw_name] = float(manual_clk)
         
         # ── SW tasks (CPU/Processor software tasks) ─────────────
         # Must be added BEFORE edges so that sw task nodes exist for edge creation

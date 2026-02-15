@@ -182,12 +182,15 @@ class ReportGenerator:
                     'group': c.dvfs_group,
                     'set_clock': c.set_clock,
                     'dvfs_level': c.dvfs_level,
+                    'has_manual': c.manual_clock > 0,
                 }
             elif c.dvfs_group:
                 existing = dvfs_groups[c.dvfs_group]
                 if c.set_clock > existing['set_clock']:
                     existing['set_clock'] = c.set_clock
                     existing['dvfs_level'] = c.dvfs_level
+                if c.manual_clock > 0:
+                    existing['has_manual'] = True
         return list(dvfs_groups.values())
 
     # ------------------------------------------------------------------
@@ -266,6 +269,7 @@ class ReportGenerator:
                 'ppc': c.ppc,
                 'req_volt_power': c.req_volt_power,
                 'set_volt_power': c.set_volt_power,
+                'manual_clock': c.manual_clock,
             })
         return dict(sorted(dvfs_groups.items()))
 
@@ -545,7 +549,8 @@ class ReportGenerator:
         lines.append("| DVFS Domain | Set Clock (MHz) | DVFS Level |")
         lines.append("|-------------|:---------------:|:----------:|")
         for d in sorted(s3, key=lambda x: x['group']):
-            lines.append(f"| {d['group']} | {d['set_clock']:.1f} | {d['dvfs_level']} |")
+            manual_tag = " 🟢" if d.get('has_manual') else ""
+            lines.append(f"| {d['group']}{manual_tag} | {d['set_clock']:.1f} | {d['dvfs_level']} |")
         lines.append("")
 
         # Section 4
@@ -581,8 +586,9 @@ class ReportGenerator:
             for ip in ips:
                 delta = f"+{ip['volt_delta']:.1f}" if ip['volt_delta'] > 0 else f"{ip['volt_delta']:.1f}"
                 leader = " ★" if ip['ip'] in ip['vdd_leader'].split(',') else ""
+                manual_tag = " 🟢" if ip.get('manual_clock', 0) > 0 else ""
                 lines.append(
-                    f"| {ip['ip']}{leader} | {ip['mode']} | {ip['req_clock']:.1f} | {ip['set_clock']:.1f} "
+                    f"| {ip['ip']}{leader}{manual_tag} | {ip['mode']} | {ip['req_clock']:.1f} | {ip['set_clock']:.1f} "
                     f"| {ip['dvfs_level']} | {ip['req_volt']:.1f} | {ip['set_volt']:.1f} "
                     f"| {delta} | {ip['vdd']} | {ip['req_volt_power']:.2f} | {ip['set_volt_power']:.2f} |"
                 )
@@ -760,7 +766,10 @@ class ReportGenerator:
         # Row 1: Set Clock
         html.append("<tr><th>Set Clock (MHz)</th>")
         for d in sorted_s3:
-            html.append(f"<td>{d['set_clock']:.1f}</td>")
+            if d.get('has_manual'):
+                html.append(f"<td style='color:#1B7A1B;font-weight:bold'>{d['set_clock']:.1f}</td>")
+            else:
+                html.append(f"<td>{d['set_clock']:.1f}</td>")
         html.append("</tr>")
         # Row 2: Level
         html.append("<tr><th>DVFS Level</th>")
@@ -812,9 +821,14 @@ class ReportGenerator:
                 is_leader = ip['ip'] in ip['vdd_leader'].split(',')
                 leader_mark = " ★" if is_leader else ""
                 ip_cls = ' class="vdd-leader"' if is_leader else ''
+                # Manual clock indicators
+                is_manual = ip.get('manual_clock', 0) > 0
+                manual_star = ' <span style="color:#1B7A1B">★</span>' if is_manual else ''
+                set_clk_td = (f"<td style='color:#1B7A1B;font-weight:bold'>{ip['set_clock']:.1f}</td>"
+                              if is_manual else f"<td>{ip['set_clock']:.1f}</td>")
                 html.append(
-                    f"<tr><td{ip_cls}>{ip['ip']}{leader_mark}</td><td>{ip['mode']}</td>"
-                    f"<td>{ip['req_clock']:.1f}</td><td>{ip['set_clock']:.1f}</td>"
+                    f"<tr><td{ip_cls}>{ip['ip']}{leader_mark}{manual_star}</td><td>{ip['mode']}</td>"
+                    f"<td>{ip['req_clock']:.1f}</td>{set_clk_td}"
                     f"<td>{ip['dvfs_level']}</td>"
                     f"<td>{ip['req_volt']:.1f}</td><td>{ip['set_volt']:.1f}</td>"
                     f"<td{delta_cls}>{delta_str}</td>"

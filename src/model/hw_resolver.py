@@ -68,6 +68,7 @@ class ResolvedIPConfig:
     req_volt_power: float = 0.0
     set_volt_power: float = 0.0
     vdd_leader: str = ""
+    manual_clock: float = 0.0            # manual clock override [MHz] (0 = auto)
     
     def _calc_dynamic_power(self, voltage_mv: float) -> float:
         """Calculate dynamic power at a given voltage [mW].
@@ -250,7 +251,17 @@ class HWResolver:
             for ip_name in ip_names:
                 resolved[ip_name].required_clock = max_required
         
-        # Step 3: Resolve set_clock from DVFS tables
+        # Step 2.5: Apply manual_clock overrides from scenario ip_settings
+        #   Only the specific IP's required_clock is raised — peers keep their
+        #   natural required_clock so the report clearly shows the penalty.
+        manual_clocks = getattr(scenario, '_manual_clocks', {})
+        for ip_name, manual_mhz in manual_clocks.items():
+            if ip_name in resolved and manual_mhz > 0:
+                resolved[ip_name].manual_clock = manual_mhz
+                if manual_mhz > resolved[ip_name].required_clock:
+                    resolved[ip_name].required_clock = manual_mhz
+        
+        # Step 3: Resolve set_clock from DVFS tables (per-IP)
         for ip_name, config in resolved.items():
             if not config.dvfs_group:
                 continue
@@ -274,6 +285,28 @@ class HWResolver:
             config.set_clock = level.speed
             config.dvfs_level = level.level
             config.required_voltage = dvfs_table.get_voltage(level, self.asv_group)
+        
+        # Step 3.5: Align set_clock within DVFS groups (shared clock domain)
+        #   All IPs in the same DVFS group must share one clock.
+        #   Use the highest set_clock (e.g. from manual_clock) for all peers.
+        for group_name, ip_names in dvfs_groups.items():
+            max_set_clock = max(resolved[n].set_clock for n in ip_names)
+            if max_set_clock <= 0:
+                continue
+            # Find the level corresponding to max_set_clock
+            dvfs_table = self.db.get_dvfs_table(group_name)
+            if dvfs_table is None:
+                continue
+            target_level = dvfs_table.find_min_level_for_speed(max_set_clock, asv_group=self.asv_group)
+            if target_level is None:
+                continue
+            target_voltage = dvfs_table.get_voltage(target_level, self.asv_group)
+            for ip_name in ip_names:
+                c = resolved[ip_name]
+                if c.set_clock < max_set_clock:
+                    c.set_clock = max_set_clock
+                    c.dvfs_level = target_level.level
+                    c.required_voltage = target_voltage
         
         # Step 4: Align same VDD domain to highest voltage
         vdd_groups: Dict[str, List[str]] = defaultdict(list)
