@@ -51,6 +51,7 @@ htmlcov/
 output/
 output_view/
 output_simulation/
+output_exploration/
 results/
 
 # Keep hw_config CSV files tracked

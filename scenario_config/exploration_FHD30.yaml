@@ -1,0 +1,35 @@
+# ── Exploration Configuration ──────────────────────
+# Architecture exploration for FHD 30fps recording scenario
+# Sweeps DVFS levels, IP modes, and features to find power-optimal config
+
+base_scenario: projectA_FHD30_recording_scenario.yaml
+
+sweep:
+  # 1. DVFS level sweep — "all" or specific levels
+  dvfs_levels:
+    CAM: all            # sweep all valid CAM levels
+    INTCAM: [2, 3, 4, 5]
+
+  # 2. IP mode sweep — "all" to try every mode from info.csv
+  ip_modes:
+    BYRP: all           # [Normal, tDMSC]
+    RGBP: all           # [Normal, tDMSC]
+    YUVP: [Normal, FHD]
+
+  # 3. IP feature sweep — per-port size / LLC / comp combos
+  # ip_features:
+  #   MCSC:
+  #     - port: L0_WDMA
+  #       output_size:
+  #         - [1920, 1080]
+  #         - [1280, 720]
+  #       comp: [enable, disable]
+  #       llc_enable: [enable, disable]
+
+constraints:
+  timing: auto          # auto = (1000/fps) * (1 - sw_margin)
+  feasibility: true     # exclude combos where set_clock < req_clock
+
+evaluation:
+  minimize: total_power   # total_power | core_power | bw_power
+  top_k: 5

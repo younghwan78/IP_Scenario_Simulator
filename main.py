@@ -872,6 +872,12 @@ def main():
         action='store_true',
         help='Enable verbose output (show all diagnostic info)'
     )
+    parser.add_argument(
+        '--explore',
+        type=str,
+        default=None,
+        help='Path to exploration YAML config for architecture sweep'
+    )
 
     args = parser.parse_args()
 
@@ -1055,6 +1061,47 @@ def main():
 
         # Print exploration report
         vprint(resolver.get_exploration_report(resolved_configs))
+
+        # ── Architecture Exploration (if --explore specified) ──
+        if args.explore:
+            from src.controller.exploration import ExplorationEngine
+            from src.view.exploration_report import ExplorationReportGenerator
+
+            explore_path = args.explore
+            if not os.path.isabs(explore_path):
+                # Try relative to scenario dir first, then CWD
+                candidate = os.path.join(scenario_dir, explore_path)
+                if os.path.exists(candidate):
+                    explore_path = candidate
+
+            print(f"\n[Exploration] Loading config: {explore_path}")
+            engine = ExplorationEngine(
+                hw_info_db=hw_info_db,
+                scenario=scenario,
+                scenario_config=scenario_config,
+                hw_registry=hw_registry,
+                asv_group=asv_group,
+            )
+            engine.load_config(explore_path)
+            exploration_result = engine.run()
+
+            # Generate exploration report
+            explore_out_dir = 'output_exploration'
+            os.makedirs(explore_out_dir, exist_ok=True)
+            sc = scenario_config.get('scenario', scenario_config)
+            explore_report = ExplorationReportGenerator(
+                exploration_result,
+                scenario_name=scenario.name,
+                vBat=float(sc.get('vBat', 4.0)),
+                pmic_eff=float(sc.get('pmic_efficiency', 0.85)),
+            )
+            explore_paths = explore_report.save(
+                explore_out_dir,
+                output_prefix.rstrip('_'),
+            )
+            print(f"Exploration report saved to: {explore_paths['html']}")
+            print(f"Exploration report saved to: {explore_paths['md']}")
+
     elif hw_info_path or hw_dvfs_path:
         print("Warning: Both --hw-info and --hw-dvfs must be specified together. "
               "Skipping CSV-based HW config.")

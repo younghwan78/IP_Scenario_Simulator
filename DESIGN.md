@@ -55,6 +55,7 @@ flowchart TB
 
     subgraph Controller["Controller Layer"]
         SIM[SoCSimulator]
+        EXP[ExplorationEngine]
         PERF[PerformanceAnalyzer]
         PWR[PowerAnalyzer]
         TIM[TimingAnalyzer]
@@ -462,6 +463,49 @@ classDiagram
 | **PowerAnalyzer** | Total Energy (mJ), Per-HW breakdown, Average Power |
 | **TimingAnalyzer** | Latency, Critical Path, Task timing breakdown |
 
+### 4.3 ExplorationEngine
+
+DVFS 레벨과 IP Mode를 조합하여 최적 전력 구성을 탐색하는 엔진입니다.
+
+```mermaid
+flowchart TD
+    CONFIG["Load exploration YAML"] --> COMBO["Generate DVFS × Mode combinations"]
+    COMBO --> BASELINE["Evaluate baseline (no overrides)"]
+    BASELINE --> SWEEP["Evaluate all combinations"]
+    SWEEP --> RANK["Sort by minimize_target"]
+    RANK --> TOPK["Select Top-K candidates"]
+    TOPK --> REPORT["Generate HTML/MD Report"]
+```
+
+#### Exploration Config (`exploration_FHD30.yaml`)
+
+```yaml
+exploration:
+  minimize: total_power    # core_power | bw_power | total_power
+  top_k: 5
+  sweep:
+    dvfs_levels:
+      CAM: [5, 6, 7, 8]   # DVFS domain → level list
+      INTCAM: [5, 6, 7, 8]
+    mode_overrides:
+      YUVP: [Normal, FHD]  # IP → mode list
+```
+
+#### CandidateResult 데이터
+
+| Field | Description |
+|-------|-------------|
+| `rank` | Ranking (0=Baseline) |
+| `label` | "Baseline" / "Top-N" |
+| `resolved` | Dict[str, ResolvedIPConfig] — IP별 DVFS 해석 결과 |
+| `core_power_mw` | Core 전력 (mW) |
+| `bw_power_mw` | BW 전력 (mW) |
+| `total_power_mw` | 총 전력 (mW) |
+| `total_power_ma` | 총 전류 (mA) = mW / vBat / pmic_eff |
+| `hw_time_ms` | Max IP execution time (ms) |
+| `ip_exec_times` | IP별 execution time (ms) |
+| `vdd_power` | VDD 도메인별 Core/BW/Total 전력 |
+
 ---
 
 ## 5. View Layer
@@ -597,6 +641,10 @@ output_simulation/                        # --gantt/--bw/--csv/--json flags
   {project}_{scenario}_report.md          # Simulation Report (Markdown)
   {project}_{scenario}_results.csv
   {project}_{scenario}_trace.json         # Perfetto format
+
+output_exploration/                        # --explore flag
+  {project}_{scenario}_exploration.html   # Exploration report (SVG chart)
+  {project}_{scenario}_exploration.md     # Exploration report (Markdown)
 ```
 
 HTML 파일은 `include_plotlyjs='cdn'`으로 생성되어 파일 크기가 4.8MB → ~11KB로 대폭 감소합니다.
@@ -631,6 +679,24 @@ Scenario Config 파라미터:
 |------|--------|
 | Default (기본) | 파일 저장/경고/에러 메시지만 출력 |
 | `-v` (verbose) | 전체 진단 정보 (센서 설정, DVFS 테이블, HW 계층, 시뮬레이션 결과 등) |
+
+### 5.10 Exploration Report
+
+`exploration_report.py`에서 Architecture Exploration 결과를 HTML/Markdown 리포트로 생성합니다.
+
+리포트 구성:
+- **Summary**: 총 조합 수, Feasible 수, Top-K, 소요 시간
+  - Baseline보다 나은 구성이 없으면 "⚠ No better configuration found" 메시지 표시
+- **SVG Bar Chart**: Core/BW Power 막대 그래프 + Baseline 대비 Δ% 표시
+- **Power Comparison Table**:
+  - DVFS 도메인별 별도 칼럼 (Lv + Speed MHz)
+  - IP Mode 별도 칼럼
+  - Baseline과 다른 값 노란색 하이라이트 (`.diff`)
+  - Power 증가 빨간색 (`.inc`), 감소 파란색 (`.dec`)
+  - HW Time (ms), Total (mA), Δ HW Time 칼럼
+- **Detailed Results**: Baseline + Top-K별 IP 상세 테이블
+  - Per-IP: Exec Time (ms), Power (mW/mA)
+  - VDD 도메인별: Core/BW/Total (mW/mA)
 
 ---
 
@@ -1001,6 +1067,7 @@ def test_m2m_timing():
 | **CDN-based HTML** | ✅ Done | Plotly CDN으로 경량 HTML (4.8MB → 11KB) |
 | **Output Reorganization** | ✅ Done | output_view/ + output_simulation/ 분리, 자동 네이밍 |
 | **Verbose Mode** | ✅ Done | `-v` 플래그로 출력 제어 (기본: 파일 저장만) |
+| **Architecture Exploration** | ✅ Done | DVFS/Mode 스윥 엔진 + SVG 차트/색상 델타/DVFS 분리 칼럼 리포트 |
 
 ### Future Enhancements
 
@@ -1033,3 +1100,5 @@ def test_m2m_timing():
 | `src/view/report_generator.py` | HTML/Markdown simulation reports |
 | `src/view/html_view.py` | Interactive HTML views (ELK.js) |
 | `src/view/plantuml_view.py` | PlantUML diagram views |
+| `src/controller/exploration.py` | ExplorationEngine (DVFS/Mode parameter sweep) |
+| `src/view/exploration_report.py` | Exploration HTML/MD reports (SVG chart, color deltas) |

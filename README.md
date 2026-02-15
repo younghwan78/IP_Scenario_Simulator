@@ -19,6 +19,7 @@ SimPy 기반의 Discrete Event Simulator로 Android SoC의 Multimedia IP 성능/
 - **BW Timeline Chart**: M2M 연결의 Read/Write Bandwidth 시각화
 - **CDN-based HTML**: Plotly CDN으로 경량 HTML 출력 (4.8MB → 11KB)
 - **Verbose Mode**: `-v` 플래그로 상세 로그 출력 제어 (기본: 파일 저장 메시지만)
+- **Architecture Exploration**: DVFS/Mode 파라미터 스윕으로 최적 전력 구성 탐색 (SVG 차트 포함)
 - **MVC Architecture**: Model-View-Controller 패턴으로 확장성 확보
 - **Multiple Analyzers**: Performance, Power, Timing 분석 분리
 
@@ -66,6 +67,7 @@ python main.py -hw ... -sc ... --hw-info ... --hw-dvfs ... --bw
 | `--hw-dvfs` | CSV file with DVFS voltage tables |
 | `--asv-group` | ASV group for DVFS lookup (default: from scenario) |
 | `--num-frames` | Number of frames for multi-frame simulation |
+| `--explore` | Path to exploration YAML config for architecture sweep |
 | `--graph-only` | Show graph structure and exit (no simulation) |
 | `--demo` | Run built-in demo |
 | `-v`, `--verbose` | Enable verbose output (show all diagnostic info) |
@@ -110,6 +112,10 @@ output_simulation/
   {project}_{scenario}_report.md            # Simulation report (Markdown)
   {project}_{scenario}_results.csv          # Simulation results
   {project}_{scenario}_trace.json           # Perfetto trace format
+
+output_exploration/                           # --explore flag
+  {project}_{scenario}_exploration.html     # Exploration report (HTML, SVG chart)
+  {project}_{scenario}_exploration.md       # Exploration report (Markdown)
 ```
 
 ## Project Structure
@@ -125,6 +131,7 @@ output_simulation/
 │   │   └── tokens.py         # Token-based dataflow model
 │   ├── controller/
 │   │   ├── simulator.py      # SoCSimulator (SimPy engine)
+│   │   ├── exploration.py    # ExplorationEngine (DVFS/Mode sweep)
 │   │   ├── performance_analyzer.py
 │   │   ├── power_analyzer.py
 │   │   └── timing_analyzer.py
@@ -132,6 +139,7 @@ output_simulation/
 │       ├── text_view.py      # TextViewer (terminal output)
 │       ├── visualizer.py     # Gantt/BW chart (Plotly) + PNG export
 │       ├── report_generator.py # HTML/Markdown simulation reports
+│       ├── exploration_report.py # Exploration HTML/MD reports (SVG chart)
 │       ├── html_view.py      # HTML views (ELK.js)
 │       └── plantuml_view.py  # PlantUML views
 ├── hw_config/
@@ -139,7 +147,8 @@ output_simulation/
 │   ├── projectA_info.csv     # IP performance info
 │   └── projectA_dvfs.csv     # DVFS voltage tables
 ├── scenario_config/
-│   └── projectA_FHD30_recording_scenario.yaml
+│   ├── projectA_FHD30_recording_scenario.yaml
+│   └── exploration_FHD30.yaml  # Exploration sweep config
 ├── tests/                    # Unit & Integration tests (131 tests)
 ├── main.py                   # Entry point
 ├── DESIGN.md                 # Design document
