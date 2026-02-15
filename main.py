@@ -516,6 +516,25 @@ def create_scenario_from_blocks(config: dict,
             # Store ip_settings for this task (for text view)
             scenario._ip_settings[task_id] = ip_settings
         
+        # ── SW tasks (CPU/Processor software tasks) ─────────────
+        # Must be added BEFORE edges so that sw task nodes exist for edge creation
+        for sw_cfg in block.get('sw_tasks', []):
+            sw_id = sw_cfg['id']
+            sw_hw = sw_cfg.get('processor', sw_cfg.get('hw', 'CPU'))
+            sw_dur = float(sw_cfg.get('duration_ms', 0.0))
+            sw_desc = sw_cfg.get('name', sw_cfg.get('description', sw_id))
+            sw_grp = sw_cfg.get('group', None)
+
+            scenario.add_task(
+                task_id=sw_id,
+                mapped_hw=sw_hw,
+                task_type='sw',
+                duration_ms=sw_dur,
+                description=sw_desc,
+                sw_group=sw_grp,
+                h_blank_margin=h_blank_margin,
+            )
+
         # Add edges
         for edge_cfg in block.get('edges', []):
             scenario.add_dependency(
@@ -525,7 +544,7 @@ def create_scenario_from_blocks(config: dict,
                 src_port=edge_cfg.get('src_port', 'output'),
                 dst_port=edge_cfg.get('dst_port', 'input'),
             )
-    
+
     return scenario
 
 
@@ -1156,12 +1175,21 @@ def main():
             if hw_name and hw_name not in seen_hw:
                 hw_order.append(hw_name)
                 seen_hw.add(hw_name)
-        # Fallback: append any HW from tasks not in ip_blocks
+        # Fallback: append any HW from tasks not in ip_blocks (excl SW)
+        sw_group_order = []  # unique SW group names in topological order
+        sw_group_seen = set()
         for tid in scenario.topological_order():
             task = scenario.get_task(tid)
-            if task and task.mapped_hw not in seen_hw:
+            if task and task.is_sw_task:
+                grp = task.sw_group or task.mapped_hw
+                if grp not in sw_group_seen:
+                    sw_group_order.append(grp)
+                    sw_group_seen.add(grp)
+            elif task and task.mapped_hw not in seen_hw:
                 hw_order.append(task.mapped_hw)
                 seen_hw.add(task.mapped_hw)
+        # SW groups at the START of hw_order → top of Gantt (reversed)
+        hw_order = sw_group_order + hw_order
         fig = visualizer.create_gantt_chart_ms(df, title=results.scenario_name, hw_order=hw_order, scenario=scenario)
         if fig:
             gantt_path = os.path.join(args.output_sim_dir, f"{output_prefix}gantt.html")

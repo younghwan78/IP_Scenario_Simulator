@@ -278,6 +278,20 @@ class Visualizer:
         colors = px.colors.qualitative.Set2
         task_colors = {}
 
+        # ── Identify SW tasks for visual differentiation ──
+        sw_task_ids = set()
+        sw_hw_names = set()   # kept for back-compat
+        sw_task_to_group = {}  # task_id → group label (for Y-axis)
+        sw_group_labels = set()  # all unique SW group labels
+        if scenario:
+            for task in scenario.get_tasks():
+                if task.is_sw_task:
+                    sw_task_ids.add(task.task_id)
+                    grp = task.sw_group or task.mapped_hw
+                    sw_task_to_group[task.task_id] = grp
+                    sw_group_labels.add(grp)
+                    sw_hw_names.add(grp)
+
         # Build task timing lookup for M2M arrows
         task_timing = {}  # task_id → {start_ms, end_ms, y_label, frame_id}
 
@@ -342,6 +356,9 @@ class Visualizer:
             frame_id = row.get('FrameID', 0)
 
             y_label = hw_to_group_label.get(hw, hw)
+            # SW tasks → use sw_group as Y-axis label
+            if task_id in sw_task_to_group:
+                y_label = sw_task_to_group[task_id]
 
             if task_id not in task_colors:
                 task_colors[task_id] = colors[len(task_colors) % len(colors)]
@@ -358,18 +375,36 @@ class Visualizer:
                     "<extra></extra>"
                 )
 
-            fig.add_trace(go.Bar(
+            # SW task → subtle dot pattern + per-task color
+            is_sw = task_id in sw_task_ids
+            if is_sw:
+                bar_color = task_colors[task_id]
+                pattern_cfg = dict(
+                    shape='.',
+                    size=6,
+                    solidity=0.15,
+                    fgcolor='rgba(60, 90, 140, 0.5)',
+                )
+            else:
+                bar_color = task_colors[task_id]
+                pattern_cfg = None
+
+            bar_kwargs = dict(
                 x=[runtime],
                 y=[y_label],
                 base=start,
                 orientation='h',
                 name=task_id,
-                marker_color=task_colors[task_id],
+                marker_color=bar_color,
                 text=task_id,
                 textposition='inside',
                 hovertemplate=hover_text,
-                showlegend=task_id not in [t.name for t in fig.data[:-1]] if fig.data else True
-            ))
+                showlegend=task_id not in [t.name for t in fig.data[:-1]] if fig.data else True,
+            )
+            if pattern_cfg:
+                bar_kwargs['marker_pattern'] = pattern_cfg
+
+            fig.add_trace(go.Bar(**bar_kwargs))
 
             # Store timing for M2M arrow drawing (use frame 0 only)
             if frame_id == 0 or task_id not in task_timing:
@@ -407,6 +442,23 @@ class Visualizer:
                     arrowcolor='rgba(80, 80, 80, 0.7)',
                 ))
 
+        # ── SW / HW divider line ──
+        divider_shapes = []
+        if sw_hw_names and y_labels:
+            # Plotly positions: bottom=0, top=len-1.  SW labels are at the top.
+            reversed_labels = y_labels[::-1]  # matches categoryarray
+            sw_count = sum(1 for lbl in reversed_labels if lbl in sw_hw_names)
+            if 0 < sw_count < len(reversed_labels):
+                # Divider between last HW row and first SW row
+                divider_y = len(reversed_labels) - sw_count - 0.5
+                divider_shapes.append(dict(
+                    type='line',
+                    x0=0, x1=1,
+                    y0=divider_y, y1=divider_y,
+                    xref='paper', yref='y',
+                    line=dict(color='rgba(100,100,100,0.6)', width=2, dash='dashdot'),
+                ))
+
         # Order Y-axis
         fig.update_layout(
             title=title,
@@ -416,6 +468,7 @@ class Visualizer:
             height=300 + len(y_labels) * 40,
             yaxis={'categoryorder': 'array', 'categoryarray': y_labels[::-1]},
             annotations=m2m_annotations,
+            shapes=divider_shapes,
         )
 
         return fig

@@ -213,6 +213,10 @@ class SoCSimulator:
         errors = []
 
         for task in self.scenario.get_tasks():
+            # Skip SW tasks — they don't require HW capability validation
+            if task.is_sw_task:
+                continue
+
             hw = self._get_hw(task.mapped_hw)
 
             # Check crop support
@@ -399,6 +403,25 @@ class SoCSimulator:
         # Record start time
         start_time = self.env.now
 
+        # SW task: use fixed duration, skip HW processing
+        if task.is_sw_task:
+            processing_time = (task.duration_ms or 0.0) / 1000.0
+            yield self.env.timeout(processing_time)
+            end_time = self.env.now
+            result = TaskResult(
+                task_id=task_id,
+                hw_name=task.mapped_hw,
+                start_time=start_time,
+                end_time=end_time,
+                duration=end_time - start_time,
+                power_consumed=0.0,  # SW tasks excluded from power
+                frame_id=frame_id,
+                workload=task.workload
+            )
+            self._task_results.append(result)
+            self._task_events[task_id].succeed()
+            return
+
         # Calculate processing time (inject h_blank_margin into workload)
         workload = {**task.workload, 'h_blank_margin': task.h_blank_margin}
         processing_time = hw.get_processing_time(workload)
@@ -485,6 +508,25 @@ class SoCSimulator:
 
         # Record start time
         start_time = self.env.now
+
+        # SW task: use fixed duration, skip HW processing
+        if task.is_sw_task:
+            processing_time = (task.duration_ms or 0.0) / 1000.0
+            yield self.env.timeout(processing_time)
+            end_time = self.env.now
+            result = TaskResult(
+                task_id=task_id,
+                hw_name=task.mapped_hw,
+                start_time=start_time,
+                end_time=end_time,
+                duration=end_time - start_time,
+                power_consumed=0.0,  # SW tasks excluded from power
+                frame_id=frame_id,
+                workload=task.workload
+            )
+            self._task_results.append(result)
+            task_events[task_id].succeed()
+            return
 
         # Calculate processing time (inject h_blank_margin into workload)
         workload = {**task.workload, 'h_blank_margin': task.h_blank_margin}

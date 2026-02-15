@@ -887,13 +887,13 @@
       dst: "COUTFIFO"
 
 # CPU Cluster
-- name: "CPU_Cluster"
+- name: "CPU_MID_Clustor"
   type: "Processor"
   hierarchy_group: "CPU"
-  clock: 2000000000  # 2.0 GHz (current clock, not max)
+  clock: 1000000000  # 1.0 GHz (current clock, not max)
   cycles_per_op: 1.0
   num_cores: 8
-  power_static: 50.0
+  power_static: 00.0
   power_dynamic: 200.0
 
 # DRAM

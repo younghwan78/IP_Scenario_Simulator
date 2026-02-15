@@ -343,6 +343,28 @@ ip_blocks:
         dst_port: "CINFIFO"
         type: "OTF"
 
+  # 8-1. postIRTA (SW task on CPU, between MLSC and MTNR0/1)
+  - sw_tasks:
+      - id: "t_postIRTA"
+        name: "postIRTA"
+        group: "IRTA"
+        processor: "CPU_MID_Clustor"
+        duration_ms: 4.0
+    edges:
+      - src: "t_mlsc"
+        dst: "t_postIRTA"
+        type: "M2M"
+  - sw_tasks:
+      - id: "t_postIRTA2"
+        name: "postIRTA2"
+        group: "IRTA"
+        processor: "CPU_MID_Clustor"
+        duration_ms: 2.0
+    edges:
+      - src: "t_postIRTA"
+        dst: "t_postIRTA2"
+        type: "M2M"
+
   # 9. MTNR0
   - ip_settings:
       hw: "MTNR0"
@@ -360,9 +382,8 @@ ip_blocks:
         hw: "MTNR0"
         description: "MTNR0"
     edges:
-      # MLSC to MTNR0
-      - src: "t_mlsc"
-        src_port: "L0_WDMA"
+      # postIRTA to MTNR0
+      - src: "t_postIRTA2"
         dst: "t_mtnr0"
         dst_port: "L0_RDMA"
         type: "M2M"
@@ -402,24 +423,20 @@ ip_blocks:
         hw: "MTNR1"
         description: "MTNR1"
     edges:
-      # MLSC to MTNR1 (multiple M2M)
-      - src: "t_mlsc"
-        src_port: "L1_WDMA"
+      # postIRTA to MTNR1 (multiple M2M)
+      - src: "t_postIRTA2"
         dst: "t_mtnr1"
         dst_port: "L1_RDMA"
         type: "M2M"
-      - src: "t_mlsc"
-        src_port: "L2_WDMA"
+      - src: "t_postIRTA2"
         dst: "t_mtnr1"
         dst_port: "L2_RDMA"
         type: "M2M"
-      - src: "t_mlsc"
-        src_port: "L3_WDMA"
+      - src: "t_postIRTA2"
         dst: "t_mtnr1"
         dst_port: "L3_RDMA"
         type: "M2M"
-      - src: "t_mlsc"
-        src_port: "G4_WDMA"
+      - src: "t_postIRTA2"
         dst: "t_mtnr1"
         dst_port: "G4_RDMA"
         type: "M2M"
@@ -524,7 +541,17 @@ ip_blocks:
         dst: "t_mcsc"
         dst_port: "CINFIFO"
         type: "OTF"
-
+  - sw_tasks:
+      - id: "t_codec2"
+        name: "Codec2"
+        group: "Codec2"
+        processor: "CPU_MID_Clustor"
+        duration_ms: 4.0
+    edges:
+      - src: "t_mcsc"
+        src_port: "P0_WDMA"
+        dst: "t_codec2"
+        type: "M2M"
   # 14. MFC (Video Encoder)
   - ip_settings:
       hw: "MFC"
@@ -545,12 +572,21 @@ ip_blocks:
         description: "MFC"
     edges:
       # MCSC to MFC
-      - src: "t_mcsc"
-        src_port: "P0_WDMA"
+      - src: "t_codec2"
         dst: "t_mfc"
         dst_port: "MFC_RDMA"
         type: "M2M"
-
+  - sw_tasks:
+      - id: "t_hw_composer"
+        name: "HWcomposer"
+        group: "HWcomposer"
+        processor: "CPU_MID_Clustor"
+        duration_ms: 2.0
+    edges:
+      - src: "t_mcsc"
+        src_port: "P1_WDMA"
+        dst: "t_hw_composer"
+        type: "M2M"
   # 15. DPU (Display)
   - ip_settings:
       hw: "DPU"
@@ -569,8 +605,7 @@ ip_blocks:
         description: "DPU"
     edges:
       # MCSC to DPU
-      - src: "t_mcsc"
-        src_port: "P1_WDMA"
+      - src: "t_hw_composer"
         dst: "t_dpu"
         dst_port: "DPU_RDMA"
         type: "M2M"

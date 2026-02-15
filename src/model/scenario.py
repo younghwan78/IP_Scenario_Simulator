@@ -33,6 +33,9 @@ class Task:
         task_id: Unique task identifier
         mapped_hw: Name of the hardware node to execute on
         workload: Workload parameters (pixels, width, height, ops, data_size, etc.)
+        task_type: 'hw' (default) or 'sw' — SW tasks use fixed duration, no power
+        duration_ms: Fixed execution time in ms (used when task_type='sw')
+        description: Human-readable description (shown in Gantt chart)
         ip_mode: Optional IP operating mode (e.g., 'power_saving', 'high_performance')
         crop_size: Optional crop region (width, height) - requires HW crop support
         join_policy: Multi-input join policy (AND/OR/WINDOW) - default AND_JOIN
@@ -43,6 +46,10 @@ class Task:
     task_id: str
     mapped_hw: str
     workload: Dict[str, Any] = field(default_factory=dict)
+    task_type: str = "hw"            # 'hw' or 'sw'
+    duration_ms: Optional[float] = None  # fixed duration for SW tasks
+    description: str = ""
+    sw_group: Optional[str] = None       # group name for SW task Gantt grouping
     ip_mode: Optional[str] = None
     crop_size: Optional[Tuple[int, int]] = None
     h_blank_margin: float = 0.05  # H-blank margin for IP runtime (default 5%)
@@ -88,6 +95,11 @@ class Task:
         """Get data size from workload."""
         return self.workload.get('data_size', 0)
 
+    @property
+    def is_sw_task(self) -> bool:
+        """Check if this is a software task (runs on CPU/Processor)."""
+        return self.task_type == "sw"
+
 
 @dataclass
 class Dependency:
@@ -131,6 +143,10 @@ class ScenarioGraph:
 
     def add_task(self, task_id: str, mapped_hw: str,
                  workload: Optional[Dict[str, Any]] = None,
+                 task_type: str = "hw",
+                 duration_ms: Optional[float] = None,
+                 description: str = "",
+                 sw_group: Optional[str] = None,
                  ip_mode: Optional[str] = None,
                  crop_size: Optional[Tuple[int, int]] = None,
                  h_blank_margin: float = 0.05,
@@ -146,6 +162,9 @@ class ScenarioGraph:
             task_id: Unique task identifier
             mapped_hw: Hardware node name to execute on
             workload: Workload parameters dict
+            task_type: 'hw' (default) or 'sw' for CPU/Processor tasks
+            duration_ms: Fixed execution time in ms (for SW tasks)
+            description: Human-readable description
             ip_mode: Optional IP mode (e.g., 'power_saving', 'high_performance')
             crop_size: Optional crop output size (width, height)
             h_blank_margin: H-blank margin for IP runtime calculation (default: 0.05 = 5%)
@@ -166,6 +185,10 @@ class ScenarioGraph:
             task_id=task_id,
             mapped_hw=mapped_hw,
             workload=workload,
+            task_type=task_type,
+            duration_ms=duration_ms,
+            description=description,
+            sw_group=sw_group,
             ip_mode=ip_mode,
             crop_size=crop_size,
             h_blank_margin=h_blank_margin,
@@ -265,6 +288,10 @@ class ScenarioGraph:
         errors = []
 
         for task in self._tasks.values():
+            # Skip validation for SW tasks (they don't need IP modes/crop/scale)
+            if task.is_sw_task:
+                continue
+
             if task.mapped_hw not in hw_registry:
                 errors.append(f"Task '{task.task_id}' maps to unknown HW '{task.mapped_hw}'")
                 continue
