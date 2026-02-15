@@ -48,6 +48,7 @@ class Task:
     workload: Dict[str, Any] = field(default_factory=dict)
     task_type: str = "hw"            # 'hw' or 'sw'
     duration_ms: Optional[float] = None  # fixed duration for SW tasks
+    latency_ms: float = 0.0              # latency before task execution (SW tasks)
     description: str = ""
     sw_group: Optional[str] = None       # group name for SW task Gantt grouping
     ip_mode: Optional[str] = None
@@ -145,6 +146,7 @@ class ScenarioGraph:
                  workload: Optional[Dict[str, Any]] = None,
                  task_type: str = "hw",
                  duration_ms: Optional[float] = None,
+                 latency_ms: float = 0.0,
                  description: str = "",
                  sw_group: Optional[str] = None,
                  ip_mode: Optional[str] = None,
@@ -187,6 +189,7 @@ class ScenarioGraph:
             workload=workload,
             task_type=task_type,
             duration_ms=duration_ms,
+            latency_ms=latency_ms,
             description=description,
             sw_group=sw_group,
             ip_mode=ip_mode,

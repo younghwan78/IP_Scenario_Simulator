@@ -403,8 +403,12 @@ class SoCSimulator:
         # Record start time
         start_time = self.env.now
 
-        # SW task: use fixed duration, skip HW processing
+        # SW task: apply latency then use fixed duration, skip HW processing
         if task.is_sw_task:
+            # Latency before task execution begins
+            if task.latency_ms > 0:
+                yield self.env.timeout(task.latency_ms / 1000.0)
+            start_time = self.env.now
             processing_time = (task.duration_ms or 0.0) / 1000.0
             yield self.env.timeout(processing_time)
             end_time = self.env.now
@@ -509,8 +513,12 @@ class SoCSimulator:
         # Record start time
         start_time = self.env.now
 
-        # SW task: use fixed duration, skip HW processing
+        # SW task: apply latency then use fixed duration, skip HW processing
         if task.is_sw_task:
+            # Latency before task execution begins
+            if task.latency_ms > 0:
+                yield self.env.timeout(task.latency_ms / 1000.0)
+            start_time = self.env.now
             processing_time = (task.duration_ms or 0.0) / 1000.0
             yield self.env.timeout(processing_time)
             end_time = self.env.now

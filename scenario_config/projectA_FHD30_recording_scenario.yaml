@@ -547,6 +547,7 @@ ip_blocks:
         group: "Codec2"
         processor: "CPU_MID_Clustor"
         duration_ms: 4.0
+        latency_ms: 1.0
     edges:
       - src: "t_mcsc"
         src_port: "P0_WDMA"

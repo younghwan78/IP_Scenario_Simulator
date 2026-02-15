@@ -522,6 +522,7 @@ def create_scenario_from_blocks(config: dict,
             sw_id = sw_cfg['id']
             sw_hw = sw_cfg.get('processor', sw_cfg.get('hw', 'CPU'))
             sw_dur = float(sw_cfg.get('duration_ms', 0.0))
+            sw_lat = float(sw_cfg.get('latency_ms', 0.0))
             sw_desc = sw_cfg.get('name', sw_cfg.get('description', sw_id))
             sw_grp = sw_cfg.get('group', None)
 
@@ -530,6 +531,7 @@ def create_scenario_from_blocks(config: dict,
                 mapped_hw=sw_hw,
                 task_type='sw',
                 duration_ms=sw_dur,
+                latency_ms=sw_lat,
                 description=sw_desc,
                 sw_group=sw_grp,
                 h_blank_margin=h_blank_margin,
