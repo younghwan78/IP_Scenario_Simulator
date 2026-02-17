@@ -50,21 +50,28 @@ section {
 }
 h2 { font-size: 1.25em; color: #f0f6fc; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 h3 { font-size: 1em; color: var(--accent3); margin: 16px 0 8px; }
-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-th, td { vertical-align: top; }
-th {
-    background: var(--surface2); color: var(--text-muted);
-    text-align: left; padding: 8px 12px; font-size: 0.8em;
-    text-transform: uppercase; letter-spacing: 0.05em;
+.run-card {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 16px; margin-bottom: 10px;
+}
+.run-header {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 10px; padding-bottom: 8px;
     border-bottom: 1px solid var(--border);
 }
-th:nth-child(1) { width: 150px; }
-th:nth-child(2) { width: 80px; }
-td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 0.9em; }
-tr:hover td { background: var(--surface2); }
-.ts { white-space: nowrap; color: var(--text-muted); font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.85em; }
-.writer { font-weight: 600; color: var(--accent2); }
-.links { display: flex; flex-wrap: wrap; gap: 6px; }
+.ts { color: var(--text-muted); font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.85em; }
+.writer { font-weight: 600; color: var(--accent2); font-size: 0.9em; }
+.cat-row {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 4px 0;
+}
+.cat-label {
+    min-width: 80px; font-size: 0.75em; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 3px 8px; border-radius: 4px; text-align: center;
+    flex-shrink: 0;
+}
+.cat-links { display: flex; flex-wrap: wrap; gap: 6px; }
 .report-link {
     text-decoration: none; padding: 3px 10px;
     border-radius: 6px; font-size: 0.8em; white-space: nowrap;
@@ -76,7 +83,7 @@ tr:hover td { background: var(--surface2); }
 .cat-charts { color: #56d364; background: #56d36422; }
 .empty { color: var(--text-muted); font-style: italic; padding: 40px; text-align: center; }
 @media (max-width: 768px) {
-    .links { flex-direction: column; }
+    .cat-row { flex-direction: column; gap: 4px; }
     nav ul { flex-direction: column; gap: 8px; }
 }
 </style>
@@ -85,7 +92,7 @@ tr:hover td { background: var(--surface2); }
 <div class='container'>
 <header>
 <h1>📊 IP Scenario Simulator — Reports</h1>
-<p class='updated'>Last updated: 2026-02-17 17:33:26</p>
+<p class='updated'>Last updated: 2026-02-17 17:37:56</p>
 </header>
 <nav>
 <h2>Projects</h2>
@@ -96,22 +103,21 @@ tr:hover td { background: var(--surface2); }
 <section id='project-projectA'>
 <h2>🗂 projectA</h2>
 <h3>FHD30_Recording</h3>
-<table>
-<thead><tr>
-<th>Date/Time</th><th>Writer</th>
-<th>REPORTS</th>
-<th>VIEWS</th>
-<th>CHARTS</th>
-</tr></thead>
-<tbody>
-<tr>
-<td class='ts'>2026-02-18 02:20:57</td>
-<td class='writer'>YHJOO</td>
-<td class='links'><a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_simulation_result.html' class='report-link cat-reports'>Simulation</a></td>
-<td class='links'><a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_level1_view.html' class='report-link cat-views'>Level 1</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_level2_view.html' class='report-link cat-views'>Level 2</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_level3_view.html' class='report-link cat-views'>Level 3</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_task_topology_view.html' class='report-link cat-views'>Task Topology</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_top_view.html' class='report-link cat-views'>Top</a></td>
-<td class='links'><a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_bw_chart.html' class='report-link cat-charts'>Bandwidth</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_timing_chart.html' class='report-link cat-charts'>Timing</a></td>
-</tr>
-</tbody></table>
+<div class='run-card'>
+<div class='run-header'><span class='ts'>2026-02-18 02:20:57</span><span class='writer'>YHJOO</span></div>
+<div class='cat-row'>
+<span class='cat-label cat-reports'>REPORTS</span>
+<span class='cat-links'><a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_simulation_result.html' class='report-link cat-reports'>Simulation</a></span>
+</div>
+<div class='cat-row'>
+<span class='cat-label cat-views'>VIEWS</span>
+<span class='cat-links'><a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_level1_view.html' class='report-link cat-views'>Level 1</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_level2_view.html' class='report-link cat-views'>Level 2</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_level3_view.html' class='report-link cat-views'>Level 3</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_task_topology_view.html' class='report-link cat-views'>Task Topology</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_top_view.html' class='report-link cat-views'>Top</a></span>
+</div>
+<div class='cat-row'>
+<span class='cat-label cat-charts'>CHARTS</span>
+<span class='cat-links'><a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_bw_chart.html' class='report-link cat-charts'>Bandwidth</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_timing_chart.html' class='report-link cat-charts'>Timing</a></span>
+</div>
+</div>
 </section>
 </div>
 </body></html>
