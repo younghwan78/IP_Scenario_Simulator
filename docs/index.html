@@ -50,13 +50,16 @@ section {
 }
 h2 { font-size: 1.25em; color: #f0f6fc; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 h3 { font-size: 1em; color: var(--accent3); margin: 16px 0 8px; }
-table { width: 100%; border-collapse: collapse; }
+table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+th, td { vertical-align: top; }
 th {
     background: var(--surface2); color: var(--text-muted);
     text-align: left; padding: 8px 12px; font-size: 0.8em;
     text-transform: uppercase; letter-spacing: 0.05em;
     border-bottom: 1px solid var(--border);
 }
+th:nth-child(1) { width: 150px; }
+th:nth-child(2) { width: 80px; }
 td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 0.9em; }
 tr:hover td { background: var(--surface2); }
 .ts { white-space: nowrap; color: var(--text-muted); font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.85em; }
@@ -82,7 +85,7 @@ tr:hover td { background: var(--surface2); }
 <div class='container'>
 <header>
 <h1>📊 IP Scenario Simulator — Reports</h1>
-<p class='updated'>Last updated: 2026-02-17 17:29:46</p>
+<p class='updated'>Last updated: 2026-02-17 17:33:26</p>
 </header>
 <nav>
 <h2>Projects</h2>
