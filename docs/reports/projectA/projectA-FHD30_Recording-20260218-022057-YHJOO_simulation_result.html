@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='UTF-8'>
+<title>FHD30_Recording — Simulation Report</title>
+<style>
+
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600&display=swap');
+body {
+    font-family: 'Google Sans', 'Segoe UI', -apple-system, sans-serif;
+    max-width: 1400px; margin: 32px auto; padding: 0 24px;
+    background: #f8fafb; color: #202124;
+}
+h1 {
+    color: #1a73e8; font-size: 1.6em; font-weight: 500;
+    border-bottom: 2px solid #e8eaed; padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+h2 {
+    color: #1967d2; margin-top: 28px; font-size: 1.15em; font-weight: 500;
+    border-left: 4px solid #a8dab5; padding-left: 10px;
+}
+h3 {
+    color: #5f6368; font-size: 0.98em; font-weight: 500;
+    margin: 14px 0 6px; padding-left: 8px;
+    border-left: 3px solid #d2e3fc;
+}
+.two-col {
+    display: flex; gap: 24px; flex-wrap: wrap;
+}
+.two-col .col { flex: 1; min-width: 300px; }
+.two-col h2 { margin-top: 8px; }
+table {
+    border-collapse: collapse; width: 100%; margin: 8px 0 20px;
+    background: #fff; border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(60,64,67,0.1);
+    font-size: 0.85em; overflow: hidden;
+}
+table.info { width: 100%; }
+table.info th { text-align: left; min-width: 140px; }
+th {
+    background: #e8f0fe; color: #1967d2; padding: 8px 10px;
+    font-weight: 500; text-align: center; white-space: nowrap;
+    border-bottom: 2px solid #d2e3fc;
+}
+td {
+    padding: 6px 10px; border-bottom: 1px solid #f1f3f4;
+    text-align: center; white-space: nowrap; color: #3c4043;
+}
+table.info th {
+    background: #e6f4ea; color: #137333; border-bottom: 1px solid #ceead6;
+}
+table.info td { text-align: left; }
+tr:nth-child(even) { background: #fafbfc; }
+tr:hover { background: #e8f0fe; }
+tr.total {
+    background: linear-gradient(90deg, #e6f4ea, #d2e3fc);
+    font-weight: 600;
+}
+.volt-up { color: #d93025; font-weight: 600; }
+.vdd-leader { color: #d93025; font-weight: 600; }
+.highlight-on {
+    background: #fef7cd !important; color: #d93025; font-weight: 600;
+}
+.timestamp {
+    float: right; font-size: 0.55em; font-weight: 400;
+    color: #5f6368; background: #e8eaed; padding: 4px 12px;
+    border-radius: 12px; vertical-align: middle;
+}
+.chart-links {
+    margin: -8px 0 16px; padding: 8px 14px;
+    background: #e8f0fe; border-radius: 8px;
+    font-size: 0.9em; color: #1967d2;
+}
+.chart-links a {
+    color: #1a73e8; text-decoration: none; font-weight: 500;
+    margin: 0 4px;
+}
+.chart-links a:hover { text-decoration: underline; }
+.filter-bar {
+    display: flex; gap: 12px; align-items: center;
+    margin: 8px 0 4px; padding: 8px 14px;
+    background: #e8f0fe; border-radius: 8px;
+    font-size: 0.85em; flex-wrap: wrap;
+}
+.filter-bar label { color: #1967d2; font-weight: 500; white-space: nowrap; }
+.filter-bar select, .filter-bar input {
+    padding: 4px 8px; border: 1px solid #d2e3fc; border-radius: 4px;
+    font-size: 0.95em; font-family: inherit; background: #fff;
+}
+.filter-bar input { min-width: 160px; }
+.filter-bar .filter-count {
+    margin-left: auto; color: #5f6368; font-size: 0.9em;
+}
+
+</style>
+</head>
+<body>
+<h1>FHD30_Recording — Simulation Report<span class='timestamp'>2026-02-18 02:20:59</span></h1>
+<div class='chart-links'>📊 <a href='projectA-FHD30_Recording-20260218-022057-YHJOO_timing_chart.html'>Timing Chart</a> | <a href='projectA-FHD30_Recording-20260218-022057-YHJOO_bw_chart.html'>BW Chart</a></div>
+<div class='two-col'>
+<div class='col'>
+<h2>1. Scenario Description</h2>
+<table class='info'>
+<tr><th>Sensor</th><td>HP2</td></tr>
+<tr><th>Mode</th><td>mode1</td></tr>
+<tr><th>Resolution</th><td>4000×2252</td></tr>
+<tr><th>FPS</th><td>30.0</td></tr>
+<tr><th>Scenario</th><td>FHD30_Recording</td></tr>
+</table>
+</div>
+<div class='col'>
+<h2>2. Basic Conditions</h2>
+<table class='info'>
+<tr><th>Project Info</th><td>projectA_info.csv</td></tr>
+<tr><th>DVFS Table</th><td>projectA_dvfs.csv</td></tr>
+<tr><th>ASV Group</th><td>4</td></tr>
+<tr><th>Temperature</th><td>-</td></tr>
+<tr><th>SW Margin</th><td>0.25</td></tr>
+<tr><th>FPS</th><td>30.0</td></tr>
+<tr><th>BW Power [mW/GB/s]</th><td>80.0</td></tr>
+<tr><th>H_Blank Margin</th><td>0.05</td></tr>
+<tr><th>vBat [V]</th><td>4.0</td></tr>
+<tr><th>PMIC Efficiency</th><td>0.85</td></tr>
+<tr><th>BW Margin</th><td>1.25</td></tr>
+<tr><th>MIF Mem Util</th><td>0.55</td></tr>
+<tr><th>MIF Channel Width [B]</th><td>16</td></tr>
+</table>
+</div>
+</div>
+<h2>3. DVFS Guide</h2>
+<table>
+<thead><tr><th></th>
+<th>CAM</th>
+<th>CSIS</th>
+<th>INT</th>
+<th>INTCAM</th>
+</tr></thead><tbody>
+<tr><th>Set Clock (MHz)</th>
+<td>133.0</td>
+<td>267.0</td>
+<td>133.0</td>
+<td>133.0</td>
+</tr>
+<tr><th>DVFS Level</th>
+<td>7</td>
+<td>5</td>
+<td>7</td>
+<td>7</td>
+</tr>
+</tbody></table>
+<h2>4. Power Results</h2>
+<table><thead><tr><th>VDD</th><th>Set Volt (V)</th><th>Core Power (mW)</th><th>Current (mA)</th><th>BW (MB/s)</th><th>BW Power (mW)</th><th>BW Current (mA)</th><th>Total Power (mW)</th><th>Total Current (mA)</th></tr></thead><tbody>
+<tr><td>VDD_CAM</td><td>0.5875</td><td>93.43</td><td>27.48</td><td>3121.1</td><td>249.69</td><td>73.44</td><td>343.11</td><td>100.92</td></tr>
+<tr><td>VDD_INT</td><td>0.5625</td><td>2.60</td><td>0.77</td><td>1733.3</td><td>138.66</td><td>40.78</td><td>141.27</td><td>41.55</td></tr>
+<tr><td>VDD_INTCAM</td><td>0.5625</td><td>2.93</td><td>0.86</td><td>435.0</td><td>34.80</td><td>10.24</td><td>37.73</td><td>11.10</td></tr>
+<tr class='total'><td><b>Total</b></td><td>-</td><td><b>98.96</b></td><td><b>29.10</b></td><td><b>5289.4</b></td><td><b>423.15</b></td><td><b>124.46</b></td><td><b>522.11</b></td><td><b>153.56</b></td></tr>
+</tbody></table>
+<h2>5. Clock Results</h2>
+<h3>DVFS Group: CAM</h3>
+<table><thead><tr><th>IP</th><th>Mode</th><th>Req.Clk (MHz)</th><th>Set.Clk (MHz)</th><th>DVFS Lv</th><th>Req.Volt (mV)</th><th>Set.Volt (mV)</th><th>Δ Volt (mV)</th><th>VDD</th><th>ReqV Pwr (mW)</th><th>SetV Pwr (mW)</th></tr></thead><tbody>
+<tr><td>BYRP</td><td>Normal</td><td>90.1</td><td>133.0</td><td>7</td><td>562.5</td><td>587.5</td><td class="volt-up">+25.0</td><td>VDD_CAM</td><td>24.54</td><td>26.77</td></tr>
+<tr><td>MCSC</td><td>Normal</td><td>90.1</td><td>133.0</td><td>7</td><td>562.5</td><td>587.5</td><td class="volt-up">+25.0</td><td>VDD_CAM</td><td>1.95</td><td>2.13</td></tr>
+<tr><td>MLSC</td><td>Normal</td><td>90.1</td><td>133.0</td><td>7</td><td>562.5</td><td>587.5</td><td class="volt-up">+25.0</td><td>VDD_CAM</td><td>16.02</td><td>17.47</td></tr>
+<tr><td>RGBP</td><td>Normal</td><td>90.1</td><td>133.0</td><td>7</td><td>562.5</td><td>587.5</td><td class="volt-up">+25.0</td><td>VDD_CAM</td><td>21.08</td><td>22.99</td></tr>
+<tr><td>YUVP</td><td>Normal</td><td>90.1</td><td>133.0</td><td>7</td><td>562.5</td><td>587.5</td><td class="volt-up">+25.0</td><td>VDD_CAM</td><td>0.46</td><td>0.50</td></tr>
+</tbody></table>
+<h3>DVFS Group: CSIS</h3>
+<table><thead><tr><th>IP</th><th>Mode</th><th>Req.Clk (MHz)</th><th>Set.Clk (MHz)</th><th>DVFS Lv</th><th>Req.Volt (mV)</th><th>Set.Volt (mV)</th><th>Δ Volt (mV)</th><th>VDD</th><th>ReqV Pwr (mW)</th><th>SetV Pwr (mW)</th></tr></thead><tbody>
+<tr><td class="vdd-leader">CSIS ★</td><td>Normal</td><td>265.1</td><td>267.0</td><td>5</td><td>587.5</td><td>587.5</td><td>0.0</td><td>VDD_CAM</td><td>1.30</td><td>1.30</td></tr>
+<tr><td class="vdd-leader">CSIS_LINK ★</td><td>Normal</td><td>265.1</td><td>267.0</td><td>5</td><td>587.5</td><td>587.5</td><td>0.0</td><td>VDD_CAM</td><td>0.62</td><td>0.62</td></tr>
+<tr><td class="vdd-leader">CSTAT ★</td><td>Normal</td><td>265.1</td><td>267.0</td><td>5</td><td>587.5</td><td>587.5</td><td>0.0</td><td>VDD_CAM</td><td>13.38</td><td>13.38</td></tr>
+<tr><td class="vdd-leader">PDP ★</td><td>Normal</td><td>265.1</td><td>267.0</td><td>5</td><td>587.5</td><td>587.5</td><td>0.0</td><td>VDD_CAM</td><td>1.05</td><td>1.05</td></tr>
+<tr><td class="vdd-leader">PREP ★</td><td>Normal</td><td>265.1</td><td>267.0</td><td>5</td><td>587.5</td><td>587.5</td><td>0.0</td><td>VDD_CAM</td><td>7.22</td><td>7.22</td></tr>
+</tbody></table>
+<h3>DVFS Group: INT</h3>
+<table><thead><tr><th>IP</th><th>Mode</th><th>Req.Clk (MHz)</th><th>Set.Clk (MHz)</th><th>DVFS Lv</th><th>Req.Volt (mV)</th><th>Set.Volt (mV)</th><th>Δ Volt (mV)</th><th>VDD</th><th>ReqV Pwr (mW)</th><th>SetV Pwr (mW)</th></tr></thead><tbody>
+<tr><td class="vdd-leader">DPU ★</td><td>Normal</td><td>20.7</td><td>133.0</td><td>7</td><td>562.5</td><td>562.5</td><td>0.0</td><td>VDD_INT</td><td>1.30</td><td>1.30</td></tr>
+<tr><td class="vdd-leader">MFC ★</td><td>Normal</td><td>20.7</td><td>133.0</td><td>7</td><td>562.5</td><td>562.5</td><td>0.0</td><td>VDD_INT</td><td>1.30</td><td>1.30</td></tr>
+</tbody></table>
+<h3>DVFS Group: INTCAM</h3>
+<table><thead><tr><th>IP</th><th>Mode</th><th>Req.Clk (MHz)</th><th>Set.Clk (MHz)</th><th>DVFS Lv</th><th>Req.Volt (mV)</th><th>Set.Volt (mV)</th><th>Δ Volt (mV)</th><th>VDD</th><th>ReqV Pwr (mW)</th><th>SetV Pwr (mW)</th></tr></thead><tbody>
+<tr><td class="vdd-leader">MSNR ★</td><td>Normal</td><td>20.7</td><td>133.0</td><td>7</td><td>562.5</td><td>562.5</td><td>0.0</td><td>VDD_INTCAM</td><td>1.30</td><td>1.30</td></tr>
+<tr><td class="vdd-leader">MTNR0 ★</td><td>Normal</td><td>20.7</td><td>133.0</td><td>7</td><td>562.5</td><td>562.5</td><td>0.0</td><td>VDD_INTCAM</td><td>1.30</td><td>1.30</td></tr>
+<tr><td class="vdd-leader">MTNR1 ★</td><td>Normal</td><td>20.7</td><td>133.0</td><td>7</td><td>562.5</td><td>562.5</td><td>0.0</td><td>VDD_INTCAM</td><td>0.33</td><td>0.33</td></tr>
+</tbody></table>
+<h3>DVFS Group: MIF</h3>
+<table class='info'>
+<tr><th>Total DMA BW</th><td>5289.4 MB/s</td></tr>
+<tr><th>BW Margin</th><td>×1.25</td></tr>
+<tr><th>Required BW</th><td>6611.8 MB/s</td></tr>
+<tr><th>MIF Level</th><td><b>10</b></td></tr>
+<tr><th>MIF Freq</th><td>845.0 MHz</td></tr>
+<tr><th>MIF BW</th><td>7436.0 MB/s</td></tr>
+<tr><th>MIF Voltage (ASV4)</th><td>581.25 mV</td></tr>
+</table>
+<h2>6. IP Details</h2>
+<h3>6-1. Sensor Detail</h3>
+<table><thead><tr><th>Sensor Name</th><th>Sensor Mode</th><th>Format</th><th>Bit Width</th><th>Mipi Type</th><th>Mipi Speed (Gbps)</th><th>Vvalid Time (ms)</th></tr></thead><tbody>
+<tr><td>A-10 SENSOR_HP2_4000x2252_30FPS_LN4</td><td>mode1</td><td>BAYER</td><td>12</td><td>CPHY</td><td>3.712</td><td>23.421</td></tr>
+</tbody></table>
+<h3>6-2. IP Detail</h3>
+<div class='filter-bar' data-table='ip-detail'><label>🔍 IP Group:</label><select class='filter-group' onchange="filterTable('ip-detail')"><option value=''>All</option></select><label>IP Name:</label><input class='filter-name' type='text' placeholder='Search...' oninput="filterTable('ip-detail')"><span class='filter-count'></span></div>
+<div style='overflow-x:auto'>
+<table id='ip-detail'><thead><tr><th>IP Group</th><th>IP Name</th><th>PPC</th><th>Mode</th><th>Unit Power</th><th>Idle Power</th><th>ASV</th><th>Color Fmt</th><th>Input Res</th><th>VDD</th><th>DVFS</th><th>Req Freq</th><th>Req Volt</th><th>Pwr@Req</th><th>Set Freq</th><th>Set Volt</th><th>Pwr@Set</th><th>mA@Vbat</th><th>HW Time(ms)</th><th>Line Buf</th><th>Strip OH</th><th>VB Ratio</th><th>Strips</th><th>BW(MB/s)</th><th>BW Pwr(mW)</th><th>RdBW</th><th>WrBW</th></tr></thead><tbody>
+<tr><td>BYRP</td><td>BYRP</td><td>4.0</td><td>Normal</td><td>4.340</td><td>0.000</td><td>4</td><td>BAYER_PACKED</td><td>4000×2252</td><td>VDD_CAM</td><td>CAM</td><td>90.1</td><td>562.5</td><td>24.54</td><td>133.0</td><td>587.5</td><td>26.77</td><td>7.87</td><td>17.779</td><td>0.0</td><td>0.0</td><td>0.00</td><td>1</td><td>1035.0</td><td>82.80</td><td>217.1</td><td>817.9</td></tr>
+<tr><td>CSIS</td><td>CSIS</td><td>8.0</td><td>Normal</td><td>0.210</td><td>0.000</td><td>4</td><td>-</td><td>4000×2252</td><td>VDD_CAM</td><td>CSIS</td><td>265.1</td><td>587.5</td><td>1.30</td><td>267.0</td><td>587.5</td><td>1.30</td><td>0.38</td><td>4.428</td><td>0.0</td><td>0.0</td><td>0.00</td><td>1</td><td>202.7</td><td>16.21</td><td>0.0</td><td>202.7</td></tr>
+<tr><td>CSIS</td><td>CSIS_LINK</td><td>8.0</td><td>Normal</td><td>0.100</td><td>0.000</td><td>4</td><td>-</td><td>4000×2252</td><td>VDD_CAM</td><td>CSIS</td><td>265.1</td><td>587.5</td><td>0.62</td><td>267.0</td><td>587.5</td><td>0.62</td><td>0.18</td><td>4.428</td><td>0.0</td><td>0.0</td><td>0.00</td><td>1</td><td>0.0</td><td>0.00</td><td>0.0</td><td>0.0</td></tr>
+<tr><td>CSIS</td><td>CSTAT</td><td>8.0</td><td>Normal</td><td>2.170</td><td>0.000</td><td>4</td><td>-</td><td>4000×2252</td><td>VDD_CAM</td><td>CSIS</td><td>265.1</td><td>587.5</td><td>13.38</td><td>267.0</td><td>587.5</td><td>13.38</td><td>3.94</td><td>4.428</td><td>0.0</td><td>0.0</td><td>0.00</td><td>1</td><td>276.1</td><td>22.09</td><td>0.0</td><td>276.1</td></tr>
+<tr><td>DPU</td><td>DPU</td><td>4.0</td><td>Normal</td><td>1.000</td><td>0.000</td><td>4</td><td>YUV420</td><td>1920×1080</td><td>VDD_INT</td><td>INT</td><td>20.7</td><td>562.5</td><td>1.30</td><td>133.0</td><td>562.5</td><td>1.30</td><td>0.38</td><td>4.093</td><td>0.0</td><td>0.0</td><td>0.00</td><td>1</td><td>116.6</td><td>9.33</td><td>116.6</td><td>0.0</td></tr>
+<tr><td>MCSC</td><td>MCSC</td><td>4.0</td><td>Normal</td><td>1.500</td><td>0.000</td><td>4</td><td>-</td><td>1920×1080</td><td>VDD_CAM</td><td>CAM</td><td>90.1</td><td>562.5</td><td>1.95</td><td>133.0</td><td>587.5</td><td>2.13</td><td>0.63</td><td>4.093</td><td>0.0</td><td>0.0</td><td>0.00</td><td>1</td><td>233.3</td><td>18.66</td><td>0.0</td><td>233.3</td></tr>
+<tr><td>MFC</td><td>MFC</td><td>4.0</td><td>Normal</td><td>1.000</td><td>0.000</td><td>4</td><td>YUV420</td><td>1920×1080</td><td>VDD_INT</td><td>INT</td><td>20.7</td><td>562.5</td><td>1.30</td><td>133.0</td><td>562.5</td><td>1.30</td><td>0.38</td><td>4.093</td><td>0.0</td><td>0.0</td><td>0.00</td><td>1</td><td>1616.6</td><td>129.33</td><td>116.6</td><td>1500.0</td></tr>
+<tr><td>MSNR</td><td>MLSC</td><td>4.0</td><td>Normal</td><td>2.833</td><td>0.000</td><td>4</td><td>-</td><td>4000×2252</td><td>VDD_CAM</td><td>CAM</td><td>90.1</td><td>562.5</td><td>16.02</td><td>133.0</td><td>587.5</td><td>17.47</td><td>5.14</td><td>17.779</td><td>0.0</td><td>0.0</td><td>0.00</td><td>1</td><td>435.0</td><td>34.80</td><td>0.0</td><td>435.0</td></tr>
+<tr><td>MSNR</td><td>MSNR</td><td>4.0</td><td>Normal</td><td>1.000</td><td>0.000</td><td>4</td><td>-</td><td>1920×1080</td><td>VDD_INTCAM</td><td>INTCAM</td><td>20.7</td><td>562.5</td><td>1.30</td><td>133.0</td><td>562.5</td><td>1.30</td><td>0.38</td><td>4.093</td><td>0.0</td><td>0.0</td><td>0.00</td><td>1</td><td>0.0</td><td>0.00</td><td>0.0</td><td>0.0</td></tr>
+<tr><td>MCSC</td><td>MTNR0</td><td>4.0</td><td>Normal</td><td>1.000</td><td>0.000</td><td>4</td><td>YUV444</td><td>1920×1080</td><td>VDD_INTCAM</td><td>INTCAM</td><td>20.7</td><td>562.5</td><td>1.30</td><td>133.0</td><td>562.5</td><td>1.30</td><td>0.38</td><td>4.093</td><td>0.0</td><td>0.0</td><td>0.00</td><td>1</td><td>326.6</td><td>26.13</td><td>326.6</td><td>0.0</td></tr>
+<tr><td>MTNR1</td><td>MTNR1</td><td>4.0</td><td>Normal</td><td>1.000</td><td>0.000</td><td>4</td><td>YUV444</td><td>960×540</td><td>VDD_INTCAM</td><td>INTCAM</td><td>20.7</td><td>562.5</td><td>0.33</td><td>133.0</td><td>562.5</td><td>0.33</td><td>0.10</td><td>1.023</td><td>0.0</td><td>0.0</td><td>0.00</td><td>1</td><td>108.4</td><td>8.68</td><td>108.4</td><td>0.0</td></tr>
+<tr><td>CSIS</td><td>PDP</td><td>8.0</td><td>Normal</td><td>0.170</td><td>0.000</td><td>4</td><td>-</td><td>4000×2252</td><td>VDD_CAM</td><td>CSIS</td><td>265.1</td><td>587.5</td><td>1.05</td><td>267.0</td><td>587.5</td><td>1.05</td><td>0.31</td><td>4.428</td><td>0.0</td><td>0.0</td><td>0.00</td><td>1</td><td>128.2</td><td>10.26</td><td>0.0</td><td>128.2</td></tr>
+<tr><td>CSIS</td><td>PREP</td><td>8.0</td><td>Normal</td><td>1.170</td><td>0.000</td><td>4</td><td>-</td><td>4000×2252</td><td>VDD_CAM</td><td>CSIS</td><td>265.1</td><td>587.5</td><td>7.22</td><td>267.0</td><td>587.5</td><td>7.22</td><td>2.12</td><td>4.428</td><td>0.0</td><td>0.0</td><td>0.00</td><td>1</td><td>0.0</td><td>0.00</td><td>0.0</td><td>0.0</td></tr>
+<tr><td>RGBP</td><td>RGBP</td><td>4.0</td><td>Normal</td><td>3.728</td><td>0.000</td><td>4</td><td>-</td><td>4000×2252</td><td>VDD_CAM</td><td>CAM</td><td>90.1</td><td>562.5</td><td>21.08</td><td>133.0</td><td>587.5</td><td>22.99</td><td>6.76</td><td>17.779</td><td>0.0</td><td>0.0</td><td>0.00</td><td>1</td><td>810.7</td><td>64.86</td><td>0.0</td><td>810.7</td></tr>
+<tr><td>YUVP</td><td>YUVP</td><td>4.0</td><td>Normal</td><td>0.352</td><td>0.000</td><td>4</td><td>-</td><td>1920×1080</td><td>VDD_CAM</td><td>CAM</td><td>90.1</td><td>562.5</td><td>0.46</td><td>133.0</td><td>587.5</td><td>0.50</td><td>0.15</td><td>4.093</td><td>0.0</td><td>0.0</td><td>0.00</td><td>1</td><td>0.0</td><td>0.00</td><td>0.0</td><td>0.0</td></tr>
+</tbody></table>
+</div>
+<h2>7. DMA Results</h2>
+<div class='filter-bar' data-table='dma-detail'><label>🔍 IP Group:</label><select class='filter-group' onchange="filterTable('dma-detail')"><option value=''>All</option></select><label>IP Name:</label><input class='filter-name' type='text' placeholder='Search...' oninput="filterTable('dma-detail')"><span class='filter-count'></span></div>
+<table id='dma-detail'><thead><tr><th>IP Group</th><th>Name</th><th>In/Out</th><th>W×H</th><th>Format</th><th>Bitwidth</th><th>Comp</th><th>Comp Ratio</th><th>LLC</th><th>LLC Hit</th><th>BW (MB/s)</th><th>BW Power (mW)</th><th>R/W Rate</th></tr></thead><tbody>
+<tr><td>BYRP</td><td>COMP_RD0_RDMA</td><td>Read</td><td>4000×2252</td><td>BAYER_PACKED</td><td>12</td><td class="highlight-on">enable</td><td class="highlight-on">0.50</td><td>disable</td><td>0.00</td><td>202.7</td><td>16.21</td><td>1.0</td></tr>
+<tr><td>BYRP</td><td>SPE_Y_HIST_RDMA</td><td>Read</td><td>400×300</td><td>STAT</td><td>8</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>3.6</td><td>0.29</td><td>1.0</td></tr>
+<tr><td>BYRP</td><td>SPE_AI_STAT_RDMA</td><td>Read</td><td>400×300</td><td>STAT</td><td>8</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>3.6</td><td>0.29</td><td>1.0</td></tr>
+<tr><td>BYRP</td><td>SPE_GRID_STAT_RDMA</td><td>Read</td><td>400×300</td><td>STAT</td><td>8</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>3.6</td><td>0.29</td><td>1.0</td></tr>
+<tr><td>BYRP</td><td>SPE_FRAME_STAT_RDMA</td><td>Read</td><td>400×300</td><td>STAT</td><td>8</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>3.6</td><td>0.29</td><td>1.0</td></tr>
+<tr><td>BYRP</td><td>CROP_DNG_WDMA</td><td>Write</td><td>4000×2252</td><td>BAYER_UNPACKED</td><td>12</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>810.7</td><td>64.86</td><td>1.0</td></tr>
+<tr><td>BYRP</td><td>SPE_GRID_STAT_WDMA</td><td>Write</td><td>400×300</td><td>STAT</td><td>8</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>3.6</td><td>0.29</td><td>1.0</td></tr>
+<tr><td>BYRP</td><td>SPE_FRAME_STAT_WDMA</td><td>Write</td><td>400×300</td><td>STAT</td><td>8</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>3.6</td><td>0.29</td><td>1.0</td></tr>
+<tr><td>CSIS</td><td>CSIS_WDMA</td><td>Write</td><td>4000×2252</td><td>BAYER_PACKED</td><td>12</td><td class="highlight-on">enable</td><td class="highlight-on">0.50</td><td>disable</td><td>0.00</td><td>202.7</td><td>16.21</td><td>1.0</td></tr>
+<tr><td>CSTAT</td><td>CDAF_WDMA</td><td>Write</td><td>19×15</td><td>STAT</td><td>384</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>0.4</td><td>0.03</td><td>1.0</td></tr>
+<tr><td>CSTAT</td><td>RGBHIST_WDMA</td><td>Write</td><td>40960×1</td><td>STAT</td><td>8</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>1.2</td><td>0.10</td><td>1.0</td></tr>
+<tr><td>CSTAT</td><td>THSTAT_AE_WDMA</td><td>Write</td><td>64×64</td><td>STAT</td><td>128</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>2.0</td><td>0.16</td><td>1.0</td></tr>
+<tr><td>CSTAT</td><td>THSTAT_AWB_WDMA</td><td>Write</td><td>64×64</td><td>STAT</td><td>128</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>2.0</td><td>0.16</td><td>1.0</td></tr>
+<tr><td>CSTAT</td><td>DRC_CLCT_WDMA</td><td>Write</td><td>500×200</td><td>STAT</td><td>8</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>3.0</td><td>0.24</td><td>1.0</td></tr>
+<tr><td>CSTAT</td><td>SPE_RGB_STAT_WDMA</td><td>Write</td><td>400×300</td><td>STAT</td><td>8</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>3.6</td><td>0.29</td><td>1.0</td></tr>
+<tr><td>CSTAT</td><td>SPE_Y_HIST_WDMA</td><td>Write</td><td>400×300</td><td>STAT</td><td>8</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>3.6</td><td>0.29</td><td>1.0</td></tr>
+<tr><td>CSTAT</td><td>DS_FDPIG_WDMA</td><td>Write</td><td>512×288</td><td>RGB</td><td>8</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>13.3</td><td>1.06</td><td>1.0</td></tr>
+<tr><td>CSTAT</td><td>DS_CAV_WDMA</td><td>Write</td><td>512×288</td><td>RGB</td><td>8</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>13.3</td><td>1.06</td><td>1.0</td></tr>
+<tr><td>CSTAT</td><td>SAT_Y_WDMA</td><td>Write</td><td>1920×1080</td><td>Y8</td><td>8</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>62.2</td><td>4.98</td><td>1.0</td></tr>
+<tr><td>CSTAT</td><td>SAT_UV_WDMA</td><td>Write</td><td>1920×1080</td><td>UV8</td><td>8</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>124.4</td><td>9.95</td><td>1.0</td></tr>
+<tr><td>CSTAT</td><td>DS_LME0_WDMA</td><td>Write</td><td>1024×768</td><td>Y8</td><td>8</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>23.6</td><td>1.89</td><td>1.0</td></tr>
+<tr><td>CSTAT</td><td>DS_LME1_WDMA</td><td>Write</td><td>1024×768</td><td>Y8</td><td>8</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>23.6</td><td>1.89</td><td>1.0</td></tr>
+<tr><td>DPU</td><td>DPU_RDMA</td><td>Read</td><td>1920×1080</td><td>YUV420</td><td>10</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>116.6</td><td>9.33</td><td>1.0</td></tr>
+<tr><td>MCSC</td><td>P0_WDMA</td><td>Write</td><td>1920×1080</td><td>YUV420</td><td>10</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>116.6</td><td>9.33</td><td>1.0</td></tr>
+<tr><td>MCSC</td><td>P1_WDMA</td><td>Write</td><td>1920×1080</td><td>YUV420</td><td>10</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>116.6</td><td>9.33</td><td>1.0</td></tr>
+<tr><td>MFC</td><td>MFC_RDMA</td><td>Read</td><td>1920×1080</td><td>YUV420</td><td>10</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>116.6</td><td>9.33</td><td>1.0</td></tr>
+<tr><td>MFC</td><td>MFC_WDMA</td><td>Write</td><td>40000×1000</td><td>STAT</td><td>10</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>1500.0</td><td>120.00</td><td>1.0</td></tr>
+<tr><td>MLSC</td><td>L0_WDMA</td><td>Write</td><td>1920×1080</td><td>YUV444</td><td>14</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>326.6</td><td>26.13</td><td>1.0</td></tr>
+<tr><td>MLSC</td><td>L1_WDMA</td><td>Write</td><td>960×540</td><td>YUV444</td><td>14</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>81.6</td><td>6.53</td><td>1.0</td></tr>
+<tr><td>MLSC</td><td>L2_WDMA</td><td>Write</td><td>480×270</td><td>YUV444</td><td>14</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>20.4</td><td>1.63</td><td>1.0</td></tr>
+<tr><td>MLSC</td><td>L3_WDMA</td><td>Write</td><td>240×135</td><td>YUV444</td><td>14</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>5.1</td><td>0.41</td><td>1.0</td></tr>
+<tr><td>MLSC</td><td>G4_WDMA</td><td>Write</td><td>120×68</td><td>YUV444</td><td>14</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>1.3</td><td>0.10</td><td>1.0</td></tr>
+<tr><td>MTNR0</td><td>L0_RDMA</td><td>Read</td><td>1920×1080</td><td>YUV444</td><td>14</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>326.6</td><td>26.13</td><td>1.0</td></tr>
+<tr><td>MTNR1</td><td>L1_RDMA</td><td>Read</td><td>960×540</td><td>YUV444</td><td>14</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>81.6</td><td>6.53</td><td>1.0</td></tr>
+<tr><td>MTNR1</td><td>L2_RDMA</td><td>Read</td><td>480×270</td><td>YUV444</td><td>14</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>20.4</td><td>1.63</td><td>1.0</td></tr>
+<tr><td>MTNR1</td><td>L3_RDMA</td><td>Read</td><td>240×135</td><td>YUV444</td><td>14</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>5.1</td><td>0.41</td><td>1.0</td></tr>
+<tr><td>MTNR1</td><td>G4_RDMA</td><td>Read</td><td>120×68</td><td>YUV444</td><td>14</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>1.3</td><td>0.10</td><td>1.0</td></tr>
+<tr><td>PDP</td><td>STAT_WDMA</td><td>Write</td><td>4000×282</td><td>STAT</td><td>10</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>42.3</td><td>3.38</td><td>1.0</td></tr>
+<tr><td>PDP</td><td>HPD_WDMA</td><td>Write</td><td>4000×382</td><td>STAT</td><td>10</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>57.3</td><td>4.58</td><td>1.0</td></tr>
+<tr><td>PDP</td><td>VPD_WDMA</td><td>Write</td><td>2000×382</td><td>STAT</td><td>10</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>28.6</td><td>2.29</td><td>1.0</td></tr>
+<tr><td>RGBP</td><td>CROP_DNG_WDMA</td><td>Write</td><td>4000×2252</td><td>BAYER_UNPACKED</td><td>12</td><td>disable</td><td>1.00</td><td>disable</td><td>0.00</td><td>810.7</td><td>64.86</td><td>1.0</td></tr>
+<tr class='total'><td colspan='10'><b>Total</b></td><td><b>5289.4</b></td><td><b>423.15</b></td><td></td></tr>
+</tbody></table>
+<script>
+
+// Auto-populate IP Group dropdown options from table data
+document.querySelectorAll('.filter-bar').forEach(function(bar) {
+    var tid = bar.getAttribute('data-table');
+    var tbl = document.getElementById(tid);
+    if (!tbl) return;
+    var rows = tbl.querySelectorAll('tbody tr');
+    var groups = new Set();
+    rows.forEach(function(r) {
+        var g = r.cells[0] ? r.cells[0].textContent.trim() : '';
+        if (g) groups.add(g);
+    });
+    var sel = bar.querySelector('.filter-group');
+    Array.from(groups).sort().forEach(function(g) {
+        var opt = document.createElement('option');
+        opt.value = g; opt.textContent = g;
+        sel.appendChild(opt);
+    });
+    // Initial count
+    filterTable(tid);
+});
+
+function filterTable(tableId) {
+    var bar = document.querySelector(".filter-bar[data-table='" + tableId + "']");
+    var tbl = document.getElementById(tableId);
+    if (!bar || !tbl) return;
+    var groupVal = bar.querySelector('.filter-group').value.toLowerCase();
+    var nameVal = bar.querySelector('.filter-name').value.toLowerCase();
+    var rows = tbl.querySelectorAll('tbody tr');
+    var shown = 0;
+    rows.forEach(function(row) {
+        if (row.classList.contains('total')) { row.style.display = ''; return; }
+        var group = row.cells[0] ? row.cells[0].textContent.trim().toLowerCase() : '';
+        var name = row.cells[1] ? row.cells[1].textContent.trim().toLowerCase() : '';
+        var matchGroup = !groupVal || group === groupVal;
+        var matchName = !nameVal || name.indexOf(nameVal) >= 0;
+        if (matchGroup && matchName) { row.style.display = ''; shown++; }
+        else { row.style.display = 'none'; }
+    });
+    var countEl = bar.querySelector('.filter-count');
+    countEl.textContent = shown + ' / ' + (rows.length) + ' rows';
+}
+
+</script>
+</body></html>

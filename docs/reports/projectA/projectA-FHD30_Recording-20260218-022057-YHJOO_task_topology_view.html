@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Task Topology</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#F0F2F5;font-family:'Segoe UI','Malgun Gothic',sans-serif;overflow:auto}
+#wrap{padding:16px;text-align:center}
+h1{font-size:20px;color:#333;margin-bottom:12px}
+#info{font-size:12px;color:#888;margin-bottom:8px}
+svg{background:white;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.1);cursor:grab}
+svg:active{cursor:grabbing}
+</style></head><body>
+<div id="wrap">
+<h1>Task Topology</h1>
+<div id="info">Scroll to zoom · Drag to pan</div>
+<div id="canvas"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
+<script>
+const G={"id": "root", "layoutOptions": {"elk.algorithm": "layered", "elk.direction": "DOWN", "elk.edgeRouting": "ORTHOGONAL", "elk.spacing.nodeNode": "20", "elk.layered.spacing.nodeNodeBetweenLayers": "30", "elk.padding": "[top=20,left=20,bottom=20,right=20]", "elk.hierarchyHandling": "INCLUDE_CHILDREN"}, "children": [{"id": "t_sensor", "width": 120, "height": 45}, {"id": "t_csislink", "width": 120, "height": 45}, {"id": "t_csis", "width": 120, "height": 45}, {"id": "t_pdp", "width": 120, "height": 45}, {"id": "t_prep", "width": 120, "height": 45}, {"id": "t_cstat", "width": 120, "height": 45}, {"id": "t_byrp", "width": 120, "height": 45}, {"id": "t_rgbp", "width": 120, "height": 45}, {"id": "t_mlsc", "width": 120, "height": 45}, {"id": "t_postIRTA", "width": 160, "height": 45}, {"id": "t_postIRTA2", "width": 160, "height": 45}, {"id": "t_mtnr0", "width": 120, "height": 45}, {"id": "t_mtnr1", "width": 120, "height": 45}, {"id": "t_msnr", "width": 120, "height": 45}, {"id": "t_yuvp", "width": 120, "height": 45}, {"id": "t_mcsc", "width": 120, "height": 45}, {"id": "t_codec2", "width": 160, "height": 45}, {"id": "t_mfc", "width": 120, "height": 45}, {"id": "t_hw_composer", "width": 160, "height": 45}, {"id": "t_dpu", "width": 120, "height": 45}], "edges": [{"id": "eo_0", "sources": ["t_sensor"], "targets": ["t_csislink"], "labels": [{"text": "OTF", "width": 40, "height": 14}]}, {"id": "eo_1", "sources": ["t_csislink"], "targets": ["t_csis"], "labels": [{"text": "OTF: LINK\u2192NFI_DEC", "width": 102, "height": 14}]}, {"id": "eo_2", "sources": ["t_csis"], "targets": ["t_pdp"], "labels": [{"text": "OTF: IBUF\u2192REORDER", "width": 102, "height": 14}]}, {"id": "eo_3", "sources": ["t_csis"], "targets": ["t_prep"], "labels": [{"text": "OTF: COUTFIFO\u2192CINFIFO", "width": 126, "height": 14}]}, {"id": "em_4", "sources": ["t_csis"], "targets": ["t_byrp"], "labels": [{"text": "CSIS_WDMA\u2192COMP_RD0_RDMA | 4000\u00d72252 | BAYER_PACKED | 12bit | COMP", "width": 390, "height": 14}]}, {"id": "eo_5", "sources": ["t_prep"], "targets": ["t_cstat"], "labels": [{"text": "OTF: COUTFIFO\u2192CINFIFO", "width": 126, "height": 14}]}, {"id": "eo_6", "sources": ["t_byrp"], "targets": ["t_rgbp"], "labels": [{"text": "OTF: COUTFIFO\u2192CINFIFO", "width": 126, "height": 14}]}, {"id": "eo_7", "sources": ["t_rgbp"], "targets": ["t_mlsc"], "labels": [{"text": "OTF: COUTFIFO\u2192CINFIFO", "width": 126, "height": 14}]}, {"id": "em_8", "sources": ["t_mlsc"], "targets": ["t_postIRTA"], "labels": [{"text": "M2M", "width": 30, "height": 14}]}, {"id": "em_9", "sources": ["t_postIRTA"], "targets": ["t_postIRTA2"], "labels": [{"text": "M2M", "width": 30, "height": 14}]}, {"id": "em_10", "sources": ["t_postIRTA2"], "targets": ["t_mtnr0"], "labels": [{"text": "M2M", "width": 30, "height": 14}]}, {"id": "em_11", "sources": ["t_postIRTA2"], "targets": ["t_mtnr1"], "labels": [{"text": "M2M", "width": 30, "height": 14}]}, {"id": "eo_12", "sources": ["t_mtnr0"], "targets": ["t_msnr"], "labels": [{"text": "OTF: L0_COUTFIFO\u2192L0_CINFIFO", "width": 162, "height": 14}]}, {"id": "eo_13", "sources": ["t_mtnr1"], "targets": ["t_msnr"], "labels": [{"text": "OTF: L1_COUTFIFO\u2192L1_CINFIFO, L2_COUTFIFO\u2192L2_CINFIFO, L3_COUTFIFO\u2192L3_CINFIFO, G4_COUTFIFO\u2192G4_CINFIFO", "width": 594, "height": 14}]}, {"id": "eo_14", "sources": ["t_msnr"], "targets": ["t_yuvp"], "labels": [{"text": "OTF: COUTFIFO\u2192CINFIFO", "width": 126, "height": 14}]}, {"id": "eo_15", "sources": ["t_yuvp"], "targets": ["t_mcsc"], "labels": [{"text": "OTF: COUTFIFO\u2192CINFIFO", "width": 126, "height": 14}]}, {"id": "em_16", "sources": ["t_mcsc"], "targets": ["t_codec2"], "labels": [{"text": "P0_WDMA\u2192input | 1920\u00d71080 | YUV420 | 10bit", "width": 252, "height": 14}]}, {"id": "em_17", "sources": ["t_mcsc"], "targets": ["t_hw_composer"], "labels": [{"text": "P1_WDMA\u2192input | 1920\u00d71080 | YUV420 | 10bit", "width": 252, "height": 14}]}, {"id": "em_18", "sources": ["t_codec2"], "targets": ["t_mfc"], "labels": [{"text": "M2M", "width": 30, "height": 14}]}, {"id": "em_19", "sources": ["t_hw_composer"], "targets": ["t_dpu"], "labels": [{"text": "M2M", "width": 30, "height": 14}]}]};
+const M={"t_sensor": {"type": "leaf", "label": "t_sensor\\n(HP2)", "color": "#E3F2FD"}, "t_csislink": {"type": "leaf", "label": "t_csislink\\n(CSIS_LINK)", "color": "#E8F5E9"}, "t_csis": {"type": "leaf", "label": "t_csis\\n(CSIS)", "color": "#E8F5E9"}, "t_pdp": {"type": "leaf", "label": "t_pdp\\n(PDP)", "color": "#E8F5E9"}, "t_prep": {"type": "leaf", "label": "t_prep\\n(PREP)", "color": "#E8F5E9"}, "t_cstat": {"type": "leaf", "label": "t_cstat\\n(CSTAT)", "color": "#E8F5E9"}, "t_byrp": {"type": "leaf", "label": "t_byrp\\n(BYRP)", "color": "#E8F5E9"}, "t_rgbp": {"type": "leaf", "label": "t_rgbp\\n(RGBP)", "color": "#E8F5E9"}, "t_mlsc": {"type": "leaf", "label": "t_mlsc\\n(MLSC)", "color": "#E8F5E9"}, "t_postIRTA": {"type": "leaf", "label": "t_postIRTA\\n(CPU_MID_Clustor)", "color": "#ECEFF1"}, "t_postIRTA2": {"type": "leaf", "label": "t_postIRTA2\\n(CPU_MID_Clustor)", "color": "#ECEFF1"}, "t_mtnr0": {"type": "leaf", "label": "t_mtnr0\\n(MTNR0)", "color": "#E8F5E9"}, "t_mtnr1": {"type": "leaf", "label": "t_mtnr1\\n(MTNR1)", "color": "#E8F5E9"}, "t_msnr": {"type": "leaf", "label": "t_msnr\\n(MSNR)", "color": "#E8F5E9"}, "t_yuvp": {"type": "leaf", "label": "t_yuvp\\n(YUVP)", "color": "#E8F5E9"}, "t_mcsc": {"type": "leaf", "label": "t_mcsc\\n(MCSC)", "color": "#E8F5E9"}, "t_codec2": {"type": "leaf", "label": "t_codec2\\n(CPU_MID_Clustor)", "color": "#ECEFF1"}, "t_mfc": {"type": "leaf", "label": "t_mfc\\n(MFC)", "color": "#FFF3E0"}, "t_hw_composer": {"type": "leaf", "label": "t_hw_composer\\n(CPU_MID_Clustor)", "color": "#ECEFF1"}, "t_dpu": {"type": "leaf", "label": "t_dpu\\n(DPU)", "color": "#F3E5F5"}, "eo_0": {"type": "otf", "label": "OTF"}, "eo_1": {"type": "otf", "label": "OTF: LINK\u2192NFI_DEC"}, "eo_2": {"type": "otf", "label": "OTF: IBUF\u2192REORDER"}, "eo_3": {"type": "otf", "label": "OTF: COUTFIFO\u2192CINFIFO"}, "em_4": {"type": "m2m", "label": "CSIS_WDMA\u2192COMP_RD0_RDMA | 4000\u00d72252 | BAYER_PACKED | 12bit | COMP"}, "eo_5": {"type": "otf", "label": "OTF: COUTFIFO\u2192CINFIFO"}, "eo_6": {"type": "otf", "label": "OTF: COUTFIFO\u2192CINFIFO"}, "eo_7": {"type": "otf", "label": "OTF: COUTFIFO\u2192CINFIFO"}, "em_8": {"type": "m2m", "label": "M2M"}, "em_9": {"type": "m2m", "label": "M2M"}, "em_10": {"type": "m2m", "label": "M2M"}, "em_11": {"type": "m2m", "label": "M2M"}, "eo_12": {"type": "otf", "label": "OTF: L0_COUTFIFO\u2192L0_CINFIFO"}, "eo_13": {"type": "otf", "label": "OTF: L1_COUTFIFO\u2192L1_CINFIFO, L2_COUTFIFO\u2192L2_CINFIFO, L3_COUTFIFO\u2192L3_CINFIFO, G4_COUTFIFO\u2192G4_CINFIFO"}, "eo_14": {"type": "otf", "label": "OTF: COUTFIFO\u2192CINFIFO"}, "eo_15": {"type": "otf", "label": "OTF: COUTFIFO\u2192CINFIFO"}, "em_16": {"type": "m2m", "label": "P0_WDMA\u2192input | 1920\u00d71080 | YUV420 | 10bit"}, "em_17": {"type": "m2m", "label": "P1_WDMA\u2192input | 1920\u00d71080 | YUV420 | 10bit"}, "em_18": {"type": "m2m", "label": "M2M"}, "em_19": {"type": "m2m", "label": "M2M"}};
+const NS='http://www.w3.org/2000/svg';
+/* Map of node id -> absolute position {x,y} built during first pass */
+const NP={};
+
+function ce(t,a){const e=document.createElementNS(NS,t);if(a)Object.entries(a).forEach(([k,v])=>e.setAttribute(k,v));return e}
+
+async function main(){
+  try{
+  const elk=new ELK();
+  const layout=await elk.layout(G);
+  const pad=30;
+  const totalW=layout.width+pad*2, totalH=layout.height+pad*2;
+  /* Use viewBox for scalability; clamp display size for very large diagrams */
+  const dispW=Math.min(totalW,window.innerWidth-40);
+  const dispH=Math.min(totalH,window.innerHeight-80);
+  const svg=ce('svg',{width:dispW,height:dispH,viewBox:`0 0 ${totalW} ${totalH}`});
+  const gMain=ce('g',{transform:`translate(${pad},${pad})`});
+  svg.appendChild(gMain);
+  /* Pass 1: collect absolute positions for all nodes */
+  collectPositions(layout,0,0);
+  /* Pass 2: draw nodes and edges */
+  drawNode(gMain,layout,0,0);
+  // zoom/pan
+  let scale=1,tx=0,ty=0;
+  function updateTx(){gMain.setAttribute('transform',`translate(${tx+pad},${ty+pad}) scale(${scale})`)}
+  svg.addEventListener('wheel',e=>{e.preventDefault();const d=e.deltaY>0?0.9:1.1;const ns=Math.max(0.2,Math.min(5,scale*d));const r=ns/scale;tx=e.offsetX-(e.offsetX-tx)*r;ty=e.offsetY-(e.offsetY-ty)*r;scale=ns;updateTx()});
+  let drag=false,sx,sy;
+  svg.addEventListener('mousedown',e=>{drag=true;sx=e.clientX-tx;sy=e.clientY-ty});
+  svg.addEventListener('mousemove',e=>{if(!drag)return;tx=e.clientX-sx;ty=e.clientY-sy;updateTx()});
+  svg.addEventListener('mouseup',()=>drag=false);
+  svg.addEventListener('mouseleave',()=>drag=false);
+  document.getElementById('canvas').appendChild(svg);
+  }catch(err){
+    document.getElementById('canvas').innerHTML=
+      '<p style="color:red;padding:20px">ELK layout error: '+err.message+'</p>';
+    console.error('ELK layout failed:',err);
+  }
+}
+
+/* Recursively collect absolute positions of every node */
+function collectPositions(node,ox,oy){
+  const x=(node.x||0)+ox, y=(node.y||0)+oy;
+  NP[node.id]={x,y};
+  (node.children||[]).forEach(c=>collectPositions(c,x,y));
+}
+
+function drawNode(g,node,ox,oy){
+  const x=(node.x||0)+ox, y=(node.y||0)+oy;
+  const m=M[node.id];
+  if(node.width&&m){
+    // rect
+    const isGrpBox=m.type==='group_box';
+    const rr=m.type==='group'?8:m.type==='ip'?6:isGrpBox?10:3;
+    const sw=m.type==='group'||isGrpBox?1.5:1;
+    const fo=m.type==='group'?'0.55':isGrpBox?'0.7':'1';
+    const sc=m.type==='m2m'?'#E65100':'#999';
+    const r=ce('rect',{x,y,width:node.width,height:node.height,rx:rr,ry:rr,
+      fill:m.color||'#fff','fill-opacity':fo,stroke:sc,'stroke-width':sw});
+    g.appendChild(r);
+    // label
+    const lines=(m.label||'').split('\\n');
+    if(m.type==='group'||m.type==='ip'){
+      const fs=m.type==='group'?13:11;
+      const t=ce('text',{x:x+8,y:y+16,'font-size':fs,'font-weight':'bold',fill:'#333'});
+      t.textContent=lines[0];g.appendChild(t);
+    }else if(m.type==='group_box'){
+      // Group box: centered bold name + smaller IP list
+      const t=ce('text',{x:x+node.width/2,y:y+22,'text-anchor':'middle','font-size':14,'font-weight':'bold',fill:'#333'});
+      t.textContent=lines[0];g.appendChild(t);
+      if(lines.length>1){
+        const t2=ce('text',{x:x+node.width/2,y:y+40,'text-anchor':'middle','font-size':9,fill:'#666'});
+        t2.textContent=lines[1];g.appendChild(t2);
+      }
+    }else if(m.type==='mod'){
+      const t=ce('text',{x:x+node.width/2,y:y+12,'text-anchor':'middle','font-size':9,fill:'#333'});
+      t.textContent=m.label;g.appendChild(t);
+      if(m.sub){
+        const t2=ce('text',{x:x+node.width/2,y:y+23,'text-anchor':'middle','font-size':8,fill:'#666'});
+        t2.textContent=m.sub;g.appendChild(t2);
+      }
+    }else{
+      lines.forEach((ln,i)=>{
+        const t=ce('text',{x:x+node.width/2,y:y+node.height/2+4+(i-(lines.length-1)/2)*14,
+          'text-anchor':'middle','font-size':11,fill:'#333'});
+        if(i===0)t.setAttribute('font-weight','bold');
+        t.textContent=ln;g.appendChild(t);
+      });
+    }
+  }
+  (node.children||[]).forEach(c=>drawNode(g,c,x,y));
+  /* Use the edge's container property (set by ELK.js) to determine the
+     correct offset. With INCLUDE_CHILDREN, ELK may reassign edges to
+     their LCA container, making coordinates relative to that container
+     rather than the node whose edges array holds them. */
+  (node.edges||[]).forEach(e=>{
+    const cid=e.container||node.id;
+    const cp=NP[cid]||{x:0,y:0};
+    drawEdge(g,e,cp.x,cp.y);
+  });
+}
+
+function drawEdge(g,edge,ox,oy){
+  if(!edge.sections)return;
+  const m=M[edge.id]||{};
+  const isOtf=m.type==='otf';
+  const isM2m=m.type==='m2m';
+  const color=isOtf?'#1565C0':isM2m?'#E65100':'#999';
+  const sw=isOtf?2.5:isM2m?2:1;
+  const dash=isM2m?'6,3':'';
+
+  edge.sections.forEach(s=>{
+    const pts=[s.startPoint,...(s.bendPoints||[]),s.endPoint];
+    const d=pts.map((p,i)=>`${i?'L':'M'}${p.x+ox},${p.y+oy}`).join(' ');
+    const attrs={d,stroke:color,'stroke-width':sw,fill:'none'};
+    if(dash)attrs['stroke-dasharray']=dash;
+    g.appendChild(ce('path',attrs));
+    // arrow
+    const L=pts[pts.length-1],P=pts[pts.length-2];
+    const a=Math.atan2(L.y-P.y,L.x-P.x),sz=6;
+    const ax=L.x+ox,ay=L.y+oy;
+    g.appendChild(ce('polygon',{
+      points:`${ax},${ay} ${ax-sz*Math.cos(a-.45)},${ay-sz*Math.sin(a-.45)} ${ax-sz*Math.cos(a+.45)},${ay-sz*Math.sin(a+.45)}`,
+      fill:color}));
+  });
+  // edge label
+  if(edge.labels&&edge.labels.length){
+    const lb=edge.labels[0];
+    if(lb.x!==undefined){
+      const bg=ce('rect',{x:lb.x+ox-2,y:lb.y+oy-1,width:lb.width+4,height:lb.height+2,
+        rx:3,fill:'white','fill-opacity':'0.85',stroke:color,'stroke-width':0.5});
+      g.appendChild(bg);
+      const t=ce('text',{x:lb.x+ox+lb.width/2,y:lb.y+oy+11,
+        'text-anchor':'middle','font-size':9,fill:color,'font-weight':'bold'});
+      t.textContent=m.label||'';g.appendChild(t);
+    }
+  }
+}
+
+main();
+</script></body></html>

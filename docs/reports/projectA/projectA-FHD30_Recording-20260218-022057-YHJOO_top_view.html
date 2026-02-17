@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Top View (Hierarchy Groups)</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#F0F2F5;font-family:'Segoe UI','Malgun Gothic',sans-serif;overflow:auto}
+#wrap{padding:16px;text-align:center}
+h1{font-size:20px;color:#333;margin-bottom:12px}
+#info{font-size:12px;color:#888;margin-bottom:8px}
+svg{background:white;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.1);cursor:grab}
+svg:active{cursor:grabbing}
+</style></head><body>
+<div id="wrap">
+<h1>Top View (Hierarchy Groups)</h1>
+<div id="info">Scroll to zoom · Drag to pan</div>
+<div id="canvas"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
+<script>
+const G={"id": "root", "layoutOptions": {"elk.algorithm": "layered", "elk.direction": "DOWN", "elk.edgeRouting": "ORTHOGONAL", "elk.spacing.nodeNode": "20", "elk.layered.spacing.nodeNodeBetweenLayers": "30", "elk.padding": "[top=20,left=20,bottom=20,right=20]", "elk.hierarchyHandling": "INCLUDE_CHILDREN"}, "children": [{"id": "grp_Sensor", "width": 120, "height": 60}, {"id": "grp_ISP", "width": 498, "height": 60}, {"id": "grp_CODEC", "width": 120, "height": 60}, {"id": "grp_DPU", "width": 120, "height": 60}, {"id": "grp_CPU", "width": 120, "height": 60}], "edges": [{"id": "eo_0", "sources": ["grp_Sensor"], "targets": ["grp_ISP"], "labels": [{"text": "OTF", "width": 40, "height": 14}]}, {"id": "em_1", "sources": ["grp_ISP"], "targets": ["grp_CPU"], "labels": [{"text": "M2M", "width": 30, "height": 14}]}, {"id": "em_2", "sources": ["grp_CPU"], "targets": ["grp_ISP"], "labels": [{"text": "M2M", "width": 30, "height": 14}]}, {"id": "em_3", "sources": ["grp_CPU"], "targets": ["grp_ISP"], "labels": [{"text": "M2M", "width": 30, "height": 14}]}, {"id": "em_4", "sources": ["grp_ISP"], "targets": ["grp_CPU"], "labels": [{"text": "P0_WDMA\u2192input | 1920\u00d71080 | YUV420 | 10bit", "width": 252, "height": 14}]}, {"id": "em_5", "sources": ["grp_ISP"], "targets": ["grp_CPU"], "labels": [{"text": "P1_WDMA\u2192input | 1920\u00d71080 | YUV420 | 10bit", "width": 252, "height": 14}]}, {"id": "em_6", "sources": ["grp_CPU"], "targets": ["grp_CODEC"], "labels": [{"text": "M2M", "width": 30, "height": 14}]}, {"id": "em_7", "sources": ["grp_CPU"], "targets": ["grp_DPU"], "labels": [{"text": "M2M", "width": 30, "height": 14}]}]};
+const M={"grp_Sensor": {"type": "group_box", "label": "Sensor\\n(HP2)", "color": "#E3F2FD"}, "grp_ISP": {"type": "group_box", "label": "ISP\\n(CSIS_LINK, CSIS, PDP, PREP, CSTAT, BYRP, RGBP, MLSC, MTNR0, MTNR1, MSNR, YUVP, MCSC)", "color": "#E8F5E9"}, "grp_CODEC": {"type": "group_box", "label": "CODEC\\n(MFC)", "color": "#FFF3E0"}, "grp_DPU": {"type": "group_box", "label": "DPU\\n(DPU)", "color": "#F3E5F5"}, "grp_CPU": {"type": "group_box", "label": "CPU\\n(CPU_MID_Clustor)", "color": "#ECEFF1"}, "eo_0": {"type": "otf", "label": "OTF"}, "em_1": {"type": "m2m", "label": "M2M"}, "em_2": {"type": "m2m", "label": "M2M"}, "em_3": {"type": "m2m", "label": "M2M"}, "em_4": {"type": "m2m", "label": "P0_WDMA\u2192input | 1920\u00d71080 | YUV420 | 10bit"}, "em_5": {"type": "m2m", "label": "P1_WDMA\u2192input | 1920\u00d71080 | YUV420 | 10bit"}, "em_6": {"type": "m2m", "label": "M2M"}, "em_7": {"type": "m2m", "label": "M2M"}};
+const NS='http://www.w3.org/2000/svg';
+/* Map of node id -> absolute position {x,y} built during first pass */
+const NP={};
+
+function ce(t,a){const e=document.createElementNS(NS,t);if(a)Object.entries(a).forEach(([k,v])=>e.setAttribute(k,v));return e}
+
+async function main(){
+  try{
+  const elk=new ELK();
+  const layout=await elk.layout(G);
+  const pad=30;
+  const totalW=layout.width+pad*2, totalH=layout.height+pad*2;
+  /* Use viewBox for scalability; clamp display size for very large diagrams */
+  const dispW=Math.min(totalW,window.innerWidth-40);
+  const dispH=Math.min(totalH,window.innerHeight-80);
+  const svg=ce('svg',{width:dispW,height:dispH,viewBox:`0 0 ${totalW} ${totalH}`});
+  const gMain=ce('g',{transform:`translate(${pad},${pad})`});
+  svg.appendChild(gMain);
+  /* Pass 1: collect absolute positions for all nodes */
+  collectPositions(layout,0,0);
+  /* Pass 2: draw nodes and edges */
+  drawNode(gMain,layout,0,0);
+  // zoom/pan
+  let scale=1,tx=0,ty=0;
+  function updateTx(){gMain.setAttribute('transform',`translate(${tx+pad},${ty+pad}) scale(${scale})`)}
+  svg.addEventListener('wheel',e=>{e.preventDefault();const d=e.deltaY>0?0.9:1.1;const ns=Math.max(0.2,Math.min(5,scale*d));const r=ns/scale;tx=e.offsetX-(e.offsetX-tx)*r;ty=e.offsetY-(e.offsetY-ty)*r;scale=ns;updateTx()});
+  let drag=false,sx,sy;
+  svg.addEventListener('mousedown',e=>{drag=true;sx=e.clientX-tx;sy=e.clientY-ty});
+  svg.addEventListener('mousemove',e=>{if(!drag)return;tx=e.clientX-sx;ty=e.clientY-sy;updateTx()});
+  svg.addEventListener('mouseup',()=>drag=false);
+  svg.addEventListener('mouseleave',()=>drag=false);
+  document.getElementById('canvas').appendChild(svg);
+  }catch(err){
+    document.getElementById('canvas').innerHTML=
+      '<p style="color:red;padding:20px">ELK layout error: '+err.message+'</p>';
+    console.error('ELK layout failed:',err);
+  }
+}
+
+/* Recursively collect absolute positions of every node */
+function collectPositions(node,ox,oy){
+  const x=(node.x||0)+ox, y=(node.y||0)+oy;
+  NP[node.id]={x,y};
+  (node.children||[]).forEach(c=>collectPositions(c,x,y));
+}
+
+function drawNode(g,node,ox,oy){
+  const x=(node.x||0)+ox, y=(node.y||0)+oy;
+  const m=M[node.id];
+  if(node.width&&m){
+    // rect
+    const isGrpBox=m.type==='group_box';
+    const rr=m.type==='group'?8:m.type==='ip'?6:isGrpBox?10:3;
+    const sw=m.type==='group'||isGrpBox?1.5:1;
+    const fo=m.type==='group'?'0.55':isGrpBox?'0.7':'1';
+    const sc=m.type==='m2m'?'#E65100':'#999';
+    const r=ce('rect',{x,y,width:node.width,height:node.height,rx:rr,ry:rr,
+      fill:m.color||'#fff','fill-opacity':fo,stroke:sc,'stroke-width':sw});
+    g.appendChild(r);
+    // label
+    const lines=(m.label||'').split('\\n');
+    if(m.type==='group'||m.type==='ip'){
+      const fs=m.type==='group'?13:11;
+      const t=ce('text',{x:x+8,y:y+16,'font-size':fs,'font-weight':'bold',fill:'#333'});
+      t.textContent=lines[0];g.appendChild(t);
+    }else if(m.type==='group_box'){
+      // Group box: centered bold name + smaller IP list
+      const t=ce('text',{x:x+node.width/2,y:y+22,'text-anchor':'middle','font-size':14,'font-weight':'bold',fill:'#333'});
+      t.textContent=lines[0];g.appendChild(t);
+      if(lines.length>1){
+        const t2=ce('text',{x:x+node.width/2,y:y+40,'text-anchor':'middle','font-size':9,fill:'#666'});
+        t2.textContent=lines[1];g.appendChild(t2);
+      }
+    }else if(m.type==='mod'){
+      const t=ce('text',{x:x+node.width/2,y:y+12,'text-anchor':'middle','font-size':9,fill:'#333'});
+      t.textContent=m.label;g.appendChild(t);
+      if(m.sub){
+        const t2=ce('text',{x:x+node.width/2,y:y+23,'text-anchor':'middle','font-size':8,fill:'#666'});
+        t2.textContent=m.sub;g.appendChild(t2);
+      }
+    }else{
+      lines.forEach((ln,i)=>{
+        const t=ce('text',{x:x+node.width/2,y:y+node.height/2+4+(i-(lines.length-1)/2)*14,
+          'text-anchor':'middle','font-size':11,fill:'#333'});
+        if(i===0)t.setAttribute('font-weight','bold');
+        t.textContent=ln;g.appendChild(t);
+      });
+    }
+  }
+  (node.children||[]).forEach(c=>drawNode(g,c,x,y));
+  /* Use the edge's container property (set by ELK.js) to determine the
+     correct offset. With INCLUDE_CHILDREN, ELK may reassign edges to
+     their LCA container, making coordinates relative to that container
+     rather than the node whose edges array holds them. */
+  (node.edges||[]).forEach(e=>{
+    const cid=e.container||node.id;
+    const cp=NP[cid]||{x:0,y:0};
+    drawEdge(g,e,cp.x,cp.y);
+  });
+}
+
+function drawEdge(g,edge,ox,oy){
+  if(!edge.sections)return;
+  const m=M[edge.id]||{};
+  const isOtf=m.type==='otf';
+  const isM2m=m.type==='m2m';
+  const color=isOtf?'#1565C0':isM2m?'#E65100':'#999';
+  const sw=isOtf?2.5:isM2m?2:1;
+  const dash=isM2m?'6,3':'';
+
+  edge.sections.forEach(s=>{
+    const pts=[s.startPoint,...(s.bendPoints||[]),s.endPoint];
+    const d=pts.map((p,i)=>`${i?'L':'M'}${p.x+ox},${p.y+oy}`).join(' ');
+    const attrs={d,stroke:color,'stroke-width':sw,fill:'none'};
+    if(dash)attrs['stroke-dasharray']=dash;
+    g.appendChild(ce('path',attrs));
+    // arrow
+    const L=pts[pts.length-1],P=pts[pts.length-2];
+    const a=Math.atan2(L.y-P.y,L.x-P.x),sz=6;
+    const ax=L.x+ox,ay=L.y+oy;
+    g.appendChild(ce('polygon',{
+      points:`${ax},${ay} ${ax-sz*Math.cos(a-.45)},${ay-sz*Math.sin(a-.45)} ${ax-sz*Math.cos(a+.45)},${ay-sz*Math.sin(a+.45)}`,
+      fill:color}));
+  });
+  // edge label
+  if(edge.labels&&edge.labels.length){
+    const lb=edge.labels[0];
+    if(lb.x!==undefined){
+      const bg=ce('rect',{x:lb.x+ox-2,y:lb.y+oy-1,width:lb.width+4,height:lb.height+2,
+        rx:3,fill:'white','fill-opacity':'0.85',stroke:color,'stroke-width':0.5});
+      g.appendChild(bg);
+      const t=ce('text',{x:lb.x+ox+lb.width/2,y:lb.y+oy+11,
+        'text-anchor':'middle','font-size':9,fill:color,'font-weight':'bold'});
+      t.textContent=m.label||'';g.appendChild(t);
+    }
+  }
+}
+
+main();
+</script></body></html>
