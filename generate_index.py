@@ -25,21 +25,47 @@ REPORT_PATTERN = re.compile(
 
 # Suffixes we care about (display name → file suffix)
 SUFFIX_LABELS = {
-    'simulation_result.html': '📊 Simulation Report',
-    'simulation_result.md': '📝 Simulation (MD)',
-    'exploration_result.html': '🔍 Exploration Report',
-    'exploration_result.md': '📝 Exploration (MD)',
-    'timing_chart.html': '⏱ Timing Chart',
-    'bw_chart.html': '📈 BW Chart',
-    'timing_chart.png': '🖼 Timing PNG',
-    'bw_chart.png': '🖼 BW PNG',
-    'top_view.html': '🏗 Top View',
-    'level1_view.html': '🏗 Level 1 View',
-    'level2_view.html': '🏗 Level 2 View',
-    'level3_view.html': '🏗 Level 3 View',
-    'task_topology_view.html': '🔗 Task Topology',
-    'results.csv': '📋 CSV Results',
-    'trace.json': '🔬 Perfetto Trace',
+    'simulation_result.html': 'Simulation',
+    'simulation_result.md': 'Simulation (MD)',
+    'exploration_result.html': 'Exploration',
+    'exploration_result.md': 'Exploration (MD)',
+    'timing_chart.html': 'Timing',
+    'bw_chart.html': 'Bandwidth',
+    'timing_chart.png': 'Timing PNG',
+    'bw_chart.png': 'BW PNG',
+    'top_view.html': 'Top',
+    'level1_view.html': 'Level 1',
+    'level2_view.html': 'Level 2',
+    'level3_view.html': 'Level 3',
+    'task_topology_view.html': 'Task Topology',
+    'results.csv': 'CSV Results',
+    'trace.json': 'Perfetto Trace',
+}
+
+# Category mapping: suffix → category
+CATEGORY_MAP = {
+    'simulation_result.html': 'REPORTS',
+    'simulation_result.md': 'REPORTS',
+    'exploration_result.html': 'REPORTS',
+    'exploration_result.md': 'REPORTS',
+    'top_view.html': 'VIEWS',
+    'level1_view.html': 'VIEWS',
+    'level2_view.html': 'VIEWS',
+    'level3_view.html': 'VIEWS',
+    'task_topology_view.html': 'VIEWS',
+    'timing_chart.html': 'CHARTS',
+    'bw_chart.html': 'CHARTS',
+    'timing_chart.png': 'CHARTS',
+    'bw_chart.png': 'CHARTS',
+    'results.csv': 'REPORTS',
+    'trace.json': 'REPORTS',
+}
+
+CATEGORY_ORDER = ['REPORTS', 'VIEWS', 'CHARTS']
+CATEGORY_CSS = {
+    'REPORTS': 'cat-reports',
+    'VIEWS': 'cat-views',
+    'CHARTS': 'cat-charts',
 }
 
 
@@ -143,7 +169,9 @@ def generate_html(grouped: dict, reports_dir: str) -> str:
             html.append(f"<h3>{scenario}</h3>")
             html.append("<table>")
             html.append("<thead><tr>")
-            html.append("<th>Date/Time</th><th>Writer</th><th>Reports</th>")
+            html.append("<th>Date/Time</th><th>Writer</th>")
+            for cat in CATEGORY_ORDER:
+                html.append(f"<th>{cat}</th>")
             html.append("</tr></thead>")
             html.append("<tbody>")
             
@@ -153,17 +181,23 @@ def generate_html(grouped: dict, reports_dir: str) -> str:
                 ts = files[0]['timestamp']
                 writer = files[0]['writer']
                 
-                # Build links
-                links = []
+                # Group links by category
+                cat_links = {cat: [] for cat in CATEGORY_ORDER}
                 for f in sorted(files, key=lambda x: x['suffix']):
+                    cat = CATEGORY_MAP.get(f['suffix'], 'REPORTS')
                     label = SUFFIX_LABELS.get(f['suffix'], f['suffix'])
                     rel_path = f"reports/{f['project']}/{f['filename']}"
-                    links.append(f"<a href='{rel_path}' class='report-link'>{label}</a>")
+                    css_cls = CATEGORY_CSS.get(cat, 'cat-reports')
+                    cat_links[cat].append(
+                        f"<a href='{rel_path}' class='report-link {css_cls}'>{label}</a>"
+                    )
                 
                 html.append("<tr>")
                 html.append(f"<td class='ts'>{format_timestamp(ts)}</td>")
                 html.append(f"<td class='writer'>{writer}</td>")
-                html.append(f"<td class='links'>{' '.join(links)}</td>")
+                for cat in CATEGORY_ORDER:
+                    links_html = ' '.join(cat_links[cat]) if cat_links[cat] else '—'
+                    html.append(f"<td class='links'>{links_html}</td>")
                 html.append("</tr>")
             
             html.append("</tbody></table>")
@@ -235,12 +269,14 @@ tr:hover td { background: var(--surface2); }
 .writer { font-weight: 600; color: var(--accent2); }
 .links { display: flex; flex-wrap: wrap; gap: 6px; }
 .report-link {
-    color: var(--link); text-decoration: none;
-    background: var(--badge-bg); padding: 3px 10px;
+    text-decoration: none; padding: 3px 10px;
     border-radius: 6px; font-size: 0.8em; white-space: nowrap;
     transition: background 0.2s;
 }
-.report-link:hover { background: #1f6feb55; text-decoration: none; }
+.report-link:hover { filter: brightness(1.3); text-decoration: none; }
+.cat-reports { color: #f97583; background: #f9758322; }
+.cat-views { color: #79c0ff; background: #79c0ff22; }
+.cat-charts { color: #56d364; background: #56d36422; }
 .empty { color: var(--text-muted); font-style: italic; padding: 40px; text-align: center; }
 @media (max-width: 768px) {
     .links { flex-direction: column; }
