@@ -13,6 +13,7 @@
 # - Task workloads and IP mode selection
 
 name: "FHD30_Recording"
+writer: "YHJOO"
 num_frames: 1  # Multi-frame simulation (default: 1)
 asv_group: 4   # ASV group for DVFS voltage lookup (default: 4)
 sw_margin: 0.25  # SW margin for clock calculation (15% = 1.15x required clock)
