@@ -10,6 +10,7 @@ import argparse
 import io
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Dict
 
@@ -1021,12 +1022,15 @@ def main():
     # Apply scenario settings to HW nodes
     apply_scenario_settings(hw_registry, scenario_config, resolved_sensor=resolved_sensor)
 
-    # ── Derive output prefix: {project}_{scenario}_ ──
+    # ── Derive output prefix: {project}-{scenario}-{YYYYMMDD-HHMMSS}-{writer}_ ──
     # Project name from hw_config filename (e.g., projectA_hw.yaml → projectA)
     hw_basename = os.path.splitext(os.path.basename(hw_config_path))[0]
     project_name = hw_basename.replace('_hw', '')
     scenario_name = scenario.name.replace(' ', '_')
-    output_prefix = f"{project_name}_{scenario_name}_"
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    scenario_data_for_writer = scenario_config.get('scenario', scenario_config)
+    writer = scenario_data_for_writer.get('writer', 'anonymous')
+    output_prefix = f"{project_name}-{scenario_name}-{timestamp}-{writer}_"
 
     # ── CSV-based HW Info Integration ──────────────────────────
     resolved_configs = None
@@ -1120,22 +1124,22 @@ def main():
         )
         os.makedirs(args.output_view_dir, exist_ok=True)
         # HTML views
-        top_path = os.path.join(args.output_view_dir, f"{output_prefix}top.html")
-        l1_path = os.path.join(args.output_view_dir, f"{output_prefix}level1.html")
-        l2_path = os.path.join(args.output_view_dir, f"{output_prefix}level2.html")
-        l3_path = os.path.join(args.output_view_dir, f"{output_prefix}level3.html")
-        topo_html = os.path.join(args.output_view_dir, f"{output_prefix}task_topology.html")
+        top_path = os.path.join(args.output_view_dir, f"{output_prefix}top_view.html")
+        l1_path = os.path.join(args.output_view_dir, f"{output_prefix}level1_view.html")
+        l2_path = os.path.join(args.output_view_dir, f"{output_prefix}level2_view.html")
+        l3_path = os.path.join(args.output_view_dir, f"{output_prefix}level3_view.html")
+        topo_html = os.path.join(args.output_view_dir, f"{output_prefix}task_topology_view.html")
         generate_top_html(hw_registry, scenario, top_path)
         generate_level1_html(hw_registry, scenario, l1_path)
         generate_level2_html(hw_registry, scenario, hw_raw, l2_path)
         generate_level3_html(hw_registry, scenario, hw_raw, l3_path)
         generate_task_topology_html(hw_registry, scenario, topo_html)
         # PlantUML views
-        puml_top = os.path.join(args.output_view_dir, f"{output_prefix}top.puml")
-        puml_l1 = os.path.join(args.output_view_dir, f"{output_prefix}level1.puml")
-        puml_l2 = os.path.join(args.output_view_dir, f"{output_prefix}level2.puml")
-        puml_l3 = os.path.join(args.output_view_dir, f"{output_prefix}level3.puml")
-        puml_topo = os.path.join(args.output_view_dir, f"{output_prefix}task_topology.puml")
+        puml_top = os.path.join(args.output_view_dir, f"{output_prefix}top_view.puml")
+        puml_l1 = os.path.join(args.output_view_dir, f"{output_prefix}level1_view.puml")
+        puml_l2 = os.path.join(args.output_view_dir, f"{output_prefix}level2_view.puml")
+        puml_l3 = os.path.join(args.output_view_dir, f"{output_prefix}level3_view.puml")
+        puml_topo = os.path.join(args.output_view_dir, f"{output_prefix}task_topology_view.puml")
         generate_top_view(hw_registry, scenario, puml_top)
         generate_level1(hw_registry, scenario, puml_l1)
         generate_level2(hw_registry, scenario, hw_raw, puml_l2)
@@ -1211,6 +1215,7 @@ def main():
         csv_path = os.path.join(args.output_sim_dir, f"{output_prefix}results.csv")
         monitor.export_csv(csv_path)
         print(f"Results exported to: {csv_path}")
+        vprint(f"  (prefix: {output_prefix.rstrip('_')})")
 
     if do_gantt:
         visualizer = Visualizer()
@@ -1247,14 +1252,14 @@ def main():
         hw_order = sw_group_order + hw_order
         fig = visualizer.create_gantt_chart_ms(df, title=results.scenario_name, hw_order=hw_order, scenario=scenario)
         if fig:
-            gantt_path = os.path.join(args.output_sim_dir, f"{output_prefix}gantt.html")
+            gantt_path = os.path.join(args.output_sim_dir, f"{output_prefix}timing_chart.html")
             visualizer.save_gantt(fig, gantt_path)
-            print(f"Gantt chart saved to: {gantt_path}")
+            print(f"Timing chart saved to: {gantt_path}")
             # PNG export
-            gantt_png = os.path.join(args.output_sim_dir, f"{output_prefix}gantt.png")
+            gantt_png = os.path.join(args.output_sim_dir, f"{output_prefix}timing_chart.png")
             try:
                 fig.write_image(gantt_png, width=1920, height=1080, scale=2)
-                print(f"Gantt chart PNG saved to: {gantt_png}")
+                print(f"Timing chart PNG saved to: {gantt_png}")
             except Exception as e:
                 print(f"[Warning] PNG export failed (pip install kaleido): {e}")
 
@@ -1263,6 +1268,7 @@ def main():
         json_path = os.path.join(args.output_sim_dir, f"{output_prefix}trace.json")
         visualizer.export_perfetto_json(results, json_path)
         print(f"Trace exported to: {json_path}")
+        vprint(f"  (prefix: {output_prefix.rstrip('_')})")
 
     if do_bw:
         visualizer = Visualizer()
@@ -1270,11 +1276,11 @@ def main():
                                             title=f"{scenario.name} - Bandwidth Timeline",
                                             hw_registry=hw_registry)
         if bw_fig:
-            bw_path = os.path.join(args.output_sim_dir, f"{output_prefix}bw.html")
+            bw_path = os.path.join(args.output_sim_dir, f"{output_prefix}bw_chart.html")
             visualizer.save_gantt(bw_fig, bw_path)
             print(f"BW chart saved to: {bw_path}")
             # PNG export
-            bw_png = os.path.join(args.output_sim_dir, f"{output_prefix}bw.png")
+            bw_png = os.path.join(args.output_sim_dir, f"{output_prefix}bw_chart.png")
             try:
                 bw_fig.write_image(bw_png, width=1920, height=1080, scale=2)
                 print(f"BW chart PNG saved to: {bw_png}")
@@ -1286,10 +1292,10 @@ def main():
         from src.view.report_generator import ReportGenerator
         # Collect chart file links (relative to output dir)
         chart_links = {}
-        gantt_file = os.path.join(args.output_sim_dir, f"{output_prefix}gantt.html")
-        bw_file = os.path.join(args.output_sim_dir, f"{output_prefix}bw.html")
+        gantt_file = os.path.join(args.output_sim_dir, f"{output_prefix}timing_chart.html")
+        bw_file = os.path.join(args.output_sim_dir, f"{output_prefix}bw_chart.html")
         if os.path.exists(gantt_file):
-            chart_links['Gantt Chart'] = gantt_file
+            chart_links['Timing Chart'] = gantt_file
         if os.path.exists(bw_file):
             chart_links['BW Chart'] = bw_file
         rgen = ReportGenerator(
@@ -1301,12 +1307,12 @@ def main():
             link_files=chart_links,
             hw_info_db=hw_info_db,
         )
-        report_html = os.path.join(args.output_sim_dir, f"{output_prefix}report.html")
-        report_md = os.path.join(args.output_sim_dir, f"{output_prefix}report.md")
+        report_html = os.path.join(args.output_sim_dir, f"{output_prefix}simulation_result.html")
+        report_md = os.path.join(args.output_sim_dir, f"{output_prefix}simulation_result.md")
         rgen.save_html(report_html)
         rgen.save_markdown(report_md)
-        print(f"Report saved to: {report_html}")
-        print(f"Report saved to: {report_md}")
+        print(f"Simulation report saved to: {report_html}")
+        print(f"Simulation report saved to: {report_md}")
 
 
 if __name__ == "__main__":

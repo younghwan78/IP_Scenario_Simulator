@@ -90,33 +90,116 @@ python main.py -hw ... -sc ... --hw-info ... --hw-dvfs ... --bw
 
 ## Output Structure
 
+파일명 규칙: `{project}-{scenario}-{YYYYMMDD-HHMMSS}-{writer}_suffix.ext`
+- `writer`: scenario YAML의 `writer` 필드 (기본값: `anonymous`)
+- 알파벳순 정렬 시 **프로젝트 → 시나리오 → 날짜순** 자동 정렬
+
 ```
 output_view/
-  {project}_{scenario}_top.html             # Top-level block diagram (ELK.js)
-  {project}_{scenario}_level1.html          # IP-level detail (ELK.js)
-  {project}_{scenario}_level2.html          # Module-level detail (ELK.js, color-coded)
-  {project}_{scenario}_level3.html          # Connection detail (ELK.js)
-  {project}_{scenario}_task_topology.html    # Task DAG topology (ELK.js)
-  {project}_{scenario}_top.puml             # PlantUML top view
-  {project}_{scenario}_level1.puml          # PlantUML level 1
-  {project}_{scenario}_level2.puml          # PlantUML level 2
-  {project}_{scenario}_level3.puml          # PlantUML level 3
-  {project}_{scenario}_task_topology.puml   # PlantUML task topology
+  {prefix}top_view.html              # Top-level block diagram (ELK.js)
+  {prefix}level1_view.html           # IP-level detail (ELK.js)
+  {prefix}level2_view.html           # Module-level detail (ELK.js, color-coded)
+  {prefix}level3_view.html           # Connection detail (ELK.js)
+  {prefix}task_topology_view.html    # Task DAG topology (ELK.js)
+  {prefix}top_view.puml              # PlantUML top view
+  {prefix}level1_view.puml           # PlantUML level 1
+  {prefix}level2_view.puml           # PlantUML level 2
+  {prefix}level3_view.puml           # PlantUML level 3
+  {prefix}task_topology_view.puml    # PlantUML task topology
 
 output_simulation/
-  {project}_{scenario}_gantt.html           # Gantt chart (Plotly CDN, ~11KB)
-  {project}_{scenario}_gantt.png            # Gantt chart PNG (kaleido)
-  {project}_{scenario}_bw.html              # BW timeline chart (Plotly CDN)
-  {project}_{scenario}_bw.png               # BW chart PNG (kaleido)
-  {project}_{scenario}_report.html          # Simulation report (pastel style)
-  {project}_{scenario}_report.md            # Simulation report (Markdown)
-  {project}_{scenario}_results.csv          # Simulation results
-  {project}_{scenario}_trace.json           # Perfetto trace format
+  {prefix}timing_chart.html          # Gantt chart (Plotly CDN)
+  {prefix}timing_chart.png           # Gantt chart PNG (kaleido)
+  {prefix}bw_chart.html              # BW timeline chart (Plotly CDN)
+  {prefix}bw_chart.png               # BW chart PNG (kaleido)
+  {prefix}simulation_result.html     # Simulation report (pastel style)
+  {prefix}simulation_result.md       # Simulation report (Markdown)
+  {prefix}results.csv                # Simulation results
+  {prefix}trace.json                 # Perfetto trace format
 
-output_exploration/                           # --explore flag
-  {project}_{scenario}_exploration.html     # Exploration report (HTML, SVG chart)
-  {project}_{scenario}_exploration.md       # Exploration report (Markdown)
+output_exploration/                    # --explore flag
+  {prefix}exploration_result.html    # Exploration report (HTML, SVG chart)
+  {prefix}exploration_result.md      # Exploration report (Markdown)
 ```
+
+> `{prefix}` = `projectA-FHD30_Recording-20260218-014100-YHJOO_`
+
+## GitHub Pages Report Publishing
+
+시뮬레이션 리포트를 GitHub Pages에 **선택적으로** 누적 배포하는 워크플로우입니다.
+각자 PC에서 리포트를 push하면 **GitHub Action이 index.html을 자동 생성**합니다.
+
+> **Jekyll 불필요** — 순수 HTML 배포 (`docs/.nojekyll` 포함)
+
+### Workflow (각 사용자)
+
+```
+1. 시뮬레이션 실행
+   python main.py -hw ... -sc ...
+
+2. 결과 확인 후 docs/reports/에 복사
+   python publish_report.py                          # 전체 publish
+   python publish_report.py --filter "20260218"      # 특정 날짜만
+   python publish_report.py --dry-run                # 미리보기
+
+3. 리포트만 commit & push (index.html은 커밋하지 않음!)
+   git add docs/reports/
+   git commit -m "Add simulation reports"
+   git push
+
+4. GitHub Action 자동 실행
+   → index.html 재생성 → GitHub Pages 배포
+```
+
+> ⚠ **`docs/index.html`은 로컬에서 커밋하지 마세요!** GitHub Action이 자동 생성합니다.  
+> 여러 사람이 동시에 push해도 index.html 충돌 없이 안전합니다.
+
+### Scenario YAML에 Writer 추가
+
+```yaml
+name: "FHD30_Recording"
+writer: "YHJOO"          # 리포트 파일명에 포함 (기본값: anonymous)
+```
+
+### Report Publishing 도구
+
+| Script | 설명 |
+|--------|------|
+| `publish_report.py` | output_*/에서 docs/reports/{project}/로 리포트 복사 |
+| `generate_index.py` | docs/reports/ 스캔 후 docs/index.html 생성 (Action용) |
+
+```bash
+# 전체 publish
+python publish_report.py
+
+# 특정 실행만 publish
+python publish_report.py --filter "YHJOO"
+
+# 미리보기
+python publish_report.py --dry-run
+
+# 로컬에서 index 미리 확인하고 싶을 때 (커밋하지 않음)
+python publish_report.py --local-index
+```
+
+### GitHub Pages 디렉토리 구조
+
+```
+docs/
+├── .nojekyll                      ← Jekyll 비활성화
+├── index.html                     ← GitHub Action이 자동 생성 (dark theme)
+└── reports/
+    └── projectA/                  ← 각 사용자가 push
+        ├── projectA-FHD30_Recording-20260218-014100-YHJOO_simulation_result.html
+        ├── projectA-FHD30_Recording-20260217-100000-hanjun_simulation_result.html
+        └── ...
+```
+
+### GitHub Pages 설정
+
+1. Repository Settings → Pages → Source: **GitHub Actions**
+2. `.github/workflows/deploy-reports.yml`이 `docs/reports/` 변경 시 자동 배포
+3. Jekyll 설정 불필요 (`docs/.nojekyll` 포함)
 
 ## Project Structure
 
@@ -151,6 +234,10 @@ output_exploration/                           # --explore flag
 │   └── exploration_FHD30.yaml  # Exploration sweep config
 ├── tests/                    # Unit & Integration tests (131 tests)
 ├── main.py                   # Entry point
+├── generate_index.py         # GitHub Pages index.html generator
+├── publish_report.py         # Report publishing helper
+├── .github/workflows/
+│   └── deploy-reports.yml    # GitHub Pages auto-deploy
 ├── DESIGN.md                 # Design document
 └── requirements.txt          # Dependencies
 ```

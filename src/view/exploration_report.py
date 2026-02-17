@@ -549,8 +549,8 @@ table.comparison th { position: sticky; top: 0; z-index: 1; }
         """Save HTML and MD reports. Returns dict of output paths."""
         os.makedirs(output_dir, exist_ok=True)
 
-        html_path = os.path.join(output_dir, f"{base_name}_exploration.html")
-        md_path = os.path.join(output_dir, f"{base_name}_exploration.md")
+        html_path = os.path.join(output_dir, f"{base_name}_exploration_result.html")
+        md_path = os.path.join(output_dir, f"{base_name}_exploration_result.md")
 
         with open(html_path, 'w', encoding='utf-8') as f:
             f.write(self.generate_html())
