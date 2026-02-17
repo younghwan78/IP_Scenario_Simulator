@@ -63,12 +63,14 @@ tr:hover td { background: var(--surface2); }
 .writer { font-weight: 600; color: var(--accent2); }
 .links { display: flex; flex-wrap: wrap; gap: 6px; }
 .report-link {
-    color: var(--link); text-decoration: none;
-    background: var(--badge-bg); padding: 3px 10px;
+    text-decoration: none; padding: 3px 10px;
     border-radius: 6px; font-size: 0.8em; white-space: nowrap;
     transition: background 0.2s;
 }
-.report-link:hover { background: #1f6feb55; text-decoration: none; }
+.report-link:hover { filter: brightness(1.3); text-decoration: none; }
+.cat-reports { color: #f97583; background: #f9758322; }
+.cat-views { color: #79c0ff; background: #79c0ff22; }
+.cat-charts { color: #56d364; background: #56d36422; }
 .empty { color: var(--text-muted); font-style: italic; padding: 40px; text-align: center; }
 @media (max-width: 768px) {
     .links { flex-direction: column; }
@@ -80,7 +82,7 @@ tr:hover td { background: var(--surface2); }
 <div class='container'>
 <header>
 <h1>📊 IP Scenario Simulator — Reports</h1>
-<p class='updated'>Last updated: 2026-02-17 17:23:55</p>
+<p class='updated'>Last updated: 2026-02-17 17:29:46</p>
 </header>
 <nav>
 <h2>Projects</h2>
@@ -93,13 +95,18 @@ tr:hover td { background: var(--surface2); }
 <h3>FHD30_Recording</h3>
 <table>
 <thead><tr>
-<th>Date/Time</th><th>Writer</th><th>Reports</th>
+<th>Date/Time</th><th>Writer</th>
+<th>REPORTS</th>
+<th>VIEWS</th>
+<th>CHARTS</th>
 </tr></thead>
 <tbody>
 <tr>
 <td class='ts'>2026-02-18 02:20:57</td>
 <td class='writer'>YHJOO</td>
-<td class='links'><a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_bw_chart.html' class='report-link'>📈 BW Chart</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_level1_view.html' class='report-link'>🏗 Level 1 View</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_level2_view.html' class='report-link'>🏗 Level 2 View</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_level3_view.html' class='report-link'>🏗 Level 3 View</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_simulation_result.html' class='report-link'>📊 Simulation Report</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_task_topology_view.html' class='report-link'>🔗 Task Topology</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_timing_chart.html' class='report-link'>⏱ Timing Chart</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_top_view.html' class='report-link'>🏗 Top View</a></td>
+<td class='links'><a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_simulation_result.html' class='report-link cat-reports'>Simulation</a></td>
+<td class='links'><a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_level1_view.html' class='report-link cat-views'>Level 1</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_level2_view.html' class='report-link cat-views'>Level 2</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_level3_view.html' class='report-link cat-views'>Level 3</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_task_topology_view.html' class='report-link cat-views'>Task Topology</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_top_view.html' class='report-link cat-views'>Top</a></td>
+<td class='links'><a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_bw_chart.html' class='report-link cat-charts'>Bandwidth</a> <a href='reports/projectA/projectA-FHD30_Recording-20260218-022057-YHJOO_timing_chart.html' class='report-link cat-charts'>Timing</a></td>
 </tr>
 </tbody></table>
 </section>
