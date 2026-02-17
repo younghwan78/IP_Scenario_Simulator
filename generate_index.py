@@ -167,13 +167,6 @@ def generate_html(grouped: dict, reports_dir: str) -> str:
         for scenario in sorted(scenarios.keys()):
             runs = scenarios[scenario]
             html.append(f"<h3>{scenario}</h3>")
-            html.append("<table>")
-            html.append("<thead><tr>")
-            html.append("<th>Date/Time</th><th>Writer</th>")
-            for cat in CATEGORY_ORDER:
-                html.append(f"<th>{cat}</th>")
-            html.append("</tr></thead>")
-            html.append("<tbody>")
             
             # Sort by timestamp descending (newest first)
             for run_key in sorted(runs.keys(), reverse=True):
@@ -192,15 +185,18 @@ def generate_html(grouped: dict, reports_dir: str) -> str:
                         f"<a href='{rel_path}' class='report-link {css_cls}'>{label}</a>"
                     )
                 
-                html.append("<tr>")
-                html.append(f"<td class='ts'>{format_timestamp(ts)}</td>")
-                html.append(f"<td class='writer'>{writer}</td>")
+                html.append("<div class='run-card'>")
+                html.append(f"<div class='run-header'>"
+                           f"<span class='ts'>{format_timestamp(ts)}</span>"
+                           f"<span class='writer'>{writer}</span>"
+                           f"</div>")
                 for cat in CATEGORY_ORDER:
-                    links_html = ' '.join(cat_links[cat]) if cat_links[cat] else '—'
-                    html.append(f"<td class='links'>{links_html}</td>")
-                html.append("</tr>")
-            
-            html.append("</tbody></table>")
+                    if cat_links[cat]:
+                        html.append(f"<div class='cat-row'>")
+                        html.append(f"<span class='cat-label {CATEGORY_CSS[cat]}'>{cat}</span>")
+                        html.append(f"<span class='cat-links'>{' '.join(cat_links[cat])}</span>")
+                        html.append(f"</div>")
+                html.append("</div>")
         
         html.append("</section>")
     
@@ -256,21 +252,28 @@ section {
 }
 h2 { font-size: 1.25em; color: #f0f6fc; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 h3 { font-size: 1em; color: var(--accent3); margin: 16px 0 8px; }
-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-th, td { vertical-align: top; }
-th {
-    background: var(--surface2); color: var(--text-muted);
-    text-align: left; padding: 8px 12px; font-size: 0.8em;
-    text-transform: uppercase; letter-spacing: 0.05em;
+.run-card {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 16px; margin-bottom: 10px;
+}
+.run-header {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 10px; padding-bottom: 8px;
     border-bottom: 1px solid var(--border);
 }
-th:nth-child(1) { width: 150px; }
-th:nth-child(2) { width: 80px; }
-td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 0.9em; }
-tr:hover td { background: var(--surface2); }
-.ts { white-space: nowrap; color: var(--text-muted); font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.85em; }
-.writer { font-weight: 600; color: var(--accent2); }
-.links { display: flex; flex-wrap: wrap; gap: 6px; }
+.ts { color: var(--text-muted); font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.85em; }
+.writer { font-weight: 600; color: var(--accent2); font-size: 0.9em; }
+.cat-row {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 4px 0;
+}
+.cat-label {
+    min-width: 80px; font-size: 0.75em; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 3px 8px; border-radius: 4px; text-align: center;
+    flex-shrink: 0;
+}
+.cat-links { display: flex; flex-wrap: wrap; gap: 6px; }
 .report-link {
     text-decoration: none; padding: 3px 10px;
     border-radius: 6px; font-size: 0.8em; white-space: nowrap;
@@ -282,7 +285,7 @@ tr:hover td { background: var(--surface2); }
 .cat-charts { color: #56d364; background: #56d36422; }
 .empty { color: var(--text-muted); font-style: italic; padding: 40px; text-align: center; }
 @media (max-width: 768px) {
-    .links { flex-direction: column; }
+    .cat-row { flex-direction: column; gap: 4px; }
     nav ul { flex-direction: column; gap: 8px; }
 }
 """
