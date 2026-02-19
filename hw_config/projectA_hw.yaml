@@ -26,6 +26,7 @@
 # CSIS
 - name: "CSIS"
   type: "IP"
+  # instances: ["CSIS0", "CSIS1", "CSIS2", "CSIS3"]  # 복제할 인스턴스 이름 목록 (info.csv 자동 확장)
   ip_group: "CSIS"
   hierarchy_group: "ISP"
   min_size: [64, 64]

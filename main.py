@@ -964,9 +964,28 @@ def main():
             hw_list = hw_config
         else:
             hw_list = hw_config.get('hardware', [])
-        hw_nodes = [create_hw_node(cfg) for cfg in hw_list]
+        # Build HW nodes, expanding 'instances' key if present
+        hw_nodes = []
+        for cfg in hw_list:
+            instances = cfg.get('instances')
+            if instances:
+                for inst_name in instances:
+                    inst_cfg = dict(cfg)
+                    inst_cfg['name'] = inst_name
+                    hw_nodes.append(create_hw_node(inst_cfg))
+            else:
+                hw_nodes.append(create_hw_node(cfg))
         # Keep raw config for Level2 HTML view (module info)
-        hw_raw = {item['name']: item for item in hw_list}
+        hw_raw = {}
+        for item in hw_list:
+            instances = item.get('instances')
+            if instances:
+                for inst_name in instances:
+                    inst_item = dict(item)
+                    inst_item['name'] = inst_name
+                    hw_raw[inst_name] = inst_item
+            else:
+                hw_raw[item['name']] = item
     else:
         vprint("Error: --hw-config required (or set config_paths.hw_config in scenario)")
         return
@@ -1035,11 +1054,13 @@ def main():
     # ── CSV-based HW Info Integration ──────────────────────────
     resolved_configs = None
     if hw_info_path and hw_dvfs_path:
-        from src.model.hw_info import create_hw_info_db
+        from src.model.hw_info import create_hw_info_db, expand_info_with_instances
         from src.model.hw_resolver import HWResolver
 
         vprint("\n[CSV HW Config Loading]")
         hw_info_db = create_hw_info_db(hw_info_path, hw_dvfs_path)
+        # Auto-expand info.csv entries for IPs with 'instances' in hw.yaml
+        expand_info_with_instances(hw_info_db.ip_infos, hw_list)
         vprint(f"  Project: {hw_info_db.project_name}")
         vprint(f"  IPs loaded: {len(hw_info_db.ip_infos)}")
         vprint(f"  DVFS tables loaded: {len(hw_info_db.dvfs_tables)} "

@@ -411,6 +411,39 @@ def load_dvfs_csv(path: str) -> Dict[str, DVFSTable]:
     return dvfs_tables
 
 
+def expand_info_with_instances(ip_infos: Dict[str, List[IPInfo]],
+                                hw_list: list) -> Dict[str, List[IPInfo]]:
+    """Auto-expand ip_infos for IPs with 'instances' key in hw.yaml.
+
+    For each hw.yaml entry that has instances: ["CSIS0", "CSIS1", ...],
+    clone the template IPInfo entries under each instance name.
+    The template entry is removed after expansion.
+
+    Args:
+        ip_infos: Dict of ip_name → list of IPInfo (from load_info_csv)
+        hw_list: Raw hw.yaml list (to detect 'instances' key)
+
+    Returns:
+        Updated ip_infos dict with instance entries
+    """
+    for cfg in hw_list:
+        instances = cfg.get('instances')
+        template_name = cfg.get('name', '')
+        if not instances or template_name not in ip_infos:
+            continue
+        template_entries = ip_infos[template_name]
+        for inst_name in instances:
+            if inst_name not in ip_infos:
+                ip_infos[inst_name] = [
+                    IPInfo(name=inst_name, mode=e.mode, unit_power=e.unit_power,
+                           idc=e.idc, ppc=e.ppc, vdd=e.vdd, dvfs_group=e.dvfs_group)
+                    for e in template_entries
+                ]
+        # Remove template entry (not a real HW instance)
+        del ip_infos[template_name]
+    return ip_infos
+
+
 def create_hw_info_db(info_path: str, dvfs_path: str) -> HWInfoDB:
     """Create HWInfoDB from CSV files.
     
