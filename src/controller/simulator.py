@@ -256,10 +256,11 @@ class SoCSimulator:
                         module.resource = simpy.Resource(self.env, capacity=1)
 
     def _calculate_transfer_size(self, width: int, height: int, fmt: str, 
-                               compression: str, dma_module: DMAModule) -> int:
+                               compression: str, dma_module: DMAModule,
+                               bitwidth: int = 8) -> int:
         """Calculate transfer size based on resolution, format, and compression."""
         bpp = BPP_MAP.get(fmt, BPP_DEFAULT)
-        base_size = width * height * bpp
+        base_size = width * height * (bitwidth / 8) * bpp
         
         # Apply compression ratio if supported
         if compression in dma_module.supported_compressions:
@@ -277,6 +278,7 @@ class SoCSimulator:
         # Resolve Data Size
         fmt = data_config.get('format', 'NV12')
         comp = data_config.get('compression', 'Linear')
+        bitwidth = data_config.get('bitwidth', 8)
         
         width = 0
         height = 0
@@ -291,7 +293,7 @@ class SoCSimulator:
         # 2. Write DMA (Resolve from IP)
         if write_dma_name:
             write_dma = self._resolve_dma_module(src_task_id, write_dma_name)
-            size = self._calculate_transfer_size(width, height, fmt, comp, write_dma)
+            size = self._calculate_transfer_size(width, height, fmt, comp, write_dma, bitwidth)
             
             dma_time = write_dma.get_transfer_time(size)
             
@@ -306,7 +308,7 @@ class SoCSimulator:
         # 3. Read DMA (Resolve from IP)
         if read_dma_name:
             read_dma = self._resolve_dma_module(dst_task_id, read_dma_name)
-            size = self._calculate_transfer_size(width, height, fmt, comp, read_dma)
+            size = self._calculate_transfer_size(width, height, fmt, comp, read_dma, bitwidth)
             
             dma_time = read_dma.get_transfer_time(size)
             

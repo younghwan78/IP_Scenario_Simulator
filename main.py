@@ -650,6 +650,127 @@ def apply_scenario_settings(hw_nodes: Dict[str, HWNode],
                     vprint(f"[Config] Manual clock set for {hw_name}: {clock/1e6:.1f} MHz")
 
 
+def sanity_check_config(hw_registry: dict, hw_raw: dict,
+                        scenario: 'ScenarioGraph',
+                        scenario_config: dict) -> list:
+    """
+    Validate cross-references between hw.yaml and scenario.yaml.
+
+    Checks:
+      1. Every task's mapped_hw exists in hw_registry
+      2. Every edge's port_pairs reference modules that exist in hw_raw
+      3. ip_settings input/output ports reference modules that exist in hw_raw
+
+    Args:
+        hw_registry: HW name → HWNode mapping
+        hw_raw: HW name → raw YAML dict (includes 'modules' list)
+        scenario: ScenarioGraph instance
+        scenario_config: Raw scenario configuration dict
+
+    Returns:
+        List of error strings. Empty if valid.
+    """
+    errors = []
+
+    # Helper: get set of module names for an HW from hw_raw
+    def _hw_module_names(hw_name: str) -> set:
+        raw = hw_raw.get(hw_name, {})
+        return {m.get('name', '') for m in raw.get('modules', [])}
+
+    # 1. Task → HW mapping
+    for task in scenario.get_tasks():
+        if task.is_sw_task:
+            continue
+        if task.mapped_hw not in hw_registry:
+            errors.append(
+                f"[Task→HW] Task '{task.task_id}' references HW "
+                f"'{task.mapped_hw}' which is not defined in hw.yaml\n"
+                f"         → Fix: Add '{task.mapped_hw}' to hw.yaml, "
+                f"or fix 'hw' in scenario.yaml tasks/ip_blocks"
+            )
+
+    # 2. Edge port_pairs → module existence
+    for src_id, dst_id, edge_data in scenario.graph.edges(data=True):
+        port_pairs = edge_data.get('port_pairs', [])
+        if not port_pairs or port_pairs[0][0] == 'output':
+            continue  # generic edge, no specific port references
+
+        conn_type = edge_data.get('conn_type', 'M2M')
+        conn_label = conn_type.value if hasattr(conn_type, 'value') else str(conn_type)
+
+        src_task = scenario.get_task(src_id)
+        dst_task = scenario.get_task(dst_id)
+        if not src_task or not dst_task:
+            errors.append(
+                f"[Edge] Edge '{src_id}'→'{dst_id}' references "
+                f"non-existent task(s)\n"
+                f"         → Fix: Check scenario.yaml edges section"
+            )
+            continue
+
+        src_hw = src_task.mapped_hw
+        dst_hw = dst_task.mapped_hw
+        src_mods = _hw_module_names(src_hw)
+        dst_mods = _hw_module_names(dst_hw)
+
+        for sp, dp in port_pairs:
+            if sp != 'output' and src_mods and sp not in src_mods:
+                errors.append(
+                    f"[Edge Port] {conn_label} edge '{src_id}'→'{dst_id}': "
+                    f"src_port '{sp}' not found in "
+                    f"'{src_hw}' modules {sorted(src_mods)}\n"
+                    f"         → Fix: Check scenario.yaml edges "
+                    f"'src_port: {sp}', or add module '{sp}' to "
+                    f"hw.yaml '{src_hw}.modules'"
+                )
+            if dp != 'input' and dst_mods and dp not in dst_mods:
+                errors.append(
+                    f"[Edge Port] {conn_label} edge '{src_id}'→'{dst_id}': "
+                    f"dst_port '{dp}' not found in "
+                    f"'{dst_hw}' modules {sorted(dst_mods)}\n"
+                    f"         → Fix: Check scenario.yaml edges "
+                    f"'dst_port: {dp}', or add module '{dp}' to "
+                    f"hw.yaml '{dst_hw}.modules'"
+                )
+
+    # 3. ip_settings port → module existence
+    ip_settings = getattr(scenario, '_ip_settings', {})
+    for task_id, settings in ip_settings.items():
+        hw_name = settings.get('hw', '')
+        if not hw_name:
+            continue
+        mods = _hw_module_names(hw_name)
+        if not mods:
+            continue  # HW has no modules defined, skip port check
+
+        for inp in settings.get('inputs', []):
+            port = inp.get('port', '')
+            if port and port not in mods:
+                errors.append(
+                    f"[ip_settings] Task '{task_id}': input port "
+                    f"'{port}' not found in '{hw_name}' modules "
+                    f"{sorted(mods)}\n"
+                    f"         → Fix: Check scenario.yaml "
+                    f"ip_blocks.ip_settings.inputs 'port: {port}', "
+                    f"or add module '{port}' to hw.yaml "
+                    f"'{hw_name}.modules'"
+                )
+        for out in settings.get('outputs', []):
+            port = out.get('port', '')
+            if port and port not in mods:
+                errors.append(
+                    f"[ip_settings] Task '{task_id}': output port "
+                    f"'{port}' not found in '{hw_name}' modules "
+                    f"{sorted(mods)}\n"
+                    f"         → Fix: Check scenario.yaml "
+                    f"ip_blocks.ip_settings.outputs 'port: {port}', "
+                    f"or add module '{port}' to hw.yaml "
+                    f"'{hw_name}.modules'"
+                )
+
+    return errors
+
+
 def run_demo():
     """Run a demonstration with sample configuration."""
     vprint("=" * 60)
@@ -1040,6 +1161,17 @@ def main():
 
     # Apply scenario settings to HW nodes
     apply_scenario_settings(hw_registry, scenario_config, resolved_sensor=resolved_sensor)
+
+    # ── Sanity Check: cross-reference validation ──────────────
+    print("\n[Sanity Check]")
+    sanity_errors = sanity_check_config(hw_registry, hw_raw, scenario, scenario_config)
+    if sanity_errors:
+        print("  ERROR: Configuration sanity check failed:")
+        for err in sanity_errors:
+            print(f"    - {err}")
+        print("\n  Please fix the above errors in hw.yaml / scenario.yaml and re-run.")
+        sys.exit(1)
+    print("  PASSED")
 
     # ── Derive output prefix: {project}-{scenario}-{YYYYMMDD-HHMMSS}-{writer}_ ──
     # Project name from hw_config filename (e.g., projectA_hw.yaml → projectA)
