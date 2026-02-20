@@ -1000,6 +1000,11 @@ def main():
         default=None,
         help='Path to exploration YAML config for architecture sweep'
     )
+    parser.add_argument(
+        '--publish',
+        action='store_true',
+        help='Copy all outputs to doc/reports/ with timestamp prefix for archiving'
+    )
 
     args = parser.parse_args()
 
@@ -1173,15 +1178,12 @@ def main():
         sys.exit(1)
     print("  PASSED")
 
-    # ── Derive output prefix: {project}-{scenario}-{YYYYMMDD-HHMMSS}-{writer}_ ──
-    # Project name from hw_config filename (e.g., projectA_hw.yaml → projectA)
+    # ── Derive output prefix: {project}-{scenario}_ ──
+    # No timestamp in default prefix → files overwrite on repeat runs
     hw_basename = os.path.splitext(os.path.basename(hw_config_path))[0]
     project_name = hw_basename.replace('_hw', '')
     scenario_name = scenario.name.replace(' ', '_')
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    scenario_data_for_writer = scenario_config.get('scenario', scenario_config)
-    writer = scenario_data_for_writer.get('writer', 'anonymous')
-    output_prefix = f"{project_name}-{scenario_name}-{timestamp}-{writer}_"
+    output_prefix = f"{project_name}-{scenario_name}_"
 
     # ── CSV-based HW Info Integration ──────────────────────────
     resolved_configs = None
@@ -1467,7 +1469,33 @@ def main():
         print(f"Simulation report saved to: {report_html}")
         print(f"Simulation report saved to: {report_md}")
 
+    # ── Publish: copy outputs to doc/reports/ with timestamp ──
+    if args.publish:
+        import shutil
+        publish_dir = os.path.join('doc', 'reports')
+        os.makedirs(publish_dir, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        scenario_data_for_writer = scenario_config.get('scenario', scenario_config)
+        writer = scenario_data_for_writer.get('writer', 'anonymous')
+        publish_prefix = f"{project_name}-{scenario_name}-{ts}-{writer}_"
+
+        published_files = []
+        for src_dir in [args.output_view_dir, args.output_sim_dir]:
+            if not os.path.isdir(src_dir):
+                continue
+            for fname in os.listdir(src_dir):
+                if fname.startswith(output_prefix):
+                    suffix = fname[len(output_prefix):]
+                    dst_name = f"{publish_prefix}{suffix}"
+                    src_path = os.path.join(src_dir, fname)
+                    dst_path = os.path.join(publish_dir, dst_name)
+                    shutil.copy2(src_path, dst_path)
+                    published_files.append(dst_name)
+
+        print(f"\n[Publish] {len(published_files)} files copied to {publish_dir}/")
+        for pf in published_files:
+            print(f"  → {pf}")
+
 
 if __name__ == "__main__":
     main()
-
