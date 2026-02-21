@@ -733,7 +733,7 @@ svg:active{cursor:grabbing}
 </style></head><body>
 <div id="wrap">
 <h1>/*__TITLE__*/</h1>
-<div id="info">Scroll to zoom · Drag to pan</div>
+<div id="info">Scroll to zoom · Drag to pan · Arrow keys to scroll</div>
 <div id="canvas"></div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
@@ -756,6 +756,7 @@ async function main(){
   const dispW=Math.min(totalW,window.innerWidth-40);
   const dispH=Math.min(totalH,window.innerHeight-80);
   const svg=ce('svg',{width:dispW,height:dispH,viewBox:`0 0 ${totalW} ${totalH}`});
+  svg.setAttribute('tabindex','0');
   const gMain=ce('g',{transform:`translate(${pad},${pad})`});
   svg.appendChild(gMain);
   /* Pass 1: collect absolute positions for all nodes */
@@ -765,12 +766,16 @@ async function main(){
   // zoom/pan
   let scale=1,tx=0,ty=0;
   function updateTx(){gMain.setAttribute('transform',`translate(${tx+pad},${ty+pad}) scale(${scale})`)}
-  svg.addEventListener('wheel',e=>{e.preventDefault();const d=e.deltaY>0?0.9:1.1;const ns=Math.max(0.2,Math.min(5,scale*d));const r=ns/scale;tx=e.offsetX-(e.offsetX-tx)*r;ty=e.offsetY-(e.offsetY-ty)*r;scale=ns;updateTx()});
+  function svgPt(e){const p=svg.createSVGPoint();p.x=e.clientX;p.y=e.clientY;const ctm=svg.getScreenCTM();if(ctm){const inv=ctm.inverse();return p.matrixTransform(inv)}return{x:e.offsetX,y:e.offsetY}}
+  svg.addEventListener('wheel',e=>{e.preventDefault();const d=e.deltaY>0?0.9:1.1;const ns=Math.max(0.2,Math.min(5,scale*d));const r=ns/scale;const pt=svgPt(e);tx=pt.x-(pt.x-tx)*r;ty=pt.y-(pt.y-ty)*r;scale=ns;updateTx()});
   let drag=false,sx,sy;
-  svg.addEventListener('mousedown',e=>{drag=true;sx=e.clientX-tx;sy=e.clientY-ty});
+  svg.addEventListener('mousedown',e=>{drag=true;sx=e.clientX-tx;sy=e.clientY-ty;svg.focus()});
   svg.addEventListener('mousemove',e=>{if(!drag)return;tx=e.clientX-sx;ty=e.clientY-sy;updateTx()});
   svg.addEventListener('mouseup',()=>drag=false);
   svg.addEventListener('mouseleave',()=>drag=false);
+  // Arrow key panning
+  const PAN_STEP=50;
+  svg.addEventListener('keydown',e=>{const k=e.key;if(k==='ArrowLeft'){tx+=PAN_STEP;e.preventDefault()}else if(k==='ArrowRight'){tx-=PAN_STEP;e.preventDefault()}else if(k==='ArrowUp'){ty+=PAN_STEP;e.preventDefault()}else if(k==='ArrowDown'){ty-=PAN_STEP;e.preventDefault()}else return;updateTx()});
   document.getElementById('canvas').appendChild(svg);
   }catch(err){
     document.getElementById('canvas').innerHTML=
