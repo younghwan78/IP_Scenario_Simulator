@@ -504,6 +504,7 @@ def create_scenario_from_blocks(config: dict,
             task_id = task_cfg['id']
             task_hw = task_cfg.get('hw', hw_name)
             ip_mode = ip_settings.get('mode', None)
+            manual_hw_time = ip_settings.get('manual_hw_time')
             
             scenario.add_task(
                 task_id=task_id,
@@ -511,6 +512,7 @@ def create_scenario_from_blocks(config: dict,
                 workload=workload.copy(),
                 ip_mode=ip_mode,
                 h_blank_margin=h_blank_margin,
+                manual_hw_time_ms=float(manual_hw_time) if manual_hw_time is not None else None,
                 input_ports=input_ports,
                 output_ports=output_ports
             )
@@ -977,6 +979,24 @@ def main():
         '--json', action='store_true',
         help='Export trace data to Perfetto JSON format'
     )
+    # ── Format flags ──
+    # Default = HTML only.  Use these to opt-in to additional formats.
+    parser.add_argument(
+        '--puml', action='store_true',
+        help='Also generate PlantUML (.puml) view files'
+    )
+    parser.add_argument(
+        '--png', action='store_true',
+        help='Also export charts as PNG (requires kaleido)'
+    )
+    parser.add_argument(
+        '--md', action='store_true',
+        help='Also generate Markdown reports'
+    )
+    parser.add_argument(
+        '--all-formats', action='store_true',
+        help='Generate all formats (HTML + PlantUML + PNG + MD)'
+    )
     parser.add_argument(
         '--output-view-dir',
         type=str,
@@ -1003,7 +1023,7 @@ def main():
     parser.add_argument(
         '--publish',
         action='store_true',
-        help='Copy all outputs to doc/reports/ with timestamp prefix for archiving'
+        help='Copy all outputs to docs/reports/ with timestamp prefix for archiving'
     )
 
     args = parser.parse_args()
@@ -1019,6 +1039,12 @@ def main():
     do_bw = args.bw or (not any_flag)
     do_csv = args.csv or (not any_flag)
     do_json = args.json or (not any_flag)
+
+    # Format flags: default = HTML only
+    all_fmt = args.all_formats
+    do_puml = args.puml or all_fmt
+    do_png = args.png or all_fmt
+    do_md = args.md or all_fmt
 
     if args.demo or (args.hw_config is None and args.scenario_config is None):
         # Run demo mode
@@ -1257,9 +1283,11 @@ def main():
             explore_paths = explore_report.save(
                 explore_out_dir,
                 output_prefix.rstrip('_'),
+                formats=['html'] + (['md'] if do_md else []),
             )
             print(f"Exploration report saved to: {explore_paths['html']}")
-            print(f"Exploration report saved to: {explore_paths['md']}")
+            if 'md' in explore_paths:
+                print(f"Exploration report saved to: {explore_paths['md']}")
 
     elif hw_info_path or hw_dvfs_path:
         print("Warning: Both --hw-info and --hw-dvfs must be specified together. "
@@ -1267,18 +1295,14 @@ def main():
 
     text_viewer = TextViewer()
 
-    # ── Generate HTML views ──
+    # ── Generate views ──
     if do_view:
         from src.view.html_view import (
             generate_top_html, generate_level1_html, generate_level2_html,
             generate_level3_html, generate_task_topology_html
         )
-        from src.view.plantuml_view import (
-            generate_top_view, generate_level1, generate_level2,
-            generate_level3, generate_task_topology
-        )
         os.makedirs(args.output_view_dir, exist_ok=True)
-        # HTML views
+        # HTML views (always generated)
         top_path = os.path.join(args.output_view_dir, f"{output_prefix}top_view.html")
         l1_path = os.path.join(args.output_view_dir, f"{output_prefix}level1_view.html")
         l2_path = os.path.join(args.output_view_dir, f"{output_prefix}level2_view.html")
@@ -1289,17 +1313,22 @@ def main():
         generate_level2_html(hw_registry, scenario, hw_raw, l2_path)
         generate_level3_html(hw_registry, scenario, hw_raw, l3_path)
         generate_task_topology_html(hw_registry, scenario, topo_html)
-        # PlantUML views
-        puml_top = os.path.join(args.output_view_dir, f"{output_prefix}top_view.puml")
-        puml_l1 = os.path.join(args.output_view_dir, f"{output_prefix}level1_view.puml")
-        puml_l2 = os.path.join(args.output_view_dir, f"{output_prefix}level2_view.puml")
-        puml_l3 = os.path.join(args.output_view_dir, f"{output_prefix}level3_view.puml")
-        puml_topo = os.path.join(args.output_view_dir, f"{output_prefix}task_topology_view.puml")
-        generate_top_view(hw_registry, scenario, puml_top)
-        generate_level1(hw_registry, scenario, puml_l1)
-        generate_level2(hw_registry, scenario, hw_raw, puml_l2)
-        generate_level3(hw_registry, scenario, hw_raw, puml_l3)
-        generate_task_topology(hw_registry, scenario, puml_topo)
+        # PlantUML views (opt-in: --puml or --all-formats)
+        if do_puml:
+            from src.view.plantuml_view import (
+                generate_top_view, generate_level1, generate_level2,
+                generate_level3, generate_task_topology
+            )
+            puml_top = os.path.join(args.output_view_dir, f"{output_prefix}top_view.puml")
+            puml_l1 = os.path.join(args.output_view_dir, f"{output_prefix}level1_view.puml")
+            puml_l2 = os.path.join(args.output_view_dir, f"{output_prefix}level2_view.puml")
+            puml_l3 = os.path.join(args.output_view_dir, f"{output_prefix}level3_view.puml")
+            puml_topo = os.path.join(args.output_view_dir, f"{output_prefix}task_topology_view.puml")
+            generate_top_view(hw_registry, scenario, puml_top)
+            generate_level1(hw_registry, scenario, puml_l1)
+            generate_level2(hw_registry, scenario, hw_raw, puml_l2)
+            generate_level3(hw_registry, scenario, hw_raw, puml_l3)
+            generate_task_topology(hw_registry, scenario, puml_topo)
 
     # Graph-only mode: show structure and exit
     if args.graph_only:
@@ -1410,13 +1439,14 @@ def main():
             gantt_path = os.path.join(args.output_sim_dir, f"{output_prefix}timing_chart.html")
             visualizer.save_gantt(fig, gantt_path)
             print(f"Timing chart saved to: {gantt_path}")
-            # PNG export
-            gantt_png = os.path.join(args.output_sim_dir, f"{output_prefix}timing_chart.png")
-            try:
-                fig.write_image(gantt_png, width=1920, height=1080, scale=2)
-                print(f"Timing chart PNG saved to: {gantt_png}")
-            except Exception as e:
-                print(f"[Warning] PNG export failed (pip install kaleido): {e}")
+            # PNG export (opt-in: --png or --all-formats)
+            if do_png:
+                gantt_png = os.path.join(args.output_sim_dir, f"{output_prefix}timing_chart.png")
+                try:
+                    fig.write_image(gantt_png, width=1920, height=1080, scale=2)
+                    print(f"Timing chart PNG saved to: {gantt_png}")
+                except Exception as e:
+                    print(f"[Warning] PNG export failed (pip install kaleido): {e}")
 
     if do_json:
         visualizer = Visualizer()
@@ -1434,13 +1464,14 @@ def main():
             bw_path = os.path.join(args.output_sim_dir, f"{output_prefix}bw_chart.html")
             visualizer.save_gantt(bw_fig, bw_path)
             print(f"BW chart saved to: {bw_path}")
-            # PNG export
-            bw_png = os.path.join(args.output_sim_dir, f"{output_prefix}bw_chart.png")
-            try:
-                bw_fig.write_image(bw_png, width=1920, height=1080, scale=2)
-                print(f"BW chart PNG saved to: {bw_png}")
-            except Exception as e:
-                print(f"[Warning] PNG export failed (pip install kaleido): {e}")
+            # PNG export (opt-in: --png or --all-formats)
+            if do_png:
+                bw_png = os.path.join(args.output_sim_dir, f"{output_prefix}bw_chart.png")
+                try:
+                    bw_fig.write_image(bw_png, width=1920, height=1080, scale=2)
+                    print(f"BW chart PNG saved to: {bw_png}")
+                except Exception as e:
+                    print(f"[Warning] PNG export failed (pip install kaleido): {e}")
 
     # ── Generate Simulation Report (HTML + Markdown) ──
     if resolved_configs is not None:
@@ -1463,16 +1494,18 @@ def main():
             hw_info_db=hw_info_db,
         )
         report_html = os.path.join(args.output_sim_dir, f"{output_prefix}simulation_result.html")
-        report_md = os.path.join(args.output_sim_dir, f"{output_prefix}simulation_result.md")
         rgen.save_html(report_html)
-        rgen.save_markdown(report_md)
         print(f"Simulation report saved to: {report_html}")
-        print(f"Simulation report saved to: {report_md}")
+        # Markdown report (opt-in: --md or --all-formats)
+        if do_md:
+            report_md = os.path.join(args.output_sim_dir, f"{output_prefix}simulation_result.md")
+            rgen.save_markdown(report_md)
+            print(f"Simulation report saved to: {report_md}")
 
-    # ── Publish: copy outputs to doc/reports/ with timestamp ──
+    # ── Publish: copy outputs to docs/reports/ with timestamp ──
     if args.publish:
         import shutil
-        publish_dir = os.path.join('doc', 'reports')
+        publish_dir = os.path.join('docs', 'reports')
         os.makedirs(publish_dir, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         scenario_data_for_writer = scenario_config.get('scenario', scenario_config)

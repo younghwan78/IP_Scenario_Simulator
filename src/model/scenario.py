@@ -35,6 +35,7 @@ class Task:
         workload: Workload parameters (pixels, width, height, ops, data_size, etc.)
         task_type: 'hw' (default) or 'sw' — SW tasks use fixed duration, no power
         duration_ms: Fixed execution time in ms (used when task_type='sw')
+        manual_hw_time_ms: Manual processing time in ms for HW tasks (timing only, not BW/power)
         description: Human-readable description (shown in Gantt chart)
         ip_mode: Optional IP operating mode (e.g., 'power_saving', 'high_performance')
         crop_size: Optional crop region (width, height) - requires HW crop support
@@ -48,6 +49,7 @@ class Task:
     workload: Dict[str, Any] = field(default_factory=dict)
     task_type: str = "hw"            # 'hw' or 'sw'
     duration_ms: Optional[float] = None  # fixed duration for SW tasks
+    manual_hw_time_ms: Optional[float] = None  # manual HW time override (timing only)
     latency_ms: float = 0.0              # latency before task execution (SW tasks)
     description: str = ""
     sw_group: Optional[str] = None       # group name for SW task Gantt grouping
@@ -152,6 +154,7 @@ class ScenarioGraph:
                  ip_mode: Optional[str] = None,
                  crop_size: Optional[Tuple[int, int]] = None,
                  h_blank_margin: float = 0.05,
+                 manual_hw_time_ms: Optional[float] = None,
                  join_policy: JoinPolicy = JoinPolicy.AND_JOIN,
                  window_size: int = 1,
                  input_ports: Optional[List[str]] = None,
@@ -170,6 +173,7 @@ class ScenarioGraph:
             ip_mode: Optional IP mode (e.g., 'power_saving', 'high_performance')
             crop_size: Optional crop output size (width, height)
             h_blank_margin: H-blank margin for IP runtime calculation (default: 0.05 = 5%)
+            manual_hw_time_ms: Manual HW processing time in ms (timing diagram only, not BW/power)
             join_policy: Multi-input join policy (AND/OR/WINDOW)
             window_size: Window size for WINDOW_BASED join
             input_ports: Named input ports for token queues
@@ -195,6 +199,7 @@ class ScenarioGraph:
             ip_mode=ip_mode,
             crop_size=crop_size,
             h_blank_margin=h_blank_margin,
+            manual_hw_time_ms=manual_hw_time_ms,
             join_policy=join_policy,
             window_size=window_size,
             input_ports=input_ports if input_ports else [],

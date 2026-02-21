@@ -35,7 +35,7 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-### Run Simulation (all outputs)
+### Run Simulation (HTML outputs only — default)
 
 ```bash
 python main.py -hw hw_config/projectA_hw.yaml \
@@ -47,14 +47,14 @@ python main.py -hw hw_config/projectA_hw.yaml \
 ### Selective Output
 
 ```bash
-# View only (HTML + PlantUML, no simulation)
+# View only (HTML, no simulation)
 python main.py -hw ... -sc ... --hw-info ... --hw-dvfs ... --view --graph-only
 
 # Gantt + CSV only
 python main.py -hw ... -sc ... --hw-info ... --hw-dvfs ... --gantt --csv
 
-# BW chart only
-python main.py -hw ... -sc ... --hw-info ... --hw-dvfs ... --bw
+# All outputs with all formats (HTML + PlantUML + PNG + MD)
+python main.py -hw ... -sc ... --hw-info ... --hw-dvfs ... --all-formats
 ```
 
 ## Command Line Options
@@ -72,11 +72,11 @@ python main.py -hw ... -sc ... --hw-info ... --hw-dvfs ... --bw
 | `--demo` | Run built-in demo |
 | `-v`, `--verbose` | Enable verbose output (show all diagnostic info) |
 
-### Output Flags
+### Output Selection Flags
 
 | Flag | Description |
 |------|-------------|
-| `--view` | Generate HTML + PlantUML view files (Top/Level1/Level2) |
+| `--view` | Generate HTML view files (Top/Level1/Level2/Level3) |
 | `--gantt` | Generate Gantt chart HTML |
 | `--bw` | Generate Bandwidth timeline chart HTML |
 | `--csv` | Export simulation results to CSV |
@@ -84,9 +84,18 @@ python main.py -hw ... -sc ... --hw-info ... --hw-dvfs ... --bw
 | `--output-view-dir` | Output directory for views (default: `output_view`) |
 | `--output-sim-dir` | Output directory for simulation (default: `output_simulation`) |
 
-> **Verbose mode**: By default, only file-save messages are printed. Use `-v` for full diagnostic output.
+> **Default behavior**: No flags specified → generate ALL outputs (HTML only).
 
-> **Default behavior**: No flags specified → generate ALL outputs.
+### Format Flags (opt-in additional formats)
+
+| Flag | Description |
+|------|-------------|
+| `--puml` | Also generate PlantUML (.puml) view files |
+| `--png` | Also export charts as PNG (requires kaleido) |
+| `--md` | Also generate Markdown reports |
+| `--all-formats` | Generate all formats (HTML + PlantUML + PNG + MD) |
+
+> **Verbose mode**: By default, only file-save messages are printed. Use `-v` for full diagnostic output.
 
 ## Output Structure
 
@@ -101,25 +110,20 @@ output_view/
   {prefix}level2_view.html           # Module-level detail (ELK.js, color-coded)
   {prefix}level3_view.html           # Connection detail (ELK.js)
   {prefix}task_topology_view.html    # Task DAG topology (ELK.js)
-  {prefix}top_view.puml              # PlantUML top view
-  {prefix}level1_view.puml           # PlantUML level 1
-  {prefix}level2_view.puml           # PlantUML level 2
-  {prefix}level3_view.puml           # PlantUML level 3
-  {prefix}task_topology_view.puml    # PlantUML task topology
+  {prefix}*.puml                     # PlantUML views (--puml or --all-formats)
 
 output_simulation/
   {prefix}timing_chart.html          # Gantt chart (Plotly CDN)
-  {prefix}timing_chart.png           # Gantt chart PNG (kaleido)
   {prefix}bw_chart.html              # BW timeline chart (Plotly CDN)
-  {prefix}bw_chart.png               # BW chart PNG (kaleido)
   {prefix}simulation_result.html     # Simulation report (pastel style)
-  {prefix}simulation_result.md       # Simulation report (Markdown)
   {prefix}results.csv                # Simulation results
   {prefix}trace.json                 # Perfetto trace format
+  {prefix}*.png                      # Chart PNGs (--png or --all-formats)
+  {prefix}simulation_result.md       # Report Markdown (--md or --all-formats)
 
 output_exploration/                    # --explore flag
   {prefix}exploration_result.html    # Exploration report (HTML, SVG chart)
-  {prefix}exploration_result.md      # Exploration report (Markdown)
+  {prefix}exploration_result.md      # Exploration Markdown (--md or --all-formats)
 ```
 
 > `{prefix}` = `projectA-FHD30_Recording-20260218-014100-YHJOO_`
@@ -232,7 +236,7 @@ docs/
 ├── scenario_config/
 │   ├── projectA_FHD30_recording_scenario.yaml
 │   └── exploration_FHD30.yaml  # Exploration sweep config
-├── tests/                    # Unit & Integration tests (131 tests)
+├── tests/                    # Unit & Integration tests (211 tests)
 ├── main.py                   # Entry point
 ├── generate_index.py         # GitHub Pages index.html generator
 ├── publish_report.py         # Report publishing helper
@@ -258,6 +262,134 @@ docs/
 | **M2M** | Memory-to-Memory (Sequential) | `Time(A) + Time(B)` |
 | **OTF** | On-The-Fly (Pipelined) | `max(Time(A), Time(B))` |
 
+## Scenario Configuration
+
+시나리오 YAML에서 시뮬레이션 동작을 세밀하게 제어할 수 있습니다.
+
+### Global Parameters
+
+시나리오 최상위에 정의하며 전체 시뮬레이션에 적용됩니다.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `name` | — | 시나리오 이름 (출력 파일명에 사용) |
+| `writer` | `anonymous` | 작성자 (publish 파일명에 포함) |
+| `num_frames` | `1` | 멀티프레임 시뮬레이션 프레임 수 |
+| `asv_group` | `4` | DVFS 전압 룩업용 ASV 그룹 |
+| `sw_margin` | `0.15` | Clock 계산 시 SW 마진 (`req_clock = pixels×fps / (1-sw_margin) / ppc`) |
+| `h_blank_margin` | `0.05` | Horizontal blanking 마진 |
+| `bw_power` | `80` | BW 전력 계수 (mW/GB/s) |
+| `vBat` | `4.0` | 배터리 전압 (V), mA 환산에 사용 |
+| `pmic_efficiency` | `0.85` | PMIC 효율, 전류 환산에 사용 |
+| `bw_margin` | `1.25` | MIF 레벨 결정 시 BW 마진 |
+| `mem_util` | `0.55` | MIF BW 계산용 메모리 활용률 |
+| `mif_channel_width` | `16` | MIF 채널 폭 (bytes) |
+
+```yaml
+# 예시
+name: "FHD30_Recording"
+writer: "YHJOO"
+num_frames: 1
+asv_group: 4
+sw_margin: 0.25
+h_blank_margin: 0.05
+bw_power: 80
+vBat: 4.0
+pmic_efficiency: 0.85
+bw_margin: 1.25
+mem_util: 0.55
+mif_channel_width: 16
+```
+
+### Per-IP Overrides (`ip_settings`)
+
+각 IP 블록의 `ip_settings`에서 개별 IP 동작을 오버라이드합니다.
+
+| Field | Description |
+|-------|-------------|
+| `mode` | IP 동작 모드 (예: `Normal`, `LowPower`). 성능/전력 계산에 반영 |
+| `manual_clock` | **수동 클럭 오버라이드 (MHz)**. DVFS 자동 계산보다 우선 적용. 리포트에 🟢 표시 |
+| `manual_hw_time` | **수동 처리 시간 (ms)**. PPC 기반 계산 대신 사용 (**타이밍 다이어그램에만** 적용, BW/전력 미반영) |
+| `inputs` / `outputs` | 포트별 size, format, bitwidth, comp, comp_ratio 정의 → BW 계산에 사용 |
+
+```yaml
+ip_blocks:
+  - ip_settings:
+      hw: "MTNR0"
+      mode: "Normal"
+      manual_clock: 533       # DVFS 자동 계산 무시, 533MHz 강제 적용
+      manual_hw_time: 8.5     # PPC 기반 계산 무시, 8.5ms로 Gantt에 표시
+      inputs:
+        - port: "L0_RDMA"
+          size: [0, 0, 1920, 1080]
+          format: "YUV444"
+          bitwidth: 14
+```
+
+> **`manual_clock` 동작**: 설정 시 `required_clock` 계산을 건너뛰고 해당 값을 `set_clock`으로 사용합니다. 같은 VDD 도메인의 다른 IP가 더 높은 클럭을 요구하면 도메인 내 최대값이 적용됩니다. Simulation Report에서 수동 클럭이 적용된 IP는 🟢 아이콘으로 구분됩니다.
+
+> **`manual_hw_time` 동작**: PPC 기반 `processing_time` 계산을 무시하고 지정된 시간으로 Gantt 차트에 표시합니다. **BW/전력 계산에는 영향을 주지 않으며**, 프로그래밍 가능한 IP처럼 PPC로 시간을 추정할 수 없는 HW에 사용합니다.
+
+**예시: MFC (Video Encoder)처럼 PPC 기반 추정이 불가능한 IP**
+
+```yaml
+ip_blocks:
+  # MFC: 프로그래밍 기반 IP → PPC 계산 불가, 실측 시간 사용
+  - ip_settings:
+      hw: "MFC"
+      mode: "Normal"
+      manual_hw_time: 8.5       # 실측 기반 8.5ms → Gantt에 반영
+      inputs:
+        - port: "MFC_RDMA"
+          size: [0, 0, 1920, 1080]
+          format: "YUV420"
+          bitwidth: 10
+      outputs:
+        - port: "MFC_WDMA"
+          size: [0, 0, 40000, 1000]
+          format: "STAT"
+          bitwidth: 10
+
+  # MCSC: 일반 IP → PPC 기반 자동 계산 (manual_hw_time 불필요)
+  - ip_settings:
+      hw: "MCSC"
+      mode: "Normal"
+      inputs:
+        - port: "CINFIFO"
+          size: [0, 0, 1920, 1080]
+```
+
+### Sensor Configuration
+
+센서 설정은 두 가지 방식을 지원합니다:
+
+```yaml
+# 방법 1: sensor_config.yaml 참조 (권장)
+sensor:
+  hw: "HP2"
+  mode: "mode1"        # sensor_config.yaml에서 size/fps/v_valid 자동 결정
+
+# 방법 2: 인라인 직접 지정
+sensor:
+  hw: "Sensor_Ext"
+  output_size: [0, 0, 3840, 2160]
+  fps: 30.0
+  sensor_mode: "4K_30fps"
+  v_valid_time: 0.0118
+```
+
+### Config Paths (자동 경로 해석)
+
+`-sc`만 지정하면 나머지 설정 파일 경로를 자동으로 찾습니다. CLI 인자가 우선합니다.
+
+```yaml
+config_paths:
+  hw_config: "../hw_config/projectA_hw.yaml"
+  sensor_config: "../hw_config/sensor_config.yaml"
+  hw_info: "../hw_config/projectA_info.csv"
+  hw_dvfs: "../hw_config/projectA_dvfs.csv"
+```
+
 ## CSV-based HW Configuration
 
 Performance info and DVFS tables are managed via CSV files:
@@ -273,7 +405,7 @@ Domain,Level,Frequency,Voltage_ASV0,...,Voltage_ASV15
 ## Testing
 
 ```bash
-# Run all tests (131 tests)
+# Run all tests (211 tests)
 pytest tests/ -v
 
 # Quick run

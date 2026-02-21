@@ -1,0 +1,9 @@
+IP,GroupName,In/Out,H size,V size,Color Format,Bit Width,R/W Rate,Outstanding,Sync Type,Sync Source,Sync Delay
+CAM_FE,CAM,Out,1920,1080,Bayer,10,1.0,8,None,,0
+ISP_FE,INTCAM,In,1920,1080,Bayer,10,1.0,16,OTF,CAM_FE,100
+GPU_WR,GPU,Out,1024,768,RGB,8,0.5,8,None,,0
+DISP_RD,DPU,In,1024,768,RGB,8,1.0,16,M2M,GPU_WR,0
+
+DMA list
+IP,DmaName, In/Out, AccessType,VOTF,VOTF_stall,SBWC,SBWC_ALIGN,BPP,PPC,CTS,PLANE,DataFifoSize,AXID_Width,usr_width,required_MO,HWAPG,FROnum
+CSIS,CSIS_WDMA,Out,

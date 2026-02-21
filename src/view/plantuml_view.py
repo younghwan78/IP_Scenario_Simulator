@@ -11,6 +11,7 @@ OTF paths are shown as thick arrows.
 import yaml
 import sys
 import os
+import warnings
 from src.model.hw_nodes import IPNode, SensorNode
 from src.model.scenario import ConnectionType
 
@@ -21,9 +22,13 @@ HIERARCHY_COLORS = {
     "Sensor":  "#E3F2FD",
     "ISP":     "#E8F5E9",
     "CODEC":   "#FFF3E0",
+    "VPS":     "#E5D754",
     "DPU":     "#F3E5F5",
+    "NPU":     "#F35FBC",
+    "GPU":     "#4A65ED",
     "CPU":     "#ECEFF1",
     "MEMORY":  "#FFF9C4",
+    "Display": "#8246F04",
     "Other":   "#FAFAFA",
 }
 
@@ -37,9 +42,59 @@ IP_GROUP_COLORS = {
     "MCSC":  "#81C784",
     "MFC":   "#FFE0B2",
     "DPU":   "#E1BEE7",
+    "VPS":   "#E5D754",
+    "NPU":   "#F35FBC",
 }
 
-HIERARCHY_ORDER = ["Sensor", "ISP", "CODEC", "DPU", "CPU", "MEMORY", "Other"]
+HIERARCHY_ORDER = ["Sensor", "ISP", "VPS", "CODEC", "DPU", "CPU", "MEMORY", "Display","Other"]
+
+# Default fallback colors for unknown groups
+_DEFAULT_HIERARCHY_COLOR = "#FAFAFA"
+_DEFAULT_IP_GROUP_COLOR = "#E0E0E0"
+
+# Track already-warned groups to avoid duplicate warnings
+_warned_hierarchy = set()
+_warned_ip_group = set()
+
+
+def _get_effective_hierarchy_order(groups):
+    """Return HIERARCHY_ORDER with any unknown groups appended at the end.
+
+    This prevents ELK layout errors caused by tasks in unknown hierarchy
+    groups being silently dropped (their nodes are never rendered, but
+    edges still reference them).
+    """
+    unknown = [g for g in groups if g not in HIERARCHY_ORDER]
+    for g in unknown:
+        if g not in _warned_hierarchy:
+            _warned_hierarchy.add(g)
+            print(f"[WARNING] Unknown hierarchy_group '{g}' is not in HIERARCHY_ORDER. "
+                  f"Using default color '{_DEFAULT_HIERARCHY_COLOR}'.")
+    return list(HIERARCHY_ORDER) + unknown
+
+
+def _get_hierarchy_color(grp):
+    """Return hierarchy color, with warning for unknown groups."""
+    color = HIERARCHY_COLORS.get(grp)
+    if color is None:
+        if grp not in _warned_hierarchy:
+            _warned_hierarchy.add(grp)
+            print(f"[WARNING] Unknown hierarchy_group '{grp}' is not in HIERARCHY_COLORS. "
+                  f"Using default color '{_DEFAULT_HIERARCHY_COLOR}'.")
+        return _DEFAULT_HIERARCHY_COLOR
+    return color
+
+
+def _get_ip_group_color(ipg):
+    """Return IP group color, with warning for unknown groups."""
+    color = IP_GROUP_COLORS.get(ipg)
+    if color is None:
+        if ipg not in _warned_ip_group:
+            _warned_ip_group.add(ipg)
+            print(f"[WARNING] Unknown ip_group '{ipg}' is not in IP_GROUP_COLORS. "
+                  f"Using default color '{_DEFAULT_IP_GROUP_COLOR}'.")
+        return _DEFAULT_IP_GROUP_COLOR
+    return color
 
 
 def _safe_id(name):
@@ -236,10 +291,10 @@ def generate_top_view(hw_registry, scenario, output_path):
     groups, task_hw, task_hier, task_ipg = _build_groups(scenario, hw_registry)
     lines = ["@startuml", _skinparam(), "title Top View (Hierarchy Groups)\\n", ""]
 
-    for grp in HIERARCHY_ORDER:
+    for grp in _get_effective_hierarchy_order(groups):
         if grp not in groups:
             continue
-        bg = HIERARCHY_COLORS.get(grp, "#FAFAFA")
+        bg = _get_hierarchy_color(grp)
         task_ids = groups[grp]
         ip_names = [task_hw[tid] for tid in task_ids]
         ip_list = ", ".join(ip_names)
@@ -268,10 +323,10 @@ def generate_level1(hw_registry, scenario, output_path):
     groups, task_hw, task_hier, task_ipg = _build_groups(scenario, hw_registry)
     lines = ["@startuml", _skinparam(), "title Level 1 View (IP Detail)\\n", ""]
 
-    for grp in HIERARCHY_ORDER:
+    for grp in _get_effective_hierarchy_order(groups):
         if grp not in groups:
             continue
-        bg = HIERARCHY_COLORS.get(grp, "#FAFAFA")
+        bg = _get_hierarchy_color(grp)
         task_ids = groups[grp]
         lines.append(f'package "{grp}" as pkg_{grp} {bg} {{')
 
@@ -282,7 +337,7 @@ def generate_level1(hw_registry, scenario, output_path):
             ip_subgroups.setdefault(ipg, []).append(tid)
 
         for ipg, tids in ip_subgroups.items():
-            ip_bg = IP_GROUP_COLORS.get(ipg, "#E0E0E0")
+            ip_bg = _get_ip_group_color(ipg)
             if len(tids) > 1:
                 lines.append(f'    package "{ipg}" as ipg_{_safe_id(ipg)} {ip_bg} {{')
                 for tid in tids:
@@ -453,10 +508,10 @@ def generate_level2(hw_registry, scenario, hw_raw, output_path):
 
     grp_tids = {}
 
-    for grp in HIERARCHY_ORDER:
+    for grp in _get_effective_hierarchy_order(groups):
         if grp not in groups:
             continue
-        bg = HIERARCHY_COLORS.get(grp, "#FAFAFA")
+        bg = _get_hierarchy_color(grp)
         task_ids = groups[grp]
         lines.append(f'package "{grp}" as pkg_{grp} {bg} {{')
 
@@ -467,7 +522,7 @@ def generate_level2(hw_registry, scenario, hw_raw, output_path):
 
         ordered_tids = []
         for ipg, tids in ip_subgroups.items():
-            ip_bg = IP_GROUP_COLORS.get(ipg, "#E0E0E0")
+            ip_bg = _get_ip_group_color(ipg)
 
             for tid in tids:
                 hw_name = task_hw[tid]
@@ -617,10 +672,10 @@ def generate_level3(hw_registry, scenario, hw_raw, output_path):
 
     grp_tids = {}
 
-    for grp in HIERARCHY_ORDER:
+    for grp in _get_effective_hierarchy_order(groups):
         if grp not in groups:
             continue
-        bg = HIERARCHY_COLORS.get(grp, "#FAFAFA")
+        bg = _get_hierarchy_color(grp)
         task_ids = groups[grp]
         lines.append(f'package "{grp}" as pkg_{grp} {bg} {{')
 
@@ -631,7 +686,7 @@ def generate_level3(hw_registry, scenario, hw_raw, output_path):
 
         ordered_tids = []
         for ipg, tids in ip_subgroups.items():
-            ip_bg = IP_GROUP_COLORS.get(ipg, "#E0E0E0")
+            ip_bg = _get_ip_group_color(ipg)
 
             for tid in tids:
                 hw_name = task_hw[tid]
@@ -696,7 +751,7 @@ def generate_task_topology(hw_registry, scenario, output_path):
         hw_name = task.mapped_hw
         hw = hw_registry.get(hw_name)
         hier = _get_hierarchy(hw, hw_name) if hw else "Other"
-        bg = HIERARCHY_COLORS.get(hier, "#FAFAFA")
+        bg = _get_hierarchy_color(hier)
         # Label: task_id (HW_name)
         label = f"<b>{tid}</b>\\n({hw_name})"
         lines.append(f'rectangle "{label}" as {_safe_id(tid)} {bg}')

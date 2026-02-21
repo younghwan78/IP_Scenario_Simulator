@@ -545,17 +545,31 @@ table.comparison th { position: sticky; top: 0; z-index: 1; }
     # ------------------------------------------------------------------
     # Save helpers
     # ------------------------------------------------------------------
-    def save(self, output_dir: str, base_name: str) -> dict:
-        """Save HTML and MD reports. Returns dict of output paths."""
+    def save(self, output_dir: str, base_name: str,
+             formats: list = None) -> dict:
+        """Save reports. Returns dict of output paths.
+
+        Args:
+            output_dir: Directory to save reports to.
+            base_name: Base filename prefix.
+            formats: List of formats to generate, e.g. ['html', 'md'].
+                     Defaults to ['html', 'md'] if not specified.
+        """
+        if formats is None:
+            formats = ['html', 'md']
         os.makedirs(output_dir, exist_ok=True)
+        paths = {}
 
-        html_path = os.path.join(output_dir, f"{base_name}_exploration_result.html")
-        md_path = os.path.join(output_dir, f"{base_name}_exploration_result.md")
+        if 'html' in formats:
+            html_path = os.path.join(output_dir, f"{base_name}_exploration_result.html")
+            with open(html_path, 'w', encoding='utf-8') as f:
+                f.write(self.generate_html())
+            paths['html'] = html_path
 
-        with open(html_path, 'w', encoding='utf-8') as f:
-            f.write(self.generate_html())
+        if 'md' in formats:
+            md_path = os.path.join(output_dir, f"{base_name}_exploration_result.md")
+            with open(md_path, 'w', encoding='utf-8') as f:
+                f.write(self.generate_markdown())
+            paths['md'] = md_path
 
-        with open(md_path, 'w', encoding='utf-8') as f:
-            f.write(self.generate_markdown())
-
-        return {'html': html_path, 'md': md_path}
+        return paths

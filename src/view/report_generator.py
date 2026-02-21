@@ -551,6 +551,14 @@ class ReportGenerator:
         for d in sorted(s3, key=lambda x: x['group']):
             manual_tag = " 🟢" if d.get('has_manual') else ""
             lines.append(f"| {d['group']}{manual_tag} | {d['set_clock']:.1f} | {d['dvfs_level']} |")
+        # MIF level in DVFS Guide
+        dma_recs_s3 = self._collect_dma_records()
+        total_bw_s3 = sum(r['bw_mbs'] for r in dma_recs_s3)
+        mif_s3 = self._determine_mif_level(total_bw_s3)
+        if mif_s3['mif_level'] is not None:
+            lines.append(f"| MIF | {mif_s3['mif_freq']:.1f} | {mif_s3['mif_level']} |")
+        else:
+            lines.append("| MIF | - | N/A |")
         lines.append("")
 
         # Section 4
@@ -754,27 +762,40 @@ class ReportGenerator:
         html.append("</div>")
         html.append("</div>")
 
-        # Section 3 — transposed: domains as columns
+        # Section 3 — transposed: domains as columns (including MIF)
         html.append("<h2>3. DVFS Guide</h2>")
         sorted_s3 = sorted(s3, key=lambda x: x['group'])
+        # Compute MIF level for Section 3
+        dma_recs_s3h = self._collect_dma_records()
+        total_bw_s3h = sum(r['bw_mbs'] for r in dma_recs_s3h)
+        mif_s3h = self._determine_mif_level(total_bw_s3h)
         html.append("<table>")
-        # Header row: domain names
+        # Header row: domain names + MIF
         html.append("<thead><tr><th></th>")
         for d in sorted_s3:
             html.append(f"<th>{d['group']}</th>")
+        html.append("<th>MIF</th>")
         html.append("</tr></thead><tbody>")
-        # Row 1: Set Clock
+        # Row 1: Set Clock / MIF Freq
         html.append("<tr><th>Set Clock (MHz)</th>")
         for d in sorted_s3:
             if d.get('has_manual'):
                 html.append(f"<td style='color:#1B7A1B;font-weight:bold'>{d['set_clock']:.1f}</td>")
             else:
                 html.append(f"<td>{d['set_clock']:.1f}</td>")
+        if mif_s3h['mif_freq'] is not None:
+            html.append(f"<td>{mif_s3h['mif_freq']:.1f}</td>")
+        else:
+            html.append("<td>-</td>")
         html.append("</tr>")
         # Row 2: Level
         html.append("<tr><th>DVFS Level</th>")
         for d in sorted_s3:
             html.append(f"<td>{d['dvfs_level']}</td>")
+        if mif_s3h['mif_level'] is not None:
+            html.append(f"<td><b>{mif_s3h['mif_level']}</b></td>")
+        else:
+            html.append("<td>N/A</td>")
         html.append("</tr>")
         html.append("</tbody></table>")
 

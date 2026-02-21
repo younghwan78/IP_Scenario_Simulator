@@ -540,7 +540,13 @@ class SoCSimulator:
 
         # Calculate processing time (inject h_blank_margin into workload)
         workload = {**task.workload, 'h_blank_margin': task.h_blank_margin}
-        processing_time = hw.get_processing_time(workload)
+        ppc_time = hw.get_processing_time(workload)
+
+        # manual_hw_time_ms overrides timing only (not power)
+        if task.manual_hw_time_ms is not None:
+            processing_time = task.manual_hw_time_ms / 1000.0
+        else:
+            processing_time = ppc_time
 
         # Request hardware resource (for contention)
         with hw.resource.request() as req:
@@ -551,9 +557,9 @@ class SoCSimulator:
         end_time = self.env.now
         duration = end_time - start_time
 
-        # Calculate power
+        # Calculate power using PPC-based time (not manual override)
         hw.utilization = 1.0
-        power = hw.get_power_consumption(duration)
+        power = hw.get_power_consumption(ppc_time if task.manual_hw_time_ms is not None else duration)
 
         # Store result
         result = TaskResult(
@@ -616,18 +622,23 @@ class SoCSimulator:
         for task in tasks:
             hw = self._get_hw(task.mapped_hw)
             workload = {**task.workload, 'h_blank_margin': task.h_blank_margin}
-            pt = hw.get_processing_time(workload)
-            processing_times.append((task, hw, pt))
+            ppc_time = hw.get_processing_time(workload)
+            # manual_hw_time_ms overrides timing only (not power)
+            if task.manual_hw_time_ms is not None:
+                timing_time = task.manual_hw_time_ms / 1000.0
+            else:
+                timing_time = ppc_time
+            processing_times.append((task, hw, ppc_time, timing_time))
 
-        # OTF: throughput limited by slowest (bottleneck)
-        max_time = max(pt for _, _, pt in processing_times)
+        # OTF: throughput limited by slowest (bottleneck) — use timing_time
+        max_time = max(tt for _, _, _, tt in processing_times)
         
         base_start = start_time
         yield self.env.timeout(max_time)
         base_end = self.env.now
 
         # Store results with Latency Offsets
-        for task, hw, individual_time in processing_times:
+        for task, hw, ppc_time, timing_time in processing_times:
             latency_us = hw.latency if hasattr(hw, 'latency') else 0.0
             latency_s = latency_us / 1e6
             
@@ -635,8 +646,9 @@ class SoCSimulator:
             adjusted_end = base_end + latency_s
             duration = adjusted_end - adjusted_start
             
-            hw.utilization = individual_time / max_time if max_time > 0 else 1.0
-            power = hw.get_power_consumption(duration)
+            # Power uses PPC-based time for utilization ratio
+            hw.utilization = ppc_time / max_time if max_time > 0 else 1.0
+            power = hw.get_power_consumption(ppc_time)
 
             result = TaskResult(
                 task_id=task.task_id,

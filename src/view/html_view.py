@@ -18,7 +18,8 @@ import sys
 sys.path.insert(0, '.')
 from src.view.plantuml_view import (
     _safe_id, _build_groups, _mod_color, _mod_type_short, _ip_label,
-    HIERARCHY_ORDER, HIERARCHY_COLORS, IP_GROUP_COLORS, _load_data
+    HIERARCHY_ORDER, HIERARCHY_COLORS, IP_GROUP_COLORS, _load_data,
+    _get_effective_hierarchy_order, _get_hierarchy_color, _get_ip_group_color
 )
 from src.model.hw_nodes import SensorNode
 from src.model.scenario import ConnectionType
@@ -125,7 +126,7 @@ def generate_top_html(hw_registry, scenario, output_path):
 
     elk = _make_elk_root()
 
-    for grp in HIERARCHY_ORDER:
+    for grp in _get_effective_hierarchy_order(groups):
         if grp not in groups:
             continue
         grp_id = f"grp_{grp}"
@@ -139,7 +140,7 @@ def generate_top_html(hw_registry, scenario, output_path):
         lw = max(len(grp) * 10, len(ip_list) * 6, 120)
         elk["children"].append({"id": grp_id, "width": lw, "height": 60})
         meta[grp_id] = {"type": "group_box", "label": label,
-                        "color": HIERARCHY_COLORS.get(grp, "#FAFAFA")}
+                        "color": _get_hierarchy_color(grp)}
 
     # Map task IDs to their group IDs for edge source/target remapping
     task_to_grp = {}
@@ -224,7 +225,7 @@ def generate_level1_html(hw_registry, scenario, output_path):
 
     elk = _make_elk_root()
 
-    for grp in HIERARCHY_ORDER:
+    for grp in _get_effective_hierarchy_order(groups):
         if grp not in groups:
             continue
         grp_id = f"grp_{grp}"
@@ -241,13 +242,13 @@ def generate_level1_html(hw_registry, scenario, output_path):
             "children": [], "edges": []
         }
         meta[grp_id] = {"type": "group", "label": grp,
-                        "color": HIERARCHY_COLORS.get(grp, "#FAFAFA")}
+                        "color": _get_hierarchy_color(grp)}
 
         for tid in groups[grp]:
             hw_name = task_hw[tid]
             hw = hw_registry.get(hw_name)
             ipg = task_ipg[tid]
-            ip_bg = IP_GROUP_COLORS.get(ipg, "#E0E0E0")
+            ip_bg = _get_ip_group_color(ipg)
 
             # Build label with resolution info
             lbl = hw_name
@@ -458,7 +459,7 @@ def generate_level2_html(hw_registry, scenario, hw_raw, output_path):
 
     elk = _make_elk_root()
 
-    for grp in HIERARCHY_ORDER:
+    for grp in _get_effective_hierarchy_order(groups):
         if grp not in groups:
             continue
         grp_id = f"grp_{grp}"
@@ -475,7 +476,7 @@ def generate_level2_html(hw_registry, scenario, hw_raw, output_path):
             "children": [], "edges": []
         }
         meta[grp_id] = {"type": "group", "label": grp,
-                        "color": HIERARCHY_COLORS.get(grp, "#FAFAFA")}
+                        "color": _get_hierarchy_color(grp)}
 
         for tid in groups[grp]:
             hw_name = task_hw[tid]
@@ -491,7 +492,7 @@ def generate_level2_html(hw_registry, scenario, hw_raw, output_path):
                 io_modules = [m for m in io_modules
                               if m.get('name', '') in used_ports]
             ipg = task_ipg[tid]
-            ip_bg = IP_GROUP_COLORS.get(ipg, "#E0E0E0")
+            ip_bg = _get_ip_group_color(ipg)
 
             if io_modules:
                 # Separate into input-side and output-side modules
@@ -604,7 +605,7 @@ def generate_level3_html(hw_registry, scenario, hw_raw, output_path):
 
     elk = _make_elk_root()
 
-    for grp in HIERARCHY_ORDER:
+    for grp in _get_effective_hierarchy_order(groups):
         if grp not in groups:
             continue
         grp_id = f"grp_{grp}"
@@ -621,7 +622,7 @@ def generate_level3_html(hw_registry, scenario, hw_raw, output_path):
             "children": [], "edges": []
         }
         meta[grp_id] = {"type": "group", "label": grp,
-                        "color": HIERARCHY_COLORS.get(grp, "#FAFAFA")}
+                        "color": _get_hierarchy_color(grp)}
 
         for tid in groups[grp]:
             hw_name = task_hw[tid]
@@ -629,7 +630,7 @@ def generate_level3_html(hw_registry, scenario, hw_raw, output_path):
             raw = hw_raw.get(hw_name, {})
             modules = raw.get('modules', [])
             ipg = task_ipg[tid]
-            ip_bg = IP_GROUP_COLORS.get(ipg, "#E0E0E0")
+            ip_bg = _get_ip_group_color(ipg)
 
             if modules:
                 ip_node = {
@@ -699,7 +700,7 @@ def generate_task_topology_html(hw_registry, scenario, output_path):
         hw_name = task.mapped_hw
         hw = hw_registry.get(hw_name)
         hier = _get_hierarchy(hw, hw_name) if hw else "Other"
-        bg = HIERARCHY_COLORS.get(hier, "#FAFAFA")
+        bg = _get_hierarchy_color(hier)
 
         lbl = f"{tid}\\n({hw_name})"
         w = max(len(tid) * 8 + 20, len(hw_name) * 8 + 40, 120)
