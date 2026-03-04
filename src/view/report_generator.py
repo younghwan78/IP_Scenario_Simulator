@@ -21,18 +21,7 @@ from typing import Any, Dict, List, Optional
 from ..model.hw_resolver import ResolvedIPConfig, REFERENCE_VOLTAGE_MV
 
 
-# BPP map for BW calculation (matches visualizer.py)
-BPP_MAP = {
-    "YUV420": 1.5, "NV12": 1.5, "NV21": 1.5,
-    "YUV422": 2.0, "YUYV": 2.0, "UYVY": 2.0,
-    "YUV444": 3.0, "Y8": 1.0,
-    "RGB": 3.0, "RGB888": 3.0, "RGBA": 4.0, "ARGB": 4.0,
-    "RAW8": 1.0, "RAW10": 1.25, "RAW12": 1.5,
-    "RAW14": 1.75, "RAW16": 2.0, "P010": 2.0, "P210": 3.2,
-    "BAYER_PACKED": 1.0, "BAYER_UNPACKED": 2.0,
-    "STAT": 1.0, "UV8": 2.0,
-}
-BPP_DEFAULT = 1.0
+from ..model.constants import BPP_MAP, BPP_DEFAULT
 
 
 def _is_dma_port(port_name: str) -> bool:

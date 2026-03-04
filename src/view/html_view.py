@@ -19,7 +19,9 @@ sys.path.insert(0, '.')
 from src.view.plantuml_view import (
     _safe_id, _build_groups, _mod_color, _mod_type_short, _ip_label,
     HIERARCHY_ORDER, HIERARCHY_COLORS, IP_GROUP_COLORS, _load_data,
-    _get_effective_hierarchy_order, _get_hierarchy_color, _get_ip_group_color
+    _get_effective_hierarchy_order, _get_hierarchy_color, _get_ip_group_color,
+    _get_hierarchy_border, _get_ip_group_border, _darken_hex,
+    _is_sw_edge,
 )
 from src.model.hw_nodes import SensorNode
 from src.model.scenario import ConnectionType
@@ -50,6 +52,8 @@ def _build_cross_edges(elk, meta, scenario, ip_settings):
             meta[eid] = {"type": "otf", "label": lbl}
             eidx += 1
         else:
+            is_sw = _is_sw_edge(scenario, src_id, dst_id)
+            edge_type = "sw" if is_sw else "m2m"
             src_s = ip_settings.get(src_id, {})
             dst_s = ip_settings.get(dst_id, {})
             src_out = {o.get('port', ''): o for o in src_s.get('outputs', [])}
@@ -75,15 +79,16 @@ def _build_cross_edges(elk, meta, scenario, ip_settings):
                         "id": eid, "sources": [src_id], "targets": [dst_id],
                         "labels": [{"text": lbl, "width": lw, "height": 14}]
                     })
-                    meta[eid] = {"type": "m2m", "label": lbl}
+                    meta[eid] = {"type": edge_type, "label": lbl}
                     eidx += 1
             else:
                 eid = f"em_{eidx}"
+                lbl = "SW" if is_sw else "M2M"
                 elk["edges"].append({
                     "id": eid, "sources": [src_id], "targets": [dst_id],
-                    "labels": [{"text": "M2M", "width": 30, "height": 14}]
+                    "labels": [{"text": lbl, "width": 30, "height": 14}]
                 })
-                meta[eid] = {"type": "m2m", "label": "M2M"}
+                meta[eid] = {"type": edge_type, "label": lbl}
                 eidx += 1
 
 
@@ -140,7 +145,8 @@ def generate_top_html(hw_registry, scenario, output_path):
         lw = max(len(grp) * 10, len(ip_list) * 6, 120)
         elk["children"].append({"id": grp_id, "width": lw, "height": 60})
         meta[grp_id] = {"type": "group_box", "label": label,
-                        "color": _get_hierarchy_color(grp)}
+                        "color": _get_hierarchy_color(grp),
+                        "border": _get_hierarchy_border(grp)}
 
     # Map task IDs to their group IDs for edge source/target remapping
     task_to_grp = {}
@@ -174,6 +180,8 @@ def generate_top_html(hw_registry, scenario, output_path):
             meta[eid] = {"type": "otf", "label": "OTF"}
             eidx += 1
         else:
+            is_sw = _is_sw_edge(scenario, src_id, dst_id)
+            edge_type = "sw" if is_sw else "m2m"
             src_s = ip_settings.get(src_id, {})
             dst_s = ip_settings.get(dst_id, {})
             src_out = {o.get('port', ''): o for o in src_s.get('outputs', [])}
@@ -199,15 +207,16 @@ def generate_top_html(hw_registry, scenario, output_path):
                         "id": eid, "sources": [src_g], "targets": [dst_g],
                         "labels": [{"text": lbl, "width": lw, "height": 14}]
                     })
-                    meta[eid] = {"type": "m2m", "label": lbl}
+                    meta[eid] = {"type": edge_type, "label": lbl}
                     eidx += 1
             else:
                 eid = f"em_{eidx}"
+                lbl = "SW" if is_sw else "M2M"
                 elk["edges"].append({
                     "id": eid, "sources": [src_g], "targets": [dst_g],
-                    "labels": [{"text": "M2M", "width": 30, "height": 14}]
+                    "labels": [{"text": lbl, "width": 30, "height": 14}]
                 })
-                meta[eid] = {"type": "m2m", "label": "M2M"}
+                meta[eid] = {"type": edge_type, "label": lbl}
                 eidx += 1
 
     _render_html("Top View (Hierarchy Groups)", elk, meta, output_path)
@@ -217,6 +226,53 @@ def generate_top_html(hw_registry, scenario, output_path):
 # ═══════════════════════════════════════════════════════════════════
 #  Level 1: IP-level detail
 # ═══════════════════════════════════════════════════════════════════
+
+def _build_port_detail(tid, hw_name, hw, ip_settings, scenario=None):
+    """Build structured detail dict for tooltip from ip_settings."""
+    ts = ip_settings.get(tid, {})
+    detail = {"hw": hw_name, "inputs": [], "outputs": []}
+
+    # Sensor nodes: show sensor specs instead of ports
+    if isinstance(hw, SensorNode):
+        detail["inputs"] = [{"port": "Sensor",
+                             "size": f"{hw.frame_width}x{hw.frame_height}",
+                             "format": f"@{hw.fps:.0f}fps", "bitwidth": "", "comp": ""}]
+        return detail
+
+    for port_cfg in ts.get('inputs', []):
+        p = {"port": port_cfg.get('port', '?')}
+        sz = port_cfg.get('size', [])
+        p["size"] = f"{sz[2]}x{sz[3]}" if len(sz) == 4 and sz[2] > 0 else "-"
+        p["format"] = port_cfg.get('format', '')
+        bw = port_cfg.get('bitwidth')
+        p["bitwidth"] = f"{bw}b" if bw else ''
+        comp = port_cfg.get('comp', '')
+        ratio = port_cfg.get('comp_ratio', '')
+        p["comp"] = f"{comp}({ratio})" if comp == 'enable' and ratio else comp
+        detail["inputs"].append(p)
+
+    for port_cfg in ts.get('outputs', []):
+        p = {"port": port_cfg.get('port', '?')}
+        sz = port_cfg.get('size', [])
+        p["size"] = f"{sz[2]}x{sz[3]}" if len(sz) == 4 and sz[2] > 0 else "-"
+        p["format"] = port_cfg.get('format', '')
+        bw = port_cfg.get('bitwidth')
+        p["bitwidth"] = f"{bw}b" if bw else ''
+        comp = port_cfg.get('comp', '')
+        ratio = port_cfg.get('comp_ratio', '')
+        p["comp"] = f"{comp}({ratio})" if comp == 'enable' and ratio else comp
+        detail["outputs"].append(p)
+
+    # SW tasks: show processor info
+    if scenario:
+        task = scenario.get_task(tid)
+        if task and task.is_sw_task:
+            detail["inputs"] = [{"port": "CPU", "size": "-",
+                                 "format": f"{task.duration_ms}ms", "bitwidth": "", "comp": ""}]
+            detail["outputs"] = []
+
+    return detail
+
 
 def generate_level1_html(hw_registry, scenario, output_path):
     groups, task_hw, task_hier, task_ipg = _build_groups(scenario, hw_registry)
@@ -242,7 +298,8 @@ def generate_level1_html(hw_registry, scenario, output_path):
             "children": [], "edges": []
         }
         meta[grp_id] = {"type": "group", "label": grp,
-                        "color": _get_hierarchy_color(grp)}
+                        "color": _get_hierarchy_color(grp),
+                        "border": _get_hierarchy_border(grp)}
 
         for tid in groups[grp]:
             hw_name = task_hw[tid]
@@ -263,7 +320,11 @@ def generate_level1_html(hw_registry, scenario, output_path):
 
             w = max(len(hw_name) * 8 + 20, 100)
             grp_node["children"].append({"id": tid, "width": w, "height": 40})
-            meta[tid] = {"type": "leaf", "label": lbl, "color": ip_bg}
+            ip_bd = _get_ip_group_border(ipg)
+            # Build detail info for tooltip popup
+            detail = _build_port_detail(tid, hw_name, hw, ip_settings, scenario)
+            meta[tid] = {"type": "leaf", "label": lbl, "color": ip_bg,
+                         "border": ip_bd, "detail": detail}
 
         elk["children"].append(grp_node)
 
@@ -405,6 +466,8 @@ def _build_cross_edges_level2(elk, meta, scenario, ip_settings, hw_raw, task_hw)
                 meta[eid] = {"type": "otf", "label": "OTF"}
                 eidx += 1
         else:
+            is_sw = _is_sw_edge(scenario, src_id, dst_id)
+            edge_type = "sw" if is_sw else "m2m"
             # M2M: connect src_port (WDMA) → dst_port (RDMA)
             src_s = ip_settings.get(src_id, {})
             dst_s = ip_settings.get(dst_id, {})
@@ -433,15 +496,16 @@ def _build_cross_edges_level2(elk, meta, scenario, ip_settings, hw_raw, task_hw)
                         "id": eid, "sources": [src_node], "targets": [dst_node],
                         "labels": [{"text": lbl, "width": lw, "height": 14}]
                     })
-                    meta[eid] = {"type": "m2m", "label": lbl}
+                    meta[eid] = {"type": edge_type, "label": lbl}
                     eidx += 1
             else:
                 eid = f"em_{eidx}"
+                lbl = "SW" if is_sw else "M2M"
                 elk["edges"].append({
                     "id": eid, "sources": [src_id], "targets": [dst_id],
-                    "labels": [{"text": "M2M", "width": 30, "height": 14}]
+                    "labels": [{"text": lbl, "width": 30, "height": 14}]
                 })
-                meta[eid] = {"type": "m2m", "label": "M2M"}
+                meta[eid] = {"type": edge_type, "label": lbl}
                 eidx += 1
 
 
@@ -476,7 +540,8 @@ def generate_level2_html(hw_registry, scenario, hw_raw, output_path):
             "children": [], "edges": []
         }
         meta[grp_id] = {"type": "group", "label": grp,
-                        "color": _get_hierarchy_color(grp)}
+                        "color": _get_hierarchy_color(grp),
+                        "border": _get_hierarchy_border(grp)}
 
         for tid in groups[grp]:
             hw_name = task_hw[tid]
@@ -514,7 +579,9 @@ def generate_level2_html(hw_registry, scenario, hw_raw, output_path):
                     "children": [], "edges": []
                 }
                 ip_label = f"{hw_name} (BLK_{ipg})"
-                meta[tid] = {"type": "ip", "label": ip_label, "color": ip_bg}
+                ip_bd = _get_ip_group_border(ipg)
+                meta[tid] = {"type": "ip", "label": ip_label, "color": ip_bg,
+                             "border": ip_bd}
 
                 # Add input modules first (with FIRST layer constraint)
                 for mod in input_mods:
@@ -531,7 +598,7 @@ def generate_level2_html(hw_registry, scenario, hw_raw, output_path):
                         }
                     })
                     meta[mid] = {"type": "mod", "label": mn, "sub": short,
-                                 "color": color}
+                                 "color": color, "border": _darken_hex(color)}
 
                 # Add output modules (with LAST layer constraint)
                 for mod in output_mods:
@@ -548,7 +615,7 @@ def generate_level2_html(hw_registry, scenario, hw_raw, output_path):
                         }
                     })
                     meta[mid] = {"type": "mod", "label": mn, "sub": short,
-                                 "color": color}
+                                 "color": color, "border": _darken_hex(color)}
 
                 # Add internal edges from input modules to output modules
                 io_names = {m.get('name') for m in io_modules}
@@ -582,7 +649,9 @@ def generate_level2_html(hw_registry, scenario, hw_raw, output_path):
                     lbl = f"{hw_name}\\n{hw.frame_width}x{hw.frame_height}@{hw.fps:.0f}fps"
                 w = max(len(hw_name) * 8 + 20, 100)
                 grp_node["children"].append({"id": tid, "width": w, "height": 40})
-                meta[tid] = {"type": "leaf", "label": lbl, "color": ip_bg}
+                ip_bd = _get_ip_group_border(ipg)
+                meta[tid] = {"type": "leaf", "label": lbl, "color": ip_bg,
+                             "border": ip_bd}
 
         elk["children"].append(grp_node)
 
@@ -622,7 +691,8 @@ def generate_level3_html(hw_registry, scenario, hw_raw, output_path):
             "children": [], "edges": []
         }
         meta[grp_id] = {"type": "group", "label": grp,
-                        "color": _get_hierarchy_color(grp)}
+                        "color": _get_hierarchy_color(grp),
+                        "border": _get_hierarchy_border(grp)}
 
         for tid in groups[grp]:
             hw_name = task_hw[tid]
@@ -645,7 +715,9 @@ def generate_level3_html(hw_registry, scenario, hw_raw, output_path):
                     },
                     "children": [], "edges": []
                 }
-                meta[tid] = {"type": "ip", "label": hw_name, "color": ip_bg}
+                ip_bd = _get_ip_group_border(ipg)
+                meta[tid] = {"type": "ip", "label": hw_name, "color": ip_bg,
+                             "border": ip_bd}
 
                 for mod in modules:
                     mn = mod.get('name', '?')
@@ -654,8 +726,9 @@ def generate_level3_html(hw_registry, scenario, hw_raw, output_path):
                     short = _mod_type_short(mt)
                     w = max(len(mn) * 7 + 16, 65)
                     ip_node["children"].append({"id": mid, "width": w, "height": 30})
+                    mc = _mod_color(mt)
                     meta[mid] = {"type": "mod", "label": mn, "sub": short,
-                                 "color": _mod_color(mt)}
+                                 "color": mc, "border": _darken_hex(mc)}
 
                 for ie in raw.get('edges', []):
                     s = f"{tid}_{_safe_id(ie.get('src', ''))}"
@@ -672,7 +745,9 @@ def generate_level3_html(hw_registry, scenario, hw_raw, output_path):
                     lbl = f"{hw_name}\\n{hw.frame_width}x{hw.frame_height}@{hw.fps:.0f}fps"
                 w = max(len(hw_name) * 8 + 20, 100)
                 grp_node["children"].append({"id": tid, "width": w, "height": 40})
-                meta[tid] = {"type": "leaf", "label": lbl, "color": ip_bg}
+                ip_bd = _get_ip_group_border(ipg)
+                meta[tid] = {"type": "leaf", "label": lbl, "color": ip_bg,
+                             "border": ip_bd}
 
         elk["children"].append(grp_node)
 
@@ -705,7 +780,8 @@ def generate_task_topology_html(hw_registry, scenario, output_path):
         lbl = f"{tid}\\n({hw_name})"
         w = max(len(tid) * 8 + 20, len(hw_name) * 8 + 40, 120)
         elk["children"].append({"id": tid, "width": w, "height": 45})
-        meta[tid] = {"type": "leaf", "label": lbl, "color": bg}
+        bd = _get_hierarchy_border(hier)
+        meta[tid] = {"type": "leaf", "label": lbl, "color": bg, "border": bd}
 
     # Edges
     _build_cross_edges(elk, meta, scenario, ip_settings)
@@ -730,11 +806,25 @@ h1{font-size:20px;color:#333;margin-bottom:12px}
 #info{font-size:12px;color:#888;margin-bottom:8px}
 svg{background:white;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.1);cursor:grab}
 svg:active{cursor:grabbing}
+#tooltip{position:fixed;max-width:480px;background:#fff;border:1px solid #bbb;
+  border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.2);padding:12px 16px;
+  font-size:12px;color:#333;z-index:100;pointer-events:auto;line-height:1.5}
+#tooltip h3{margin:0 0 8px;font-size:14px;color:#222;border-bottom:1px solid #eee;padding-bottom:6px}
+#tooltip .port-section{margin:6px 0 4px;font-weight:bold;color:#1565C0}
+#tooltip .port-section.out{color:#E65100}
+#tooltip table{width:100%;border-collapse:collapse;margin:2px 0 8px}
+#tooltip th,#tooltip td{text-align:left;padding:2px 8px 2px 0;font-size:11px}
+#tooltip th{color:#666;font-weight:600}
+#tooltip td{color:#333}
+#tooltip .close-btn{position:absolute;top:6px;right:10px;cursor:pointer;
+  font-size:16px;color:#999;line-height:1}
+#tooltip .close-btn:hover{color:#333}
 </style></head><body>
 <div id="wrap">
 <h1>/*__TITLE__*/</h1>
 <div id="info">Scroll to zoom · Drag to pan · Arrow keys to scroll</div>
 <div id="canvas"></div>
+<div id="tooltip" style="display:none;"></div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
 <script>
@@ -743,6 +833,7 @@ const M=/*__META__*/;
 const NS='http://www.w3.org/2000/svg';
 /* Map of node id -> absolute position {x,y} built during first pass */
 const NP={};
+let _dragDist=0; // global: track drag distance to distinguish click vs drag
 
 function ce(t,a){const e=document.createElementNS(NS,t);if(a)Object.entries(a).forEach(([k,v])=>e.setAttribute(k,v));return e}
 
@@ -769,8 +860,8 @@ async function main(){
   function svgPt(e){const p=svg.createSVGPoint();p.x=e.clientX;p.y=e.clientY;const ctm=svg.getScreenCTM();if(ctm){const inv=ctm.inverse();return p.matrixTransform(inv)}return{x:e.offsetX,y:e.offsetY}}
   svg.addEventListener('wheel',e=>{e.preventDefault();const d=e.deltaY>0?0.9:1.1;const ns=Math.max(0.2,Math.min(5,scale*d));const r=ns/scale;const pt=svgPt(e);tx=pt.x-(pt.x-tx)*r;ty=pt.y-(pt.y-ty)*r;scale=ns;updateTx()});
   let drag=false,sx,sy;
-  svg.addEventListener('mousedown',e=>{drag=true;sx=e.clientX-tx;sy=e.clientY-ty;svg.focus()});
-  svg.addEventListener('mousemove',e=>{if(!drag)return;tx=e.clientX-sx;ty=e.clientY-sy;updateTx()});
+  svg.addEventListener('mousedown',e=>{drag=true;_dragDist=0;sx=e.clientX-tx;sy=e.clientY-ty;svg.focus()});
+  svg.addEventListener('mousemove',e=>{if(!drag)return;_dragDist++;tx=e.clientX-sx;ty=e.clientY-sy;updateTx()});
   svg.addEventListener('mouseup',()=>drag=false);
   svg.addEventListener('mouseleave',()=>drag=false);
   // Arrow key panning
@@ -800,7 +891,7 @@ function drawNode(g,node,ox,oy){
     const rr=m.type==='group'?8:m.type==='ip'?6:isGrpBox?10:3;
     const sw=m.type==='group'||isGrpBox?1.5:1;
     const fo=m.type==='group'?'0.55':isGrpBox?'0.7':'1';
-    const sc=m.type==='m2m'?'#E65100':'#999';
+    const sc=m.border||((m.type==='m2m'||m.type==='sw')?'#E65100':'#999');
     const r=ce('rect',{x,y,width:node.width,height:node.height,rx:rr,ry:rr,
       fill:m.color||'#fff','fill-opacity':fo,stroke:sc,'stroke-width':sw});
     g.appendChild(r);
@@ -833,6 +924,15 @@ function drawNode(g,node,ox,oy){
         t.textContent=ln;g.appendChild(t);
       });
     }
+    // Click handler for tooltip popup (if detail exists)
+    if(m.detail){
+      r.style.cursor='pointer';
+      r.addEventListener('click',ev=>{
+        if(_dragDist>3)return; // ignore drag
+        ev.stopPropagation();
+        showTooltip(ev, m);
+      });
+    }
   }
   (node.children||[]).forEach(c=>drawNode(g,c,x,y));
   /* Use the edge's container property (set by ELK.js) to determine the
@@ -851,9 +951,10 @@ function drawEdge(g,edge,ox,oy){
   const m=M[edge.id]||{};
   const isOtf=m.type==='otf';
   const isM2m=m.type==='m2m';
-  const color=isOtf?'#1565C0':isM2m?'#E65100':'#999';
-  const sw=isOtf?2.5:isM2m?2:1;
-  const dash=isM2m?'6,3':'';
+  const isSw=m.type==='sw';
+  const color=isOtf?'#1565C0':isSw?'#F9A825':isM2m?'#E65100':'#999';
+  const sw=isOtf?2.5:(isM2m||isSw)?2:1;
+  const dash=(isM2m||isSw)?'6,3':'';
 
   edge.sections.forEach(s=>{
     const pts=[s.startPoint,...(s.bendPoints||[]),s.endPoint];
@@ -884,6 +985,43 @@ function drawEdge(g,edge,ox,oy){
 }
 
 main();
+
+/* ── Tooltip popup ───────────────────────────────── */
+const tip=document.getElementById('tooltip');
+function showTooltip(ev, m){
+  if(!m.detail)return;
+  const d=m.detail;
+  let h=`<span class="close-btn" onclick="hideTooltip()">&times;</span>`;
+  h+=`<h3>${d.hw||d.label||'Detail'}</h3>`;
+  if(d.inputs&&d.inputs.length){
+    h+=`<div class="port-section">▼ Inputs (${d.inputs.length})</div><table><tr><th>Port</th><th>Size</th><th>Format</th><th>Bit</th><th>Comp</th></tr>`;
+    d.inputs.forEach(p=>{
+      const sz=p.size||'-';
+      h+=`<tr><td>${p.port}</td><td>${sz}</td><td>${p.format||'-'}</td><td>${p.bitwidth||'-'}</td><td>${p.comp||'-'}</td></tr>`;
+    });
+    h+='</table>';
+  }
+  if(d.outputs&&d.outputs.length){
+    h+=`<div class="port-section out">▲ Outputs (${d.outputs.length})</div><table><tr><th>Port</th><th>Size</th><th>Format</th><th>Bit</th><th>Comp</th></tr>`;
+    d.outputs.forEach(p=>{
+      const sz=p.size||'-';
+      h+=`<tr><td>${p.port}</td><td>${sz}</td><td>${p.format||'-'}</td><td>${p.bitwidth||'-'}</td><td>${p.comp||'-'}</td></tr>`;
+    });
+    h+='</table>';
+  }
+  if(!d.inputs?.length&&!d.outputs?.length) h+='<div style="color:#999">No port info available</div>';
+  tip.innerHTML=h;
+  tip.style.display='block';
+  // Position near click
+  const mx=ev.clientX+12, my=ev.clientY+12;
+  const tw=tip.offsetWidth, th2=tip.offsetHeight;
+  const ww=window.innerWidth, wh=window.innerHeight;
+  tip.style.left=Math.min(mx,ww-tw-16)+'px';
+  tip.style.top=Math.min(my,wh-th2-16)+'px';
+}
+function hideTooltip(){tip.style.display='none'}
+// Click outside to close
+document.addEventListener('click',e=>{if(!tip.contains(e.target))hideTooltip()});
 </script></body></html>
 '''
 

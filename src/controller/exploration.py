@@ -28,16 +28,7 @@ from ..model.hw_info import HWInfoDB, DVFSTable, DVFSLevel, IPInfo
 from ..model.hw_resolver import HWResolver, ResolvedIPConfig
 
 
-# BPP map (mirrored from report_generator for BW calculation)
-BPP_MAP = {
-    'BAYER': 1.0, 'RAW': 1.0, 'Y': 1.0, 'GREY': 1.0,
-    'YUV420': 1.5, 'NV12': 1.5, 'NV21': 1.5, 'P010': 1.5,
-    'YUV422': 2.0, 'NV16': 2.0, 'YUYV': 2.0,
-    'YUV444': 3.0,
-    'RGB': 3.0, 'BGR': 3.0,
-    'RGBA': 4.0, 'BGRA': 4.0, 'ARGB': 4.0, 'ABGR': 4.0,
-}
-BPP_DEFAULT = 1.5
+from ..model.constants import BPP_MAP, BPP_DEFAULT
 
 
 @dataclass

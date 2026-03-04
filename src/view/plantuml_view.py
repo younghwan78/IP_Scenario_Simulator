@@ -18,6 +18,22 @@ from src.model.scenario import ConnectionType
 
 # ── Shared constants ────────────────────────────────────────────────
 
+
+def _darken_hex(hex_color: str, factor: float = 0.15) -> str:
+    """Darken a hex color by a given factor (0.0–1.0).
+
+    factor=0.15 means 15% darker (multiply each channel by 0.85).
+    """
+    h = hex_color.lstrip('#')
+    # Handle malformed hex gracefully
+    if len(h) < 6:
+        h = h.ljust(6, '0')
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    mult = 1.0 - factor
+    r, g, b = int(r * mult), int(g * mult), int(b * mult)
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
 HIERARCHY_COLORS = {
     "Sensor":  "#E3F2FD",
     "ISP":     "#E8F5E9",
@@ -28,9 +44,10 @@ HIERARCHY_COLORS = {
     "GPU":     "#4A65ED",
     "CPU":     "#ECEFF1",
     "MEMORY":  "#FFF9C4",
-    "Display": "#8246F04",
+    "Display": "#8246F0",
     "Other":   "#FAFAFA",
 }
+HIERARCHY_BORDER_COLORS = {k: _darken_hex(v) for k, v in HIERARCHY_COLORS.items()}
 
 IP_GROUP_COLORS = {
     "CSIS":  "#BBDEFB",
@@ -45,12 +62,15 @@ IP_GROUP_COLORS = {
     "VPS":   "#E5D754",
     "NPU":   "#F35FBC",
 }
+IP_GROUP_BORDER_COLORS = {k: _darken_hex(v) for k, v in IP_GROUP_COLORS.items()}
 
-HIERARCHY_ORDER = ["Sensor", "ISP", "VPS", "CODEC", "DPU", "CPU", "MEMORY", "Display","Other"]
+HIERARCHY_ORDER = ["Sensor", "ISP", "VPS", "CODEC", "DPU", "CPU", "MEMORY", "Display", "Other"]
 
 # Default fallback colors for unknown groups
 _DEFAULT_HIERARCHY_COLOR = "#FAFAFA"
+_DEFAULT_HIERARCHY_BORDER = _darken_hex(_DEFAULT_HIERARCHY_COLOR)
 _DEFAULT_IP_GROUP_COLOR = "#E0E0E0"
+_DEFAULT_IP_GROUP_BORDER = _darken_hex(_DEFAULT_IP_GROUP_COLOR)
 
 # Track already-warned groups to avoid duplicate warnings
 _warned_hierarchy = set()
@@ -74,7 +94,7 @@ def _get_effective_hierarchy_order(groups):
 
 
 def _get_hierarchy_color(grp):
-    """Return hierarchy color, with warning for unknown groups."""
+    """Return hierarchy fill color, with warning for unknown groups."""
     color = HIERARCHY_COLORS.get(grp)
     if color is None:
         if grp not in _warned_hierarchy:
@@ -85,8 +105,13 @@ def _get_hierarchy_color(grp):
     return color
 
 
+def _get_hierarchy_border(grp):
+    """Return hierarchy border color (15% darker than fill)."""
+    return HIERARCHY_BORDER_COLORS.get(grp, _DEFAULT_HIERARCHY_BORDER)
+
+
 def _get_ip_group_color(ipg):
-    """Return IP group color, with warning for unknown groups."""
+    """Return IP group fill color, with warning for unknown groups."""
     color = IP_GROUP_COLORS.get(ipg)
     if color is None:
         if ipg not in _warned_ip_group:
@@ -95,6 +120,11 @@ def _get_ip_group_color(ipg):
                   f"Using default color '{_DEFAULT_IP_GROUP_COLOR}'.")
         return _DEFAULT_IP_GROUP_COLOR
     return color
+
+
+def _get_ip_group_border(ipg):
+    """Return IP group border color (15% darker than fill)."""
+    return IP_GROUP_BORDER_COLORS.get(ipg, _DEFAULT_IP_GROUP_BORDER)
 
 
 def _safe_id(name):
@@ -185,6 +215,17 @@ def _build_groups(scenario, hw_registry):
 
 # ── Edge emitters ───────────────────────────────────────────────
 
+# SW edge styling for PlantUML
+_SW_LINE_COLOR = "#F9A825"   # amber/golden — contrasts with M2M red (#E65100) and OTF blue
+_SW_DB_COLOR   = "#FFF8E1"   # light warm yellow background for SW cylinders
+
+
+def _is_sw_edge(scenario, src_id, dst_id):
+    """Return True if either endpoint of an edge is a SW (CPU) task."""
+    src_task = scenario.get_task(src_id)
+    dst_task = scenario.get_task(dst_id)
+    return (src_task and src_task.is_sw_task) or (dst_task and dst_task.is_sw_task)
+
 def _emit_edges_top(lines, scenario, task_hier):
     """Emit edges at top level with M2M detail (size/format/bitwidth/comp)."""
     m2m_idx = 0
@@ -205,6 +246,9 @@ def _emit_edges_top(lines, scenario, task_hier):
                 seen_otf.add(otf_key)
                 lines.append(f'{src_alias} ==> {dst_alias} : OTF')
         else:
+            is_sw = _is_sw_edge(scenario, src_id, dst_id)
+            edge_label = "SW" if is_sw else "M2M"
+            arrow = f'-[{_SW_LINE_COLOR},dashed]->' if is_sw else '-->'
             ip_settings = getattr(scenario, '_ip_settings', {})
             src_settings = ip_settings.get(src_id, {})
             dst_settings = ip_settings.get(dst_id, {})
@@ -215,15 +259,21 @@ def _emit_edges_top(lines, scenario, task_hier):
                 for sp, dp in port_pairs:
                     mem_id = f"mem_{m2m_idx}"
                     detail = _m2m_detail_label(sp, dp, src_outputs.get(sp), dst_inputs.get(dp))
-                    lines.append(f'database "{detail}" as {mem_id}')
-                    lines.append(f'{src_alias} --> {mem_id}')
-                    lines.append(f'{mem_id} --> {dst_alias}')
+                    if is_sw:
+                        lines.append(f'database "{detail}" as {mem_id} {_SW_DB_COLOR}')
+                    else:
+                        lines.append(f'database "{detail}" as {mem_id}')
+                    lines.append(f'{src_alias} {arrow} {mem_id}')
+                    lines.append(f'{mem_id} {arrow} {dst_alias}')
                     m2m_idx += 1
             else:
                 mem_id = f"mem_{m2m_idx}"
-                lines.append(f'database "M2M" as {mem_id}')
-                lines.append(f'{src_alias} --> {mem_id}')
-                lines.append(f'{mem_id} --> {dst_alias}')
+                if is_sw:
+                    lines.append(f'database "{edge_label}" as {mem_id} {_SW_DB_COLOR}')
+                else:
+                    lines.append(f'database "{edge_label}" as {mem_id}')
+                lines.append(f'{src_alias} {arrow} {mem_id}')
+                lines.append(f'{mem_id} {arrow} {dst_alias}')
                 m2m_idx += 1
 
 
@@ -268,18 +318,27 @@ def _emit_edges_level1(lines, scenario, task_hw):
                     port_label = " : OTF\\n" + "\\n".join(pair_strs)
             lines.append(f'{_safe_id(src_id)} ==> {_safe_id(dst_id)}{port_label}')
         else:
+            is_sw = _is_sw_edge(scenario, src_id, dst_id)
+            edge_label = "SW" if is_sw else "M2M"
+            arrow = f'-[{_SW_LINE_COLOR},dashed]->' if is_sw else '-->'
             if port_pairs and port_pairs[0][0] != 'output':
                 for sp, dp in port_pairs:
                     mem_id = f"mem_{m2m_idx}"
-                    lines.append(f'database "{sp}\\n->{dp}" as {mem_id}')
-                    lines.append(f'{_safe_id(src_id)} --> {mem_id}')
-                    lines.append(f'{mem_id} --> {_safe_id(dst_id)}')
+                    if is_sw:
+                        lines.append(f'database "{sp}\\n->{dp}" as {mem_id} {_SW_DB_COLOR}')
+                    else:
+                        lines.append(f'database "{sp}\\n->{dp}" as {mem_id}')
+                    lines.append(f'{_safe_id(src_id)} {arrow} {mem_id}')
+                    lines.append(f'{mem_id} {arrow} {_safe_id(dst_id)}')
                     m2m_idx += 1
             else:
                 mem_id = f"mem_{m2m_idx}"
-                lines.append(f'database "M2M" as {mem_id}')
-                lines.append(f'{_safe_id(src_id)} --> {mem_id}')
-                lines.append(f'{mem_id} --> {_safe_id(dst_id)}')
+                if is_sw:
+                    lines.append(f'database "{edge_label}" as {mem_id} {_SW_DB_COLOR}')
+                else:
+                    lines.append(f'database "{edge_label}" as {mem_id}')
+                lines.append(f'{_safe_id(src_id)} {arrow} {mem_id}')
+                lines.append(f'{mem_id} {arrow} {_safe_id(dst_id)}')
                 m2m_idx += 1
 
 
@@ -327,8 +386,9 @@ def generate_level1(hw_registry, scenario, output_path):
         if grp not in groups:
             continue
         bg = _get_hierarchy_color(grp)
+        bd = _get_hierarchy_border(grp)
         task_ids = groups[grp]
-        lines.append(f'package "{grp}" as pkg_{grp} {bg} {{')
+        lines.append(f'package "{grp}" as pkg_{grp} {bg}/{bd} {{')
 
         # Sub-group by ip_group
         ip_subgroups = {}
@@ -338,8 +398,9 @@ def generate_level1(hw_registry, scenario, output_path):
 
         for ipg, tids in ip_subgroups.items():
             ip_bg = _get_ip_group_color(ipg)
+            ip_bd = _get_ip_group_border(ipg)
             if len(tids) > 1:
-                lines.append(f'    package "{ipg}" as ipg_{_safe_id(ipg)} {ip_bg} {{')
+                lines.append(f'    package "{ipg}" as ipg_{_safe_id(ipg)} {ip_bg}/{ip_bd} {{')
                 for tid in tids:
                     hw_name = task_hw[tid]
                     hw = hw_registry.get(hw_name)
@@ -351,7 +412,7 @@ def generate_level1(hw_registry, scenario, output_path):
                 hw_name = task_hw[tid]
                 hw = hw_registry.get(hw_name)
                 label = _ip_label(hw_name, hw, scenario, tid)
-                lines.append(f'    rectangle "{label}" as {_safe_id(tid)} {ip_bg}')
+                lines.append(f'    rectangle "{label}" as {_safe_id(tid)} {ip_bg}/{ip_bd}')
 
         lines.append("}")
         lines.append("")
@@ -463,6 +524,9 @@ def _emit_edges_level2(lines, scenario, task_hw, hw_raw):
             else:
                 lines.append(f'{_safe_id(src_id)} ==> {_safe_id(dst_id)} : OTF')
         else:
+            is_sw = _is_sw_edge(scenario, src_id, dst_id)
+            edge_label = "SW" if is_sw else "M2M"
+            arrow = f'-[{_SW_LINE_COLOR},dashed]->' if is_sw else '-->'
             src_s = ip_settings.get(src_id, {})
             dst_s = ip_settings.get(dst_id, {})
             src_out = {o.get('port', ''): o for o in src_s.get('outputs', [])}
@@ -474,15 +538,21 @@ def _emit_edges_level2(lines, scenario, task_hw, hw_raw):
                     dst_alias = mod_alias_map.get((dst_id, dp), _safe_id(dst_id))
                     mem_id = f"mem_{m2m_idx}"
                     detail = _m2m_detail_label(sp, dp, src_out.get(sp), dst_in.get(dp))
-                    lines.append(f'database "{detail}" as {mem_id}')
-                    lines.append(f'{src_alias} --> {mem_id}')
-                    lines.append(f'{mem_id} --> {dst_alias}')
+                    if is_sw:
+                        lines.append(f'database "{detail}" as {mem_id} {_SW_DB_COLOR}')
+                    else:
+                        lines.append(f'database "{detail}" as {mem_id}')
+                    lines.append(f'{src_alias} {arrow} {mem_id}')
+                    lines.append(f'{mem_id} {arrow} {dst_alias}')
                     m2m_idx += 1
             else:
                 mem_id = f"mem_{m2m_idx}"
-                lines.append(f'database "M2M" as {mem_id}')
-                lines.append(f'{_safe_id(src_id)} --> {mem_id}')
-                lines.append(f'{mem_id} --> {_safe_id(dst_id)}')
+                if is_sw:
+                    lines.append(f'database "{edge_label}" as {mem_id} {_SW_DB_COLOR}')
+                else:
+                    lines.append(f'database "{edge_label}" as {mem_id}')
+                lines.append(f'{_safe_id(src_id)} {arrow} {mem_id}')
+                lines.append(f'{mem_id} {arrow} {_safe_id(dst_id)}')
                 m2m_idx += 1
 
 
@@ -512,8 +582,9 @@ def generate_level2(hw_registry, scenario, hw_raw, output_path):
         if grp not in groups:
             continue
         bg = _get_hierarchy_color(grp)
+        bd = _get_hierarchy_border(grp)
         task_ids = groups[grp]
-        lines.append(f'package "{grp}" as pkg_{grp} {bg} {{')
+        lines.append(f'package "{grp}" as pkg_{grp} {bg}/{bd} {{')
 
         ip_subgroups = {}
         for tid in task_ids:
@@ -546,7 +617,8 @@ def generate_level2(hw_registry, scenario, hw_raw, output_path):
                     output_mods = [m for m in io_modules
                                    if _classify_dma_dir(m) == 'output']
 
-                    lines.append(f'    package "{hw_name} (BLK_{ipg})" as {_safe_id(tid)} {ip_bg} {{')
+                    ip_bd = _get_ip_group_border(ipg)
+                    lines.append(f'    package "{hw_name} (BLK_{ipg})" as {_safe_id(tid)} {ip_bg}/{ip_bd} {{')
 
                     # Input modules first
                     for mod in input_mods:
@@ -590,7 +662,8 @@ def generate_level2(hw_registry, scenario, hw_raw, output_path):
                     lines.append("    }")
                 else:
                     label = _ip_label(hw_name, hw, scenario, tid)
-                    lines.append(f'    rectangle "{label}" as {_safe_id(tid)} {ip_bg}')
+                    ip_bd = _get_ip_group_border(ipg)
+                    lines.append(f'    rectangle "{label}" as {_safe_id(tid)} {ip_bg}/{ip_bd}')
 
         grp_tids[grp] = ordered_tids
         lines.append("}")
@@ -634,6 +707,9 @@ def _emit_edges_level3(lines, scenario, task_hw):
                     port_label = " : OTF\\n" + "\\n".join(pair_strs)
             lines.append(f'{_safe_id(src_id)} ==> {_safe_id(dst_id)}{port_label}')
         else:
+            is_sw = _is_sw_edge(scenario, src_id, dst_id)
+            edge_label = "SW" if is_sw else "M2M"
+            arrow = f'-[{_SW_LINE_COLOR},dashed]->' if is_sw else '-->'
             ip_settings = getattr(scenario, '_ip_settings', {})
             src_settings = ip_settings.get(src_id, {})
             dst_settings = ip_settings.get(dst_id, {})
@@ -644,15 +720,21 @@ def _emit_edges_level3(lines, scenario, task_hw):
                 for sp, dp in port_pairs:
                     mem_id = f"mem_{m2m_idx}"
                     detail = _m2m_detail_label(sp, dp, src_outputs.get(sp), dst_inputs.get(dp))
-                    lines.append(f'database "{detail}" as {mem_id}')
-                    lines.append(f'{_safe_id(src_id)} --> {mem_id}')
-                    lines.append(f'{mem_id} --> {_safe_id(dst_id)}')
+                    if is_sw:
+                        lines.append(f'database "{detail}" as {mem_id} {_SW_DB_COLOR}')
+                    else:
+                        lines.append(f'database "{detail}" as {mem_id}')
+                    lines.append(f'{_safe_id(src_id)} {arrow} {mem_id}')
+                    lines.append(f'{mem_id} {arrow} {_safe_id(dst_id)}')
                     m2m_idx += 1
             else:
                 mem_id = f"mem_{m2m_idx}"
-                lines.append(f'database "M2M" as {mem_id}')
-                lines.append(f'{_safe_id(src_id)} --> {mem_id}')
-                lines.append(f'{mem_id} --> {_safe_id(dst_id)}')
+                if is_sw:
+                    lines.append(f'database "{edge_label}" as {mem_id} {_SW_DB_COLOR}')
+                else:
+                    lines.append(f'database "{edge_label}" as {mem_id}')
+                lines.append(f'{_safe_id(src_id)} {arrow} {mem_id}')
+                lines.append(f'{mem_id} {arrow} {_safe_id(dst_id)}')
                 m2m_idx += 1
 
 
@@ -676,8 +758,9 @@ def generate_level3(hw_registry, scenario, hw_raw, output_path):
         if grp not in groups:
             continue
         bg = _get_hierarchy_color(grp)
+        bd = _get_hierarchy_border(grp)
         task_ids = groups[grp]
-        lines.append(f'package "{grp}" as pkg_{grp} {bg} {{')
+        lines.append(f'package "{grp}" as pkg_{grp} {bg}/{bd} {{')
 
         ip_subgroups = {}
         for tid in task_ids:
@@ -688,6 +771,8 @@ def generate_level3(hw_registry, scenario, hw_raw, output_path):
         for ipg, tids in ip_subgroups.items():
             ip_bg = _get_ip_group_color(ipg)
 
+            ip_bd = _get_ip_group_border(ipg)
+
             for tid in tids:
                 hw_name = task_hw[tid]
                 hw = hw_registry.get(hw_name)
@@ -696,7 +781,7 @@ def generate_level3(hw_registry, scenario, hw_raw, output_path):
                 ordered_tids.append(tid)
 
                 if modules:
-                    lines.append(f'    package "{hw_name}" as {_safe_id(tid)} {ip_bg} {{')
+                    lines.append(f'    package "{hw_name}" as {_safe_id(tid)} {ip_bg}/{ip_bd} {{')
                     for mod in modules:
                         mod_name = mod.get('name', '?')
                         mod_type = mod.get('type', 'Generic')
@@ -712,7 +797,7 @@ def generate_level3(hw_registry, scenario, hw_raw, output_path):
                     lines.append("    }")
                 else:
                     label = _ip_label(hw_name, hw, scenario, tid)
-                    lines.append(f'    rectangle "{label}" as {_safe_id(tid)} {ip_bg}')
+                    lines.append(f'    rectangle "{label}" as {_safe_id(tid)} {ip_bg}/{ip_bd}')
 
         grp_tids[grp] = ordered_tids
         lines.append("}")
@@ -752,18 +837,21 @@ def generate_task_topology(hw_registry, scenario, output_path):
         hw = hw_registry.get(hw_name)
         hier = _get_hierarchy(hw, hw_name) if hw else "Other"
         bg = _get_hierarchy_color(hier)
+        bd = _get_hierarchy_border(hier)
         # Label: task_id (HW_name)
         label = f"<b>{tid}</b>\\n({hw_name})"
-        lines.append(f'rectangle "{label}" as {_safe_id(tid)} {bg}')
+        lines.append(f'rectangle "{label}" as {_safe_id(tid)} {bg}/{bd}')
 
     lines.append("")
     lines.append("' === Connections ===")
 
-    # Emit edges — simple OTF/M2M arrows (no memory cylinders for clarity)
+    # Emit edges — simple OTF/M2M/SW arrows (no memory cylinders for clarity)
     for src_id, dst_id, edge_data in scenario.graph.edges(data=True):
         conn_type = edge_data.get('conn_type', ConnectionType.M2M)
         if conn_type == ConnectionType.OTF:
             lines.append(f'{_safe_id(src_id)} ==> {_safe_id(dst_id)} : OTF')
+        elif _is_sw_edge(scenario, src_id, dst_id):
+            lines.append(f'{_safe_id(src_id)} -[{_SW_LINE_COLOR},dashed]-> {_safe_id(dst_id)} : SW')
         else:
             lines.append(f'{_safe_id(src_id)} --> {_safe_id(dst_id)} : M2M')
 
