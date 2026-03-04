@@ -100,3 +100,33 @@
 | ▲ Outputs | Port, Size, Format, Bitwidth, Compression |
 
 **검증:** 211개 테스트 통과, 브라우저 JS 테스트로 팝업 동작 확인
+
+---
+
+### 6. Report FPS Fallback 버그 수정
+
+**문제:** `report_generator.py`에서 `sc.get('fps', 30.0)` — scenario YAML에 `fps`를 명시하지 않으면 항상 default 30.0이 사용됨. Sensor가 60fps여도 리포트에 30fps로 표시.
+
+**원인:** `fps <= 0` 조건(fallback)이 default=30이면 절대 True가 되지 않아 sensor fps가 무시됨.
+
+**수정:**
+- **[MODIFY]** `src/view/report_generator.py`
+  - `sc.get('fps')` → None 체크로 변경
+  - fps 우선순위: ① scenario에 명시 → ② sensor fps → ③ 30.0 (최종 fallback)
+
+```python
+# Before
+self.fps = float(sc.get('fps', 30.0))  # 항상 30
+if self.fps <= 0: ...                   # 절대 실행 안 됨
+
+# After
+raw_fps = sc.get('fps')                 # None if not set
+if raw_fps is not None and float(raw_fps) > 0:
+    self.fps = float(raw_fps)
+elif self.resolved_sensor:
+    self.fps = float(self.resolved_sensor.get('fps', 30.0))
+```
+
+**참고:** `hw_resolver.py`의 `_get_fps()`는 이미 sensor 우선 로직 정상 동작 (target frequency 계산 정확)
+
+**검증:** 211개 테스트 통과
