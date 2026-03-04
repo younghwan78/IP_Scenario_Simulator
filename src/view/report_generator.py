@@ -103,9 +103,13 @@ class ReportGenerator:
         # Extract basic params
         sc = scenario_config.get('scenario', scenario_config)
         self.scenario_name = sc.get('name', 'Unknown')
-        self.fps = float(sc.get('fps', 30.0))
-        if self.fps <= 0 and self.resolved_sensor:
+        raw_fps = sc.get('fps')  # None if not explicitly set
+        if raw_fps is not None and float(raw_fps) > 0:
+            self.fps = float(raw_fps)
+        elif self.resolved_sensor:
             self.fps = float(self.resolved_sensor.get('fps', 30.0))
+        else:
+            self.fps = 30.0
         self.sw_margin = float(sc.get('sw_margin', 0.15))
         self.h_blank_margin = float(sc.get('h_blank_margin', 0.05))
         self.bw_power_coeff = float(sc.get('bw_power', 80.0))
