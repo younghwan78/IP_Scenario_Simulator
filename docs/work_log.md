@@ -1,5 +1,33 @@
 # 작업일지 (Work Log)
 
+## 2026-03-08 (토)
+
+### 1. Level 2 View 개선 — DMA Enable/Disable 구분 + Tooltip 추가
+
+**요구:** Level 2에서 모든 DMA를 표시하지만, 사용/미사용 DMA가 구분되지 않아 연결관계가 복잡. Scenario에 정의되지 않은 DMA는 disable로 시각 구분 필요. Level 1처럼 DMA/CIN/COUT 클릭 시 tooltip 필요.
+
+**수정 내용:**
+- **[MODIFY]** `src/view/html_view.py`
+  - `_build_l2_module_detail()` 함수 추가: DMA는 direction/bandwidth/MO/SBWC/LLC/size/format, CIN/COUT은 type/size 정보 포함
+  - `_l2_mod_color()`: `is_disabled` 파라미터 추가 → disabled면 회색(`#E8E8E8`) 반환
+  - `generate_level2_html()`: 모든 I/O 모듈 표시 (기존: `used_ports` 필터링 → 변경: 전체 표시, `disabled` 플래그 부여)
+  - `_build_cross_edges_level2()`: 모든 I/O 모듈을 mod_node_map에 포함
+  - HTML JS `drawNode()`: disabled 모듈에 점선 border(`stroke-dasharray: 4,2`), 반투명(`fill-opacity: 0.5`), 회색 텍스트 적용
+  - HTML JS `showTooltip()`: module-level detail(DMA/CIN/COUT)과 IP-level detail(Level 1) 이중 포맷 지원
+
+**시각적 구분:**
+| 상태 | 색상 | 테두리 | 텍스트 |
+|------|------|--------|--------|
+| Enabled DMA | 파란/노란/오렌지/보라 | 실선 | 진한색 |
+| Disabled DMA | 회색 (#E8E8E8) | 점선 | 연한 회색 |
+
+**DMA Tooltip 내용:** Direction, Bandwidth, MO, Size, Format, Bitwidth, Comp, SBWC, LLC, Status
+**CIN/COUT Tooltip 내용:** Type, Size, Status
+
+**검증:** 4개 smoke test 통과, Level 2 HTML 생성 확인
+
+---
+
 ## 2026-03-04 (화)
 
 ### 1. GitHub Pages Index "No reports found" 원인 분석

@@ -388,6 +388,62 @@ def _get_port_comp_info(tid, port_name, ip_settings):
     return False, False
 
 
+def _build_l2_module_detail(mod, tid, ip_settings, is_disabled):
+    """Build detail dict for Level 2 module tooltip."""
+    mn = mod.get('name', '')
+    mt = mod.get('type', 'Generic')
+    direction = _classify_dma_direction(mod)
+    status = 'Disabled' if is_disabled else 'Enabled'
+
+    # Find port config from ip_settings
+    settings = ip_settings.get(tid, {})
+    port_cfg = None
+    for port_list in (settings.get('inputs', []), settings.get('outputs', [])):
+        for p in port_list:
+            if p.get('port', '') == mn:
+                port_cfg = p
+                break
+        if port_cfg:
+            break
+
+    detail = {'name': mn, 'status': status}
+
+    if mt in ('DMA', 'DMA_READ', 'DMA_WRITE'):
+        detail['mod_type'] = 'dma'
+        detail['direction'] = 'Read' if direction == 'input' else 'Write'
+        bw = mod.get('max_bandwidth')
+        detail['bandwidth'] = f"{bw / 1e9:.1f} GB/s" if bw else '-'
+        mo = mod.get('multiple_outstanding')
+        detail['mo'] = str(mo) if mo else '-'
+        has_comp, has_llc = _get_port_comp_info(tid, mn, ip_settings)
+        detail['sbwc'] = 'Enabled' if has_comp else 'Disabled'
+        detail['llc'] = 'Enabled' if has_llc else 'Disabled'
+        if port_cfg:
+            sz = port_cfg.get('size', [])
+            detail['size'] = f"{sz[2]}x{sz[3]}" if len(sz) == 4 and sz[2] > 0 else '-'
+            detail['format'] = port_cfg.get('format', '-') or '-'
+            bw_val = port_cfg.get('bitwidth')
+            detail['bitwidth'] = f"{bw_val}b" if bw_val else '-'
+            comp = port_cfg.get('comp', '')
+            ratio = port_cfg.get('comp_ratio', '')
+            detail['comp'] = f"{comp}({ratio})" if comp == 'enable' and ratio else (comp or '-')
+        else:
+            detail['size'] = '-'
+            detail['format'] = '-'
+            detail['bitwidth'] = '-'
+            detail['comp'] = '-'
+    else:
+        # CIN or COUT
+        detail['mod_type'] = 'cin' if mt == 'CIN' else 'cout'
+        if port_cfg:
+            sz = port_cfg.get('size', [])
+            detail['size'] = f"{sz[2]}x{sz[3]}" if len(sz) == 4 and sz[2] > 0 else '-'
+        else:
+            detail['size'] = '-'
+
+    return detail
+
+
 # Level 2 module color scheme:
 #   RDMA (read DMA)      : light green
 #   WDMA (write DMA)     : light blue
@@ -396,8 +452,12 @@ def _get_port_comp_info(tid, port_name, ip_settings):
 #   RDMA/WDMA + SBWC+LLC : pink tint
 #   CIN                  : light gray-blue (input)
 #   COUT                 : light gray-green (output)
-def _l2_mod_color(mod, tid, ip_settings):
+#   Disabled module      : light gray
+def _l2_mod_color(mod, tid, ip_settings, is_disabled=False):
     """Determine module color for Level 2 based on type, direction and SBWC/LLC."""
+    if is_disabled:
+        return '#E8E8E8'   # light gray for disabled modules
+
     mt = mod.get('type', 'Generic')
     mn = mod.get('name', '')
     direction = _classify_dma_direction(mod)
@@ -425,18 +485,15 @@ def _build_cross_edges_level2(elk, meta, scenario, ip_settings, hw_raw, task_hw)
     eidx = 0
 
     # Build a map: (task_id, module_name) -> ELK node id
-    # ONLY include modules that are actually rendered in Level 2
+    # All I/O modules are now rendered in Level 2 (enabled + disabled)
     mod_node_map = {}
     for tid, hw_name in task_hw.items():
         raw = hw_raw.get(hw_name, {})
-        used_ports = _get_used_port_names(tid, ip_settings)
         for mod in raw.get('modules', []):
             mn = mod.get('name', '')
             mt = mod.get('type', 'Generic')
-            # Only map if this module is an I/O type AND was rendered
             if mt in _IO_MODULE_TYPES:
-                if not used_ports or mn in used_ports:
-                    mod_node_map[(tid, mn)] = f"{tid}_{_safe_id(mn)}"
+                mod_node_map[(tid, mn)] = f"{tid}_{_safe_id(mn)}"
 
     for src_id, dst_id, edge_data in scenario.graph.edges(data=True):
         conn_type = edge_data.get('conn_type', ConnectionType.M2M)
@@ -551,11 +608,8 @@ def generate_level2_html(hw_registry, scenario, hw_raw, output_path):
             # Filter to I/O modules only
             io_modules = [m for m in all_modules
                           if m.get('type', 'Generic') in _IO_MODULE_TYPES]
-            # Further filter to only modules actually used in ip_settings
+            # Determine which modules are actually used in ip_settings
             used_ports = _get_used_port_names(tid, ip_settings)
-            if used_ports:
-                io_modules = [m for m in io_modules
-                              if m.get('name', '') in used_ports]
             ipg = task_ipg[tid]
             ip_bg = _get_ip_group_color(ipg)
 
@@ -589,7 +643,9 @@ def generate_level2_html(hw_registry, scenario, hw_raw, output_path):
                     mt = mod.get('type', 'Generic')
                     mid = f"{tid}_{_safe_id(mn)}"
                     short = _mod_type_short(mt)
-                    color = _l2_mod_color(mod, tid, ip_settings)
+                    is_disabled = bool(used_ports) and mn not in used_ports
+                    color = _l2_mod_color(mod, tid, ip_settings, is_disabled)
+                    detail = _build_l2_module_detail(mod, tid, ip_settings, is_disabled)
                     w = max(len(mn) * 7 + 16, 65)
                     ip_node["children"].append({
                         "id": mid, "width": w, "height": 30,
@@ -598,7 +654,8 @@ def generate_level2_html(hw_registry, scenario, hw_raw, output_path):
                         }
                     })
                     meta[mid] = {"type": "mod", "label": mn, "sub": short,
-                                 "color": color, "border": _darken_hex(color)}
+                                 "color": color, "border": _darken_hex(color),
+                                 "disabled": is_disabled, "detail": detail}
 
                 # Add output modules (with LAST layer constraint)
                 for mod in output_mods:
@@ -606,7 +663,9 @@ def generate_level2_html(hw_registry, scenario, hw_raw, output_path):
                     mt = mod.get('type', 'Generic')
                     mid = f"{tid}_{_safe_id(mn)}"
                     short = _mod_type_short(mt)
-                    color = _l2_mod_color(mod, tid, ip_settings)
+                    is_disabled = bool(used_ports) and mn not in used_ports
+                    color = _l2_mod_color(mod, tid, ip_settings, is_disabled)
+                    detail = _build_l2_module_detail(mod, tid, ip_settings, is_disabled)
                     w = max(len(mn) * 7 + 16, 65)
                     ip_node["children"].append({
                         "id": mid, "width": w, "height": 30,
@@ -615,7 +674,8 @@ def generate_level2_html(hw_registry, scenario, hw_raw, output_path):
                         }
                     })
                     meta[mid] = {"type": "mod", "label": mn, "sub": short,
-                                 "color": color, "border": _darken_hex(color)}
+                                 "color": color, "border": _darken_hex(color),
+                                 "disabled": is_disabled, "detail": detail}
 
                 # Add internal edges from input modules to output modules
                 io_names = {m.get('name') for m in io_modules}
@@ -888,15 +948,20 @@ function drawNode(g,node,ox,oy){
   if(node.width&&m){
     // rect
     const isGrpBox=m.type==='group_box';
+    const isDis=!!m.disabled;
     const rr=m.type==='group'?8:m.type==='ip'?6:isGrpBox?10:3;
     const sw=m.type==='group'||isGrpBox?1.5:1;
-    const fo=m.type==='group'?'0.55':isGrpBox?'0.7':'1';
+    const fo=m.type==='group'?'0.55':isGrpBox?'0.7':isDis?'0.5':'1';
     const sc=m.border||((m.type==='m2m'||m.type==='sw')?'#E65100':'#999');
-    const r=ce('rect',{x,y,width:node.width,height:node.height,rx:rr,ry:rr,
-      fill:m.color||'#fff','fill-opacity':fo,stroke:sc,'stroke-width':sw});
+    const rAttrs={x,y,width:node.width,height:node.height,rx:rr,ry:rr,
+      fill:m.color||'#fff','fill-opacity':fo,stroke:sc,'stroke-width':sw};
+    if(isDis)rAttrs['stroke-dasharray']='4,2';
+    const r=ce('rect',rAttrs);
     g.appendChild(r);
     // label
     const lines=(m.label||'').split('\\n');
+    const txtColor=isDis?'#AAA':'#333';
+    const subColor=isDis?'#CCC':'#666';
     if(m.type==='group'||m.type==='ip'){
       const fs=m.type==='group'?13:11;
       const t=ce('text',{x:x+8,y:y+16,'font-size':fs,'font-weight':'bold',fill:'#333'});
@@ -910,10 +975,10 @@ function drawNode(g,node,ox,oy){
         t2.textContent=lines[1];g.appendChild(t2);
       }
     }else if(m.type==='mod'){
-      const t=ce('text',{x:x+node.width/2,y:y+12,'text-anchor':'middle','font-size':9,fill:'#333'});
+      const t=ce('text',{x:x+node.width/2,y:y+12,'text-anchor':'middle','font-size':9,fill:txtColor});
       t.textContent=m.label;g.appendChild(t);
       if(m.sub){
-        const t2=ce('text',{x:x+node.width/2,y:y+23,'text-anchor':'middle','font-size':8,fill:'#666'});
+        const t2=ce('text',{x:x+node.width/2,y:y+23,'text-anchor':'middle','font-size':8,fill:subColor});
         t2.textContent=m.sub;g.appendChild(t2);
       }
     }else{
@@ -992,24 +1057,49 @@ function showTooltip(ev, m){
   if(!m.detail)return;
   const d=m.detail;
   let h=`<span class="close-btn" onclick="hideTooltip()">&times;</span>`;
-  h+=`<h3>${d.hw||d.label||'Detail'}</h3>`;
-  if(d.inputs&&d.inputs.length){
-    h+=`<div class="port-section">▼ Inputs (${d.inputs.length})</div><table><tr><th>Port</th><th>Size</th><th>Format</th><th>Bit</th><th>Comp</th></tr>`;
-    d.inputs.forEach(p=>{
-      const sz=p.size||'-';
-      h+=`<tr><td>${p.port}</td><td>${sz}</td><td>${p.format||'-'}</td><td>${p.bitwidth||'-'}</td><td>${p.comp||'-'}</td></tr>`;
-    });
-    h+='</table>';
+  // Module-level detail (DMA / CIN / COUT)
+  if(d.mod_type){
+    const sc=d.status==='Enabled'?'#2E7D32':'#B71C1C';
+    h+=`<h3>${d.name} <span style="font-size:11px;color:${sc}">[${d.status}]</span></h3>`;
+    if(d.mod_type==='dma'){
+      h+='<table>';
+      h+=`<tr><th>Direction</th><td>${d.direction}</td></tr>`;
+      h+=`<tr><th>Bandwidth</th><td>${d.bandwidth}</td></tr>`;
+      h+=`<tr><th>MO</th><td>${d.mo}</td></tr>`;
+      h+=`<tr><th>Size</th><td>${d.size}</td></tr>`;
+      h+=`<tr><th>Format</th><td>${d.format}</td></tr>`;
+      h+=`<tr><th>Bitwidth</th><td>${d.bitwidth||'-'}</td></tr>`;
+      h+=`<tr><th>Comp</th><td>${d.comp||'-'}</td></tr>`;
+      h+=`<tr><th>SBWC</th><td>${d.sbwc}</td></tr>`;
+      h+=`<tr><th>LLC</th><td>${d.llc}</td></tr>`;
+      h+='</table>';
+    } else {
+      h+='<table>';
+      h+=`<tr><th>Type</th><td>${d.mod_type==='cin'?'CIN (Input FIFO)':'COUT (Output FIFO)'}</td></tr>`;
+      h+=`<tr><th>Size</th><td>${d.size}</td></tr>`;
+      h+='</table>';
+    }
+  } else {
+    // IP-level detail (Level 1 style)
+    h+=`<h3>${d.hw||d.label||'Detail'}</h3>`;
+    if(d.inputs&&d.inputs.length){
+      h+=`<div class="port-section">▼ Inputs (${d.inputs.length})</div><table><tr><th>Port</th><th>Size</th><th>Format</th><th>Bit</th><th>Comp</th></tr>`;
+      d.inputs.forEach(p=>{
+        const sz=p.size||'-';
+        h+=`<tr><td>${p.port}</td><td>${sz}</td><td>${p.format||'-'}</td><td>${p.bitwidth||'-'}</td><td>${p.comp||'-'}</td></tr>`;
+      });
+      h+='</table>';
+    }
+    if(d.outputs&&d.outputs.length){
+      h+=`<div class="port-section out">▲ Outputs (${d.outputs.length})</div><table><tr><th>Port</th><th>Size</th><th>Format</th><th>Bit</th><th>Comp</th></tr>`;
+      d.outputs.forEach(p=>{
+        const sz=p.size||'-';
+        h+=`<tr><td>${p.port}</td><td>${sz}</td><td>${p.format||'-'}</td><td>${p.bitwidth||'-'}</td><td>${p.comp||'-'}</td></tr>`;
+      });
+      h+='</table>';
+    }
+    if(!d.inputs?.length&&!d.outputs?.length) h+='<div style="color:#999">No port info available</div>';
   }
-  if(d.outputs&&d.outputs.length){
-    h+=`<div class="port-section out">▲ Outputs (${d.outputs.length})</div><table><tr><th>Port</th><th>Size</th><th>Format</th><th>Bit</th><th>Comp</th></tr>`;
-    d.outputs.forEach(p=>{
-      const sz=p.size||'-';
-      h+=`<tr><td>${p.port}</td><td>${sz}</td><td>${p.format||'-'}</td><td>${p.bitwidth||'-'}</td><td>${p.comp||'-'}</td></tr>`;
-    });
-    h+='</table>';
-  }
-  if(!d.inputs?.length&&!d.outputs?.length) h+='<div style="color:#999">No port info available</div>';
   tip.innerHTML=h;
   tip.style.display='block';
   // Position near click
