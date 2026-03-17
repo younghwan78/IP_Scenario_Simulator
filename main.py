@@ -1505,7 +1505,7 @@ def main():
     # ── Publish: copy outputs to docs/reports/ with timestamp ──
     if args.publish:
         import shutil
-        publish_dir = os.path.join('docs', 'reports')
+        publish_dir = os.path.join('docs', 'reports', project_name)
         os.makedirs(publish_dir, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         scenario_data_for_writer = scenario_config.get('scenario', scenario_config)

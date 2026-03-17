@@ -24,8 +24,8 @@ import sys
 # Report file pattern: {project}-{scenario}-{YYYYMMDD-HHMMSS}-{writer}_suffix.ext
 REPORT_PATTERN = re.compile(
     r'^(?P<project>[^-]+)-(?P<scenario>.+?)'
-    r'-(?P<timestamp>\d{8}-\d{6})'
-    r'-(?P<writer>[^_]+)_'
+    r'(?:-(?P<timestamp>\d{8}-\d{6}))?'
+    r'(?:-(?P<writer>[^_]+))?_'
 )
 
 # Output directories to scan (in order)
