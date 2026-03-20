@@ -69,6 +69,151 @@ class ExplorationReportGenerator:
             return mw / self.vBat / self.pmic_eff
         return 0.0
 
+    # ------------------------------------------------------------------
+    # Analysis Helpers
+    # ------------------------------------------------------------------
+    def _get_bottom_candidates(self) -> List[CandidateResult]:
+        """Get the worst up to 5 configurations that are not in the top candidates."""
+        if not self.result.all_candidates:
+            return []
+        import copy
+        bottom = []
+        worst = list(reversed(self.result.all_candidates))
+        cand_ids = {id(c) for c in self.result.candidates}
+        for c in worst:
+            if id(c) not in cand_ids:
+                bottom.append(c)
+            if len(bottom) >= 5:
+                break
+        
+        copies = []
+        for i, c in enumerate(bottom):
+            c_copy = copy.copy(c)
+            c_copy.label = f"Worst-{i+1}"
+            c_copy.rank = -1
+            copies.append(c_copy)
+        return copies
+
+    def _calculate_parameter_impact(self, all_c: List[CandidateResult]) -> List[dict]:
+        """Calculate impact of each parameter on the target objective."""
+        if not all_c: return []
+
+        param_groups: Dict[str, Dict[str, List[float]]] = {}
+        for c in all_c:
+            val = self._power_key(c)
+            # DVFS
+            for d, lv in c.dvfs_overrides.items():
+                k = f"DVFS: {d}"
+                v = f"Lv{lv}"
+                param_groups.setdefault(k, {}).setdefault(v, []).append(val)
+            # Modes
+            for ip, mode in c.mode_overrides.items():
+                k = f"Mode: {ip}"
+                v = mode
+                param_groups.setdefault(k, {}).setdefault(v, []).append(val)
+            # Features
+            for ip, feats in c.feature_overrides.items():
+                for feat in feats:
+                    port = feat.get('port', 'unknown')
+                    parts = []
+                    if 'output_size' in feat: parts.append(f"sz={feat['output_size']}")
+                    if 'comp' in feat: parts.append(f"comp={feat['comp']}")
+                    if 'llc_enable' in feat: parts.append(f"llc={feat['llc_enable']}")
+                    k = f"Feature: {ip} ({port})"
+                    v = ", ".join(parts)
+                    param_groups.setdefault(k, {}).setdefault(v, []).append(val)
+
+        impacts = []
+        for param, value_groups in param_groups.items():
+            if len(value_groups) < 2:
+                continue
+            avgs = [sum(scores)/len(scores) for scores in value_groups.values() if scores]
+            if avgs:
+                impact = max(avgs) - min(avgs)
+                impacts.append({
+                    'parameter': param,
+                    'impact': impact,
+                    'values': {v: sum(sc)/len(sc) for v, sc in value_groups.items() if sc}
+                })
+
+        impacts.sort(key=lambda x: x['impact'], reverse=True)
+        return impacts[:3]
+
+    def _generate_variance_box_plots_svg(self, all_c: List[CandidateResult]) -> str:
+        """Generate horizontal box plots for variance visualization."""
+        if not all_c: return ""
+
+        def _get_quartiles(data: List[float]) -> dict:
+            if not data: return {'min': 0, 'q1': 0, 'med': 0, 'q3': 0, 'max': 0}
+            s = sorted(data)
+            n = len(s)
+            def pct(p):
+                k = (n - 1) * p
+                f = int(k)
+                c = min(n - 1, f + 1)
+                return s[f] + (s[c] - s[f]) * (k - f)
+            return {'min': s[0], 'q1': pct(0.25), 'med': pct(0.5), 'q3': pct(0.75), 'max': s[-1]}
+
+        if self.result.minimize_target == "core_power":
+            target_name = "Core Power"
+        elif self.result.minimize_target == "bw_power":
+            target_name = "BW Power"
+        else:
+            target_name = "Total Power"
+        
+        metrics = [
+            (target_name, [self._power_key(c) for c in all_c], "mW"),
+            ("Performance", [c.hw_time_ms for c in all_c], "ms"),
+            ("Bandwidth", [c.total_bw_mbs for c in all_c], "MB/s")
+        ]
+
+        chart_w = 600
+        row_h = 60
+        chart_h = row_h * len(metrics) + 40
+        margin_x = 120
+        plot_w = chart_w - margin_x - 40
+
+        svg = []
+        svg.append(f"<svg width='{chart_w}' height='{chart_h}' xmlns='http://www.w3.org/2000/svg' style='background:#fafafa;border:1px solid #ddd;margin:10px 0;'>")
+        
+        for i, (name, data, unit) in enumerate(metrics):
+            if not data: continue
+            q = _get_quartiles(data)
+            y_center = 40 + i * row_h
+            
+            svg.append(f"<text x='{margin_x - 10}' y='{y_center + 4}' text-anchor='end' font-size='12' fill='#333' font-weight='bold'>{name}</text>")
+            svg.append(f"<text x='{margin_x - 10}' y='{y_center + 18}' text-anchor='end' font-size='10' fill='#777'>({unit})</text>")
+
+            min_v, max_v = q['min'], q['max']
+            val_range = max_v - min_v
+            if val_range == 0: val_range = 1.0
+            scale_min = max(0, min_v - val_range * 0.1)
+            scale_max = max_v + val_range * 0.1
+            scale_range = scale_max - scale_min
+
+            def x_pos(val):
+                return margin_x + ((val - scale_min) / scale_range) * plot_w
+
+            x_min, x_max = x_pos(q['min']), x_pos(q['max'])
+            svg.append(f"<line x1='{margin_x}' y1='{y_center}' x2='{margin_x + plot_w}' y2='{y_center}' stroke='#ccc' stroke-width='1'/>")
+            svg.append(f"<line x1='{x_min}' y1='{y_center}' x2='{x_max}' y2='{y_center}' stroke='#666' stroke-width='1' stroke-dasharray='4,4'/>")
+            svg.append(f"<line x1='{x_min}' y1='{y_center - 5}' x2='{x_min}' y2='{y_center + 5}' stroke='#333' stroke-width='2'/>")
+            svg.append(f"<line x1='{x_max}' y1='{y_center - 5}' x2='{x_max}' y2='{y_center + 5}' stroke='#333' stroke-width='2'/>")
+
+            x_q1, x_q3 = x_pos(q['q1']), x_pos(q['q3'])
+            box_w = max(2, x_q3 - x_q1)
+            svg.append(f"<rect x='{x_q1}' y='{y_center - 10}' width='{box_w}' height='{20}' fill='#90CAF9' stroke='#1565C0' stroke-width='1' rx='2'/>")
+
+            x_med = x_pos(q['med'])
+            svg.append(f"<line x1='{x_med}' y1='{y_center - 10}' x2='{x_med}' y2='{y_center + 10}' stroke='#D32F2F' stroke-width='2'/>")
+
+            svg.append(f"<text x='{x_min}' y='{y_center - 14}' text-anchor='middle' font-size='9' fill='#555'>{q['min']:.1f}</text>")
+            svg.append(f"<text x='{x_max}' y='{y_center - 14}' text-anchor='middle' font-size='9' fill='#555'>{q['max']:.1f}</text>")
+            svg.append(f"<text x='{x_med}' y='{y_center + 22}' text-anchor='middle' font-size='9' fill='#D32F2F'>{q['med']:.1f}</text>")
+
+        svg.append("</svg>")
+        return "\\n".join(svg)
+
     # ==================================================================
     # HTML Report (primary output)
     # ==================================================================
@@ -115,8 +260,24 @@ class ExplorationReportGenerator:
         if base and candidates:
             html.append(self._generate_bar_chart_svg(base, candidates))
 
+        # ── Parameter Impact & Variance ──
+        if self.result.all_candidates:
+            html.append("<h2>2. Parameter Impact & Exploration Variance</h2>")
+            impacts = self._calculate_parameter_impact(self.result.all_candidates)
+            if impacts:
+                html.append("<h3>Top 3 Influential Parameters</h3>")
+                html.append(f"<p style='font-size:0.9em;color:#555;'>* Impact is max diff in avg {self.result.minimize_target} among parameter distinct values</p>")
+                html.append("<table><thead><tr><th>Parameter</th><th>Impact</th><th>Average Values</th></tr></thead><tbody>")
+                for imp in impacts:
+                    val_str = "<br>".join([f"<b>{k}</b>: {v:.1f}" for k, v in imp['values'].items()])
+                    html.append(f"<tr><td>{imp['parameter']}</td><td><b>{imp['impact']:.2f}</b></td><td style='text-align:left'>{val_str}</td></tr>")
+                html.append("</tbody></table>")
+            
+            html.append("<h3>Variance Distributions</h3>")
+            html.append(self._generate_variance_box_plots_svg(self.result.all_candidates))
+
         # ── Power Comparison ──
-        html.append("<h2>2. Power Comparison</h2>")
+        html.append("<h2>3. Power Comparison</h2>")
         # Build dynamic headers: Rank | DVFS domain cols | Mode cols | HW Time | Core | BW | Total | Δ | Δ%
         mode_ips = sorted(set(ip for c in candidates for ip in c.mode_overrides.keys()))
         html.append("<table class='comparison'><thead><tr>")
@@ -158,54 +319,64 @@ class ExplorationReportGenerator:
             html.append("<td>—</td><td>—</td><td>—</td>")
             html.append("</tr>")
 
-        # Top-K rows
+        # Top-K and Bottom-K rows
         base_domain_levels = {}
         if base:
             for d in domains:
                 base_domain_levels[d] = self._get_domain_level(base, d)
 
-        for c in candidates:
-            html.append("<tr>")
-            html.append(f"<td><b>{c.label}</b></td>")
-            # DVFS columns with diff highlighting
-            for d in domains:
-                lv, spd = self._get_domain_level(c, d)
-                base_lv, _ = base_domain_levels.get(d, (-1, 0))
-                cls = " class='diff'" if lv != base_lv else ""
-                html.append(f"<td{cls}>Lv{lv} ({spd:.0f})</td>")
-            # Mode columns with diff highlighting
-            cand_modes = self._get_ip_modes(c)
-            for ip in mode_ips:
-                mode = cand_modes.get(ip, '—')
-                base_mode = base_modes.get(ip, '—')
-                cls = " class='diff'" if mode != base_mode else ""
-                html.append(f"<td{cls}>{mode}</td>")
-            # HW time
-            html.append(f"<td>{c.hw_time_ms:.3f}</td>")
-            # Power
-            html.append(f"<td>{c.core_power_mw:.2f}</td>")
-            html.append(f"<td>{c.bw_power_mw:.2f}</td>")
-            html.append(f"<td><b>{c.total_power_mw:.2f}</b></td>")
-            html.append(f"<td>{c.total_power_ma:.2f}</td>")
-            # Delta
-            if base:
-                delta = c.total_power_mw - base.total_power_mw
-                pct = (delta / base.total_power_mw * 100) if base.total_power_mw > 0 else 0
-                delta_time = c.hw_time_ms - base.hw_time_ms
-                cls = 'inc' if delta > 0 else ('dec' if delta < 0 else '')
-                cls_t = 'inc' if delta_time > 0 else ('dec' if delta_time < 0 else '')
-                html.append(f"<td class='{cls}'>{delta:+.2f}</td>")
-                html.append(f"<td class='{cls}'>{pct:+.1f}%</td>")
-                html.append(f"<td class='{cls_t}'>{delta_time:+.3f}</td>")
-            else:
-                html.append("<td>—</td><td>—</td><td>—</td>")
-            html.append("</tr>")
+        bottom_copies = self._get_bottom_candidates()
+        groups = [("Top Configurations", candidates)]
+        if bottom_copies:
+            groups.append(("Bottom 5 Configurations", bottom_copies))
+
+        for group_name, group_cands in groups:
+            if group_name == "Bottom 5 Configurations":
+                html.append(f"<tr><td colspan='100%' style='background:#ddd;font-weight:bold;'>{group_name}</td></tr>")
+                
+            for c in group_cands:
+                html.append("<tr class='worst'>" if group_name == "Bottom 5 Configurations" else "<tr>")
+                html.append(f"<td><b>{c.label}</b></td>")
+                # DVFS columns with diff highlighting
+                for d in domains:
+                    lv, spd = self._get_domain_level(c, d)
+                    base_lv, _ = base_domain_levels.get(d, (-1, 0))
+                    cls = " class='diff'" if lv != base_lv else ""
+                    html.append(f"<td{cls}>Lv{lv} ({spd:.0f})</td>")
+                # Mode columns with diff highlighting
+                cand_modes = self._get_ip_modes(c)
+                for ip in mode_ips:
+                    mode = cand_modes.get(ip, '—')
+                    base_mode = base_modes.get(ip, '—')
+                    cls = " class='diff'" if mode != base_mode else ""
+                    html.append(f"<td{cls}>{mode}</td>")
+                # HW time
+                html.append(f"<td>{c.hw_time_ms:.3f}</td>")
+                # Power
+                html.append(f"<td>{c.core_power_mw:.2f}</td>")
+                html.append(f"<td>{c.bw_power_mw:.2f}</td>")
+                html.append(f"<td><b>{c.total_power_mw:.2f}</b></td>")
+                html.append(f"<td>{c.total_power_ma:.2f}</td>")
+                # Delta
+                if base:
+                    delta = c.total_power_mw - base.total_power_mw
+                    pct = (delta / base.total_power_mw * 100) if base.total_power_mw > 0 else 0
+                    delta_time = c.hw_time_ms - base.hw_time_ms
+                    cls = 'inc' if delta > 0 else ('dec' if delta < 0 else '')
+                    cls_t = 'inc' if delta_time > 0 else ('dec' if delta_time < 0 else '')
+                    html.append(f"<td class='{cls}'>{delta:+.2f}</td>")
+                    html.append(f"<td class='{cls}'>{pct:+.1f}%</td>")
+                    html.append(f"<td class='{cls_t}'>{delta_time:+.3f}</td>")
+                else:
+                    html.append("<td>—</td><td>—</td><td>—</td>")
+                html.append("</tr>")
+
 
         html.append("</tbody></table>")
 
         # ── Detailed per-candidate ──
-        html.append("<h2>3. Detailed Results</h2>")
-        all_candidates = ([base] if base else []) + candidates
+        html.append("<h2>4. Detailed Results</h2>")
+        all_candidates = ([base] if base else []) + candidates + bottom_copies
         for c in all_candidates:
             is_base = (c.rank == 0)
             cls = " class='baseline-section'" if is_base else ""
@@ -455,6 +626,55 @@ table.comparison th { position: sticky; top: 0; z-index: 1; }
                              "all candidates have equal or higher power than baseline.")
                 lines.append("")
 
+        # Variance and Impact
+        if self.result.all_candidates:
+            impacts = self._calculate_parameter_impact(self.result.all_candidates)
+            lines.append("## Parameter Impact & Exploration Variance")
+            lines.append("")
+            if impacts:
+                lines.append("### Top 3 Influential Parameters")
+                lines.append(f"*(Impact is maximum difference in average {self.result.minimize_target} among parameter distinct values)*")
+                lines.append("")
+                lines.append("| Parameter | Impact | Values (Avg) |")
+                lines.append("|-----------|--------|--------------|")
+                for imp in impacts:
+                    val_str = "<br>".join([f"**{k}**: {v:.1f}" for k, v in imp['values'].items()])
+                    lines.append(f"| {imp['parameter']} | **{imp['impact']:.2f}** | {val_str} |")
+                lines.append("")
+            
+            lines.append("### Variance Distributions (Box Plot Stats)")
+            lines.append("")
+            def _get_quartiles(data: List[float]) -> dict:
+                if not data: return {'min': 0, 'q1': 0, 'med': 0, 'q3': 0, 'max': 0}
+                s = sorted(data)
+                n = len(s)
+                def pct(p):
+                    k = (n - 1) * p
+                    f = int(k)
+                    c = min(n - 1, f + 1)
+                    return s[f] + (s[c] - s[f]) * (k - f)
+                return {'min': s[0], 'q1': pct(0.25), 'med': pct(0.5), 'q3': pct(0.75), 'max': s[-1]}
+            
+            if self.result.minimize_target == "core_power":
+                target_name = "Core Power"
+            elif self.result.minimize_target == "bw_power":
+                target_name = "BW Power"
+            else:
+                target_name = "Total Power"
+            
+            metrics = [
+                (target_name, [self._power_key(c) for c in self.result.all_candidates], "mW"),
+                ("Performance", [c.hw_time_ms for c in self.result.all_candidates], "ms"),
+                ("Bandwidth", [c.total_bw_mbs for c in self.result.all_candidates], "MB/s")
+            ]
+            lines.append("| Metric | Min | 25% | Median | 75% | Max |")
+            lines.append("|--------|-----|-----|--------|-----|-----|")
+            for name, data, unit in metrics:
+                if not data: continue
+                q = _get_quartiles(data)
+                lines.append(f"| {name} ({unit}) | {q['min']:.1f} | {q['q1']:.1f} | {q['med']:.1f} | {q['q3']:.1f} | {q['max']:.1f} |")
+            lines.append("")
+
         # Power comparison with DVFS split columns
         lines.append("## Power Comparison")
         lines.append("")
@@ -477,26 +697,37 @@ table.comparison th { position: sticky; top: 0; z-index: 1; }
                     f"| {base.total_power_mw:.2f} | {base.total_power_ma:.2f} | — | — |")
             lines.append(row)
 
-        for c in candidates:
-            row = f"| **{c.label}** |"
-            for d in domains:
-                lv, spd = self._get_domain_level(c, d)
-                row += f" Lv{lv}({spd:.0f}) |"
-            if base:
-                delta = c.total_power_mw - base.total_power_mw
-                pct = (delta / base.total_power_mw * 100) if base.total_power_mw > 0 else 0
-                delta_str = f"{delta:+.2f}"
-                pct_str = f"{pct:+.1f}%"
-            else:
-                delta_str, pct_str = "—", "—"
-            row += (f" {c.hw_time_ms:.3f} | {c.core_power_mw:.2f} | {c.bw_power_mw:.2f} "
-                    f"| {c.total_power_mw:.2f} | {c.total_power_ma:.2f} "
-                    f"| {delta_str} | {pct_str} |")
-            lines.append(row)
+        bottom_copies = self._get_bottom_candidates()
+        groups = [("Top Configurations", candidates)]
+        if bottom_copies:
+            groups.append(("Bottom 5 Configurations", bottom_copies))
+
+        for group_name, group_cands in groups:
+            if group_name == "Bottom 5 Configurations":
+                # Add a separator row for bottom 5
+                sep_row = f"| **--- Bottom 5 ---** |" + " --- |" * (len(domains) + len(mode_ips) if 'mode_ips' in locals() else len(domains) + 7)
+                lines.append(sep_row)
+            
+            for c in group_cands:
+                row = f"| **{c.label}** |"
+                for d in domains:
+                    lv, spd = self._get_domain_level(c, d)
+                    row += f" Lv{lv}({spd:.0f}) |"
+                if base:
+                    delta = c.total_power_mw - base.total_power_mw
+                    pct = (delta / base.total_power_mw * 100) if base.total_power_mw > 0 else 0
+                    delta_str = f"{delta:+.2f}"
+                    pct_str = f"{pct:+.1f}%"
+                else:
+                    delta_str, pct_str = "—", "—"
+                row += (f" {c.hw_time_ms:.3f} | {c.core_power_mw:.2f} | {c.bw_power_mw:.2f} "
+                        f"| {c.total_power_mw:.2f} | {c.total_power_ma:.2f} "
+                        f"| {delta_str} | {pct_str} |")
+                lines.append(row)
         lines.append("")
 
         # Detailed per-candidate
-        all_candidates = ([base] if base else []) + candidates
+        all_candidates = ([base] if base else []) + candidates + bottom_copies
         for c in all_candidates:
             lines.append("---")
             lines.append(f"### {c.label}")

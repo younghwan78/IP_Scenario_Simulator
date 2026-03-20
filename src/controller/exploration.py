@@ -50,6 +50,7 @@ class CandidateResult:
     bw_power_mw: float = 0.0
     total_power_mw: float = 0.0
     total_power_ma: float = 0.0  # total_power_mw / vBat / pmic_eff
+    total_bw_mbs: float = 0.0
 
     # HW execution time (max across all IPs, ms)
     hw_time_ms: float = 0.0
@@ -71,6 +72,7 @@ class ExplorationResult:
     """Complete exploration output."""
     baseline: Optional[CandidateResult] = None
     candidates: List[CandidateResult] = field(default_factory=list)
+    all_candidates: List[CandidateResult] = field(default_factory=list)
     total_combinations: int = 0
     feasible_count: int = 0
     elapsed_sec: float = 0.0
@@ -408,6 +410,7 @@ class ExplorationEngine:
         ip_settings = self._apply_ip_settings_overrides(ip_settings, combo)
         dma_records, total_bw, total_bw_power = self._collect_bw(ip_settings)
         result.dma_records = dma_records
+        result.total_bw_mbs = total_bw
 
         # 8. Core power
         core_power = sum(c.set_volt_power for c in resolved.values())
@@ -500,6 +503,7 @@ class ExplorationEngine:
         result = ExplorationResult(
             baseline=baseline,
             candidates=top_k,
+            all_candidates=all_results,
             total_combinations=total,
             feasible_count=len(all_results),
             elapsed_sec=elapsed,
