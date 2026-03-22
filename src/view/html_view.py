@@ -300,7 +300,8 @@ def generate_top_html(hw_registry, scenario, output_path):
 def _build_port_detail(tid, hw_name, hw, ip_settings, scenario=None):
     """Build structured detail dict for tooltip from ip_settings."""
     ts = ip_settings.get(tid, {})
-    detail = {"hw": hw_name, "inputs": [], "outputs": []}
+    mode = ts.get('mode', 'Normal')
+    detail = {"hw": hw_name, "mode": mode, "inputs": [], "outputs": []}
 
     # Sensor nodes: show sensor specs instead of ports
     if isinstance(hw, SensorNode):
@@ -935,8 +936,10 @@ def generate_task_topology_html(hw_registry, scenario, output_path):
             w = max(w, len(in_str) * 7 + 20)
         elk["children"].append({"id": tid, "width": w, "height": h})
         bd = _get_hierarchy_border(hier)
+        # Build detail info for tooltip popup
+        detail = _build_port_detail(tid, hw_name, hw, ip_settings, scenario)
         meta[tid] = {"type": "leaf", "label": lbl, "color": bg, "border": bd,
-                     "badges": badges}
+                     "detail": detail, "badges": badges}
 
     # Edges
     _build_cross_edges(elk, meta, scenario, ip_settings)
@@ -1191,7 +1194,9 @@ function showTooltip(ev, m){
     }
   } else {
     // IP-level detail (Level 1 style)
-    h+=`<h3>${d.hw||d.label||'Detail'}</h3>`;
+    h+=`<h3>${d.hw||d.label||'Detail'}`;
+    if(d.mode) h+=` <span style="font-size:11px;color:#1565C0;font-weight:normal">[Mode: ${d.mode}]</span>`;
+    h+=`</h3>`;
     if(d.inputs&&d.inputs.length){
       h+=`<div class="port-section">▼ Inputs (${d.inputs.length})</div><table><tr><th>Port</th><th>Size</th><th>Format</th><th>Bit</th><th>Comp</th></tr>`;
       d.inputs.forEach(p=>{
