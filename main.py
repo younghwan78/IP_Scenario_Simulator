@@ -58,7 +58,12 @@ def load_hw_config(path: str) -> dict:
 def load_scenario_config(path: str) -> dict:
     """Load scenario configuration from YAML file."""
     with open(path, 'r', encoding='utf-8') as f:
-        return yaml.safe_load(f)
+        config = yaml.safe_load(f)
+    # Compact syntax pre-processing
+    from src.model.compact_scenario import is_compact, expand_compact
+    if is_compact(config):
+        config = expand_compact(config)
+    return config
 
 
 def load_sensor_config(path: str) -> dict:

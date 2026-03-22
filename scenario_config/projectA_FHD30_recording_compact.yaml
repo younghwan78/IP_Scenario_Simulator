@@ -1,0 +1,534 @@
+# FHD30 Recording Scenario (Compact Version)
+# HP2 -> CSIS_LINK -> CSIS -> PDP (OTF)
+#                          -> PREP -> CSTAT (OTF)
+#                          -> BYRP (M2M) -> RGBP -> YUVSC -> MLSC (OTF)
+#                             MLSC -> MTNR0 -> MSNR -> MCSC (M2M+OTF)
+#                             MLSC -> MTNR1 -> MSNR (M2M+OTF)
+#                                              MCSC -> MFC (M2M)
+#                                              MCSC -> DPU (M2M)
+#
+# Compact syntax:
+#   - compact: true 활성화
+#   - tasks 생략 → t_{hw.lower()} 자동 생성
+#   - inputs[].size 생략 → 이전 block output size 상속
+#   - outputs[].size 생략 → 해당 block의 primary input size 사용
+#   - mode 생략 → "Normal" 기본값
+
+compact: true
+
+name: "FHD30_Recording"
+writer: "YHJOO"
+num_frames: 1  # Multi-frame simulation (default: 1)
+asv_group: 4   # ASV group for DVFS voltage lookup (default: 4)
+sw_margin: 0.25  # SW margin for clock calculation (15% = 1.15x required clock)
+h_blank_margin: 0.05
+bw_power: 80           # mW/GB/s — BW power coefficient
+vBat: 4.0              # Battery voltage (V)
+pmic_efficiency: 0.85  # PMIC efficiency
+bw_margin: 1.25        # BW margin for MIF level determination (default: 1.25)
+mem_util: 0.55         # Memory utilization for MIF BW calculation (default: 0.55)
+mif_channel_width: 16  # MIF channel width in bytes (default: 16)
+
+# Config file paths (relative to this scenario file)
+config_paths:
+  hw_config: "../hw_config/projectA_hw.yaml"
+  sensor_config: "../hw_config/sensor_config.yaml"
+  hw_info: "../hw_config/projectA_info.csv"
+  hw_dvfs: "../hw_config/projectA_dvfs.csv"
+
+# Sensor configuration
+sensor:
+  hw: "HP2"
+  mode: "mode1"
+
+# Sensor task
+tasks:
+  - id: "t_sensor"
+    hw: "HP2"
+    description: "FHD30 LN2"
+
+ip_blocks:
+  # 1. CSIS_LINK — size 최초 선언 (4000x2252), task ID는 원본과 동일(t_csislink)
+  - ip_settings:
+      hw: "CSIS_LINK"
+      # mode 생략 → "Normal"
+      inputs:
+        - port: "DC_PHY"
+          size: [0, 0, 4000, 2252]
+      outputs:
+        - port: "LINK"
+          # size 생략 → input(4000x2252) 사용
+    tasks:
+      - id: "t_csislink"
+        hw: "CSIS_LINK"
+        description: "CPHY"
+    edges:
+      - src: "t_sensor"
+        dst: "t_csislink"
+        type: "OTF"
+
+  # 2. CSIS
+  - ip_settings:
+      hw: "CSIS"
+      inputs:
+        - port: "NFI_DEC"
+          # size 생략 → 이전(CSIS_LINK output 4000x2252) 상속
+      outputs:
+        - port: "COUTFIFO"
+          # size 생략 → input(4000x2252) 사용
+        - port: "CSIS_WDMA"
+          # size 생략 → input(4000x2252) 사용
+          format: "BAYER_PACKED"
+          bitwidth: 12
+          comp: "enable"
+          comp_ratio: 0.5
+    # tasks 생략 → t_csis 자동
+    edges:
+      - src: "t_csislink"
+        src_port: "LINK"
+        dst: "t_csis"
+        dst_port: "NFI_DEC"
+        type: "OTF"
+
+  # 3. PDP
+  - ip_settings:
+      hw: "PDP"
+      inputs:
+        - port: "REORDER"
+          # size 생략 → 이전(CSIS COUTFIFO 4000x2252) 상속
+      outputs:
+        - port: "STAT_WDMA"
+          size: [0, 0, 4000, 282]    # 명시 (다른 size)
+          format: "STAT"
+          bitwidth: 10
+        - port: "HPD_WDMA"
+          size: [0, 0, 4000, 382]
+          format: "STAT"
+          bitwidth: 10
+        - port: "VPD_WDMA"
+          size: [0, 0, 2000, 382]
+          format: "STAT"
+          bitwidth: 10
+    edges:
+      - src: "t_csis"
+        src_port: "IBUF"
+        dst: "t_pdp"
+        dst_port: "REORDER"
+        type: "OTF"
+
+  # 4. PREP
+  - ip_settings:
+      hw: "PREP"
+      inputs:
+        - port: "CINFIFO"
+          # size 생략 → PDP의 primary output(4000x2252 from input) 상속?
+          # PDP는 COUTFIFO가 없고, outputs가 모두 다른 size.
+          # 실제로는 CSIS→PREP이므로, explicit size 필요
+          size: [0, 0, 4000, 2252]
+      outputs:
+        - port: "COUTFIFO"
+          # size 생략 → input(4000x2252) 사용
+    edges:
+      - src: "t_csis"
+        src_port: "COUTFIFO"
+        dst: "t_prep"
+        dst_port: "CINFIFO"
+        type: "OTF"
+
+  # 5. CSTAT
+  - ip_settings:
+      hw: "CSTAT"
+      inputs:
+        - port: "CINFIFO"
+          # size 생략 → PREP COUTFIFO(4000x2252) 상속
+      outputs:
+        - port: "CDAF_WDMA"
+          size: [0, 0, 19, 15]
+          format: "STAT"
+          bitwidth: 384
+        - port: "RGBHIST_WDMA"
+          size: [0, 0, 40960, 1]
+          format: "STAT"
+          bitwidth: 8
+        - port: "THSTAT_AE_WDMA"
+          size: [0, 0, 64, 64]
+          format: "STAT"
+          bitwidth: 128
+        - port: "THSTAT_AWB_WDMA"
+          size: [0, 0, 64, 64]
+          format: "STAT"
+          bitwidth: 128
+        - port: "DRC_CLCT_WDMA"
+          size: [0, 0, 500, 200]
+          format: "STAT"
+          bitwidth: 8
+        - port: "SPE_RGB_STAT_WDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+        - port: "SPE_Y_HIST_WDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+        - port: "DS_FDPIG_WDMA"
+          size: [0, 0, 512, 288]
+          format: "RGB"
+          bitwidth: 8
+        - port: "DS_CAV_WDMA"
+          size: [0, 0, 512, 288]
+          format: "RGB"
+          bitwidth: 8
+        - port: "SAT_Y_WDMA"
+          size: [0, 0, 1920, 1080]
+          format: "Y8"
+          bitwidth: 8
+        - port: "SAT_UV_WDMA"
+          size: [0, 0, 1920, 1080]
+          format: "UV8"
+          bitwidth: 8
+        - port: "DS_LME0_WDMA"
+          size: [0, 0, 1024, 768]
+          format: "Y8"
+          bitwidth: 8
+        - port: "DS_LME1_WDMA"
+          size: [0, 0, 1024, 768]
+          format: "Y8"
+          bitwidth: 8
+    edges:
+      - src: "t_prep"
+        src_port: "COUTFIFO"
+        dst: "t_cstat"
+        dst_port: "CINFIFO"
+        type: "OTF"
+
+  # 6. BYRP — M2M from CSIS (inputs/outputs need explicit size)
+  - ip_settings:
+      hw: "BYRP"
+      inputs:
+        - port: "COMP_RD0_RDMA"
+          size: [0, 0, 4000, 2252]
+          format: "BAYER_PACKED"
+          bitwidth: 12
+          comp: "enable"
+          comp_ratio: 0.5
+        - port: "SPE_Y_HIST_RDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+        - port: "SPE_AI_STAT_RDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+        - port: "SPE_GRID_STAT_RDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+        - port: "SPE_FRAME_STAT_RDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+      outputs:
+        - port: "COUTFIFO"
+          # size 생략 → primary input(4000x2252) 사용
+        - port: "CROP_DNG_WDMA"
+          # size 생략 → primary input(4000x2252) 사용
+          format: "BAYER_UNPACKED"
+          bitwidth: 12
+          comp: "disable"
+        - port: "SPE_GRID_STAT_WDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+        - port: "SPE_FRAME_STAT_WDMA"
+          size: [0, 0, 400, 300]
+          format: "STAT"
+          bitwidth: 8
+    edges:
+      - src: "t_csis"
+        src_port: "CSIS_WDMA"
+        dst: "t_byrp"
+        dst_port: "COMP_RD0_RDMA"
+        type: "M2M"
+
+  # 7. RGBP
+  - ip_settings:
+      hw: "RGBP"
+      inputs:
+        - port: "CINFIFO"
+          # size 생략 → BYRP COUTFIFO(4000x2252) 상속
+      outputs:
+        - port: "COUTFIFO"
+          # size 생략 → input(4000x2252) 사용
+        - port: "CROP_DNG_WDMA"
+          # size 생략 → input(4000x2252) 사용
+          format: "BAYER_UNPACKED"
+          bitwidth: 12
+          comp: "disable"
+    edges:
+      - src: "t_byrp"
+        src_port: "COUTFIFO"
+        dst: "t_rgbp"
+        dst_port: "CINFIFO"
+        type: "OTF"
+
+  # 8. MLSC — outputs have different sizes (scaling)
+  - ip_settings:
+      hw: "MLSC"
+      inputs:
+        - port: "CINFIFO"
+          # size 생략 → RGBP COUTFIFO(4000x2252) 상속
+      outputs:
+        - port: "L0_WDMA"
+          size: [0, 0, 1920, 1080]
+          format: "YUV444"
+          bitwidth: 14
+        - port: "L1_WDMA"
+          size: [0, 0, 960, 540]
+          format: "YUV444"
+          bitwidth: 14
+        - port: "L2_WDMA"
+          size: [0, 0, 480, 270]
+          format: "YUV444"
+          bitwidth: 14
+        - port: "L3_WDMA"
+          size: [0, 0, 240, 135]
+          format: "YUV444"
+          bitwidth: 14
+        - port: "G4_WDMA"
+          size: [0, 0, 120, 68]
+          format: "YUV444"
+          bitwidth: 14
+    edges:
+      - src: "t_rgbp"
+        src_port: "COUTFIFO"
+        dst: "t_mlsc"
+        dst_port: "CINFIFO"
+        type: "OTF"
+
+  # 8-1. postIRTA (SW task on CPU)
+  - sw_tasks:
+      - id: "t_postIRTA"
+        name: "postIRTA"
+        group: "IRTA"
+        processor: "CPU_MID_Clustor"
+        duration_ms: 4.0
+    edges:
+      - src: "t_mlsc"
+        dst: "t_postIRTA"
+        type: "M2M"
+  - sw_tasks:
+      - id: "t_postIRTA2"
+        name: "postIRTA2"
+        group: "IRTA"
+        processor: "CPU_MID_Clustor"
+        duration_ms: 2.0
+    edges:
+      - src: "t_postIRTA"
+        dst: "t_postIRTA2"
+        type: "M2M"
+
+  # 9. MTNR0
+  - ip_settings:
+      hw: "MTNR0"
+      #manual_clock: 533
+      inputs:
+        - port: "L0_RDMA"
+          size: [0, 0, 1920, 1080]
+          format: "YUV444"
+          bitwidth: 14
+      outputs:
+        - port: "L0_COUTFIFO"
+          size: [0, 0, 1920, 1080]
+    edges:
+      - src: "t_postIRTA2"
+        dst: "t_mtnr0"
+        dst_port: "L0_RDMA"
+        type: "M2M"
+
+  # 10. MTNR1
+  - ip_settings:
+      hw: "MTNR1"
+      inputs:
+        - port: "L1_RDMA"
+          size: [0, 0, 960, 540]
+          format: "YUV444"
+          bitwidth: 14
+        - port: "L2_RDMA"
+          size: [0, 0, 480, 270]
+          format: "YUV444"
+          bitwidth: 14
+        - port: "L3_RDMA"
+          size: [0, 0, 240, 135]
+          format: "YUV444"
+          bitwidth: 14
+        - port: "G4_RDMA"
+          size: [0, 0, 120, 68]
+          format: "YUV444"
+          bitwidth: 14
+      outputs:
+        - port: "L1_COUTFIFO"
+          size: [0, 0, 960, 540]
+        - port: "L2_COUTFIFO"
+          size: [0, 0, 480, 270]
+        - port: "L3_COUTFIFO"
+          size: [0, 0, 240, 135]
+        - port: "G4_COUTFIFO"
+          size: [0, 0, 120, 68]
+    edges:
+      - src: "t_postIRTA2"
+        dst: "t_mtnr1"
+        dst_port: "L1_RDMA"
+        type: "M2M"
+      - src: "t_postIRTA2"
+        dst: "t_mtnr1"
+        dst_port: "L2_RDMA"
+        type: "M2M"
+      - src: "t_postIRTA2"
+        dst: "t_mtnr1"
+        dst_port: "L3_RDMA"
+        type: "M2M"
+      - src: "t_postIRTA2"
+        dst: "t_mtnr1"
+        dst_port: "G4_RDMA"
+        type: "M2M"
+
+  # 11. MSNR
+  - ip_settings:
+      hw: "MSNR"
+      inputs:
+        - port: "L0_CINFIFO"
+          size: [0, 0, 1920, 1080]
+        - port: "L1_CINFIFO"
+          size: [0, 0, 960, 540]
+        - port: "L2_CINFIFO"
+          size: [0, 0, 480, 270]
+        - port: "L3_CINFIFO"
+          size: [0, 0, 240, 135]
+        - port: "G4_CINFIFO"
+          size: [0, 0, 120, 68]
+      outputs:
+        - port: "COUTFIFO"
+          size: [0, 0, 1920, 1080]
+    edges:
+      - src: "t_mtnr0"
+        src_port: "L0_COUTFIFO"
+        dst: "t_msnr"
+        dst_port: "L0_CINFIFO"
+        type: "OTF"
+      - src: "t_mtnr1"
+        src_port: "L1_COUTFIFO"
+        dst: "t_msnr"
+        dst_port: "L1_CINFIFO"
+        type: "OTF"
+      - src: "t_mtnr1"
+        src_port: "L2_COUTFIFO"
+        dst: "t_msnr"
+        dst_port: "L2_CINFIFO"
+        type: "OTF"
+      - src: "t_mtnr1"
+        src_port: "L3_COUTFIFO"
+        dst: "t_msnr"
+        dst_port: "L3_CINFIFO"
+        type: "OTF"
+      - src: "t_mtnr1"
+        src_port: "G4_COUTFIFO"
+        dst: "t_msnr"
+        dst_port: "G4_CINFIFO"
+        type: "OTF"
+
+  # 12. YUVP
+  - ip_settings:
+      hw: "YUVP"
+      inputs:
+        - port: "CINFIFO"
+          # size 생략 → MSNR COUTFIFO(1920x1080) 상속
+      outputs:
+        - port: "COUTFIFO"
+          # size 생략 → input(1920x1080) 사용
+    edges:
+      - src: "t_msnr"
+        src_port: "COUTFIFO"
+        dst: "t_yuvp"
+        dst_port: "CINFIFO"
+        type: "OTF"
+
+  # 13. MCSC
+  - ip_settings:
+      hw: "MCSC"
+      inputs:
+        - port: "CINFIFO"
+          # size 생략 → YUVP COUTFIFO(1920x1080) 상속
+      outputs:
+        - port: "P0_WDMA"
+          # size 생략 → input(1920x1080) 사용
+          format: "YUV420"
+          bitwidth: 10
+        - port: "P1_WDMA"
+          # size 생략 → input(1920x1080) 사용
+          format: "YUV420"
+          bitwidth: 10
+    edges:
+      - src: "t_yuvp"
+        src_port: "COUTFIFO"
+        dst: "t_mcsc"
+        dst_port: "CINFIFO"
+        type: "OTF"
+  - sw_tasks:
+      - id: "t_codec2"
+        name: "Codec2"
+        group: "Codec2"
+        processor: "CPU_MID_Clustor"
+        duration_ms: 4.0
+        latency_ms: 1.0
+    edges:
+      - src: "t_mcsc"
+        src_port: "P0_WDMA"
+        dst: "t_codec2"
+        type: "M2M"
+
+  # 14. MFC (Video Encoder)
+  - ip_settings:
+      hw: "MFC"
+      inputs:
+        - port: "MFC_RDMA"
+          size: [0, 0, 1920, 1080]
+          format: "YUV420"
+          bitwidth: 10
+      outputs:
+        - port: "MFC_WDMA"
+          size: [0, 0, 40000, 1000]
+          format: "STAT"
+          bitwidth: 10
+    edges:
+      - src: "t_codec2"
+        dst: "t_mfc"
+        dst_port: "MFC_RDMA"
+        type: "M2M"
+  - sw_tasks:
+      - id: "t_hw_composer"
+        name: "HWcomposer"
+        group: "HWcomposer"
+        processor: "CPU_MID_Clustor"
+        duration_ms: 2.0
+    edges:
+      - src: "t_mcsc"
+        src_port: "P1_WDMA"
+        dst: "t_hw_composer"
+        type: "M2M"
+
+  # 15. DPU (Display)
+  - ip_settings:
+      hw: "DPU"
+      inputs:
+        - port: "DPU_RDMA"
+          size: [0, 0, 1920, 1080]
+          format: "YUV420"
+          bitwidth: 10
+      outputs:
+        - port: "COUTFIFO"
+          size: [0, 0, 1920, 1080]
+    edges:
+      - src: "t_hw_composer"
+        dst: "t_dpu"
+        dst_port: "DPU_RDMA"
+        type: "M2M"
