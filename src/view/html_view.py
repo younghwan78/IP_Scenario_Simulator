@@ -23,8 +23,78 @@ from src.view.plantuml_view import (
     _get_hierarchy_border, _get_ip_group_border, _darken_hex,
     _is_sw_edge,
 )
-from src.model.hw_nodes import SensorNode
+from src.model.hw_nodes import SensorNode, IPNode
 from src.model.scenario import ConnectionType
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  Shared: size / badge helpers
+# ═══════════════════════════════════════════════════════════════════
+
+def _extract_wh_ip(size):
+    """Extract (w, h) from [x, y, w, h] or [w, h] size list."""
+    if len(size) == 4 and size[2] > 0:
+        return size[2], size[3]
+    if len(size) == 2 and size[0] > 0:
+        return size[0], size[1]
+    return None, None
+
+
+def _get_ip_size_info(tid, hw, ip_settings):
+    """Compute primary input/output size and S/C badge flags for an IP.
+
+    Returns:
+        in_str   : "WxH" string for primary input  (or None)
+        out_str  : "WxH" string for representative output (or None)
+        badges   : list of badge strings — can contain 'S', 'C', both, or neither
+    """
+    ts = ip_settings.get(tid, {})
+    inputs  = ts.get('inputs', [])
+    outputs = ts.get('outputs', [])
+
+    # ── Primary INPUT: largest by pixel count ───────────────────────
+    in_w = in_h = None
+    best_px = -1
+    for inp in inputs:
+        w, h = _extract_wh_ip(inp.get('size', []))
+        if w and h and w * h > best_px:
+            in_w, in_h, best_px = w, h, w * h
+
+    # ── Primary OUTPUT: prefer COUTFIFO; fallback = largest ─────────
+    out_w = out_h = None
+    # 1st pass: COUTFIFO
+    for out in outputs:
+        if 'COUTFIFO' in out.get('port', ''):
+            w, h = _extract_wh_ip(out.get('size', []))
+            if w and h:
+                out_w, out_h = w, h
+                break
+    # 2nd pass: largest pixel count (skip STAT ports which are unrelated)
+    if out_w is None:
+        best_px = -1
+        for out in outputs:
+            port = out.get('port', '')
+            if out.get('format') == 'STAT':
+                continue  # skip statistical outputs
+            w, h = _extract_wh_ip(out.get('size', []))
+            if w and h and w * h > best_px:
+                out_w, out_h, best_px = w, h, w * h
+
+    in_str  = f"{in_w}x{in_h}"  if in_w else None
+    out_str = f"{out_w}x{out_h}" if out_w else None
+
+    # ── Badge detection ─────────────────────────────────────────────
+    badges = []
+    if in_w and out_w:
+        # S badge: output resolution differs from input
+        if (in_w != out_w) or (in_h != out_h):
+            badges.append('S')
+        # C badge: HW supports crop AND output < input (aspect may differ)
+        hw_supports_crop = isinstance(hw, IPNode) and getattr(hw, 'supports_crop', False)
+        if hw_supports_crop and out_w * out_h < in_w * in_h:
+            badges.append('C')
+
+    return in_str, out_str, badges
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -307,24 +377,34 @@ def generate_level1_html(hw_registry, scenario, output_path):
             ipg = task_ipg[tid]
             ip_bg = _get_ip_group_color(ipg)
 
-            # Build label with resolution info
+            # Build label with resolution info (input + output)
             lbl = hw_name
             ts = ip_settings.get(tid, {})
             inputs = ts.get('inputs', [])
-            if inputs:
-                sz = inputs[0].get('size', [])
-                if len(sz) == 4 and sz[2] > 0:
-                    lbl = f"{hw_name}\\n{sz[2]}x{sz[3]}"
+            in_str, out_str, badges = _get_ip_size_info(tid, hw, ip_settings)
+
+            if in_str:
+                if out_str and out_str != in_str:
+                    lbl = f"{hw_name}\\n{in_str}\u2192{out_str}"
+                else:
+                    lbl = f"{hw_name}\\n{in_str}"
             elif isinstance(hw, SensorNode):
                 lbl = f"{hw_name}\\n{hw.frame_width}x{hw.frame_height}@{hw.fps:.0f}fps"
 
-            w = max(len(hw_name) * 8 + 20, 100)
-            grp_node["children"].append({"id": tid, "width": w, "height": 40})
+            # Taller node only when in→out differ (extra line)
+            size_changed = in_str and out_str and out_str != in_str
+            h = 54 if size_changed else 40
+            w = max(len(hw_name) * 8 + 20, 110)
+            if size_changed:
+                w = max(w, (len(in_str) + len(out_str) + 4) * 6 + 20)
+            elif in_str:
+                w = max(w, len(in_str) * 7 + 20)
+            grp_node["children"].append({"id": tid, "width": w, "height": h})
             ip_bd = _get_ip_group_border(ipg)
             # Build detail info for tooltip popup
             detail = _build_port_detail(tid, hw_name, hw, ip_settings, scenario)
             meta[tid] = {"type": "leaf", "label": lbl, "color": ip_bg,
-                         "border": ip_bd, "detail": detail}
+                         "border": ip_bd, "detail": detail, "badges": badges}
 
         elk["children"].append(grp_node)
 
@@ -837,11 +917,26 @@ def generate_task_topology_html(hw_registry, scenario, output_path):
         hier = _get_hierarchy(hw, hw_name) if hw else "Other"
         bg = _get_hierarchy_color(hier)
 
-        lbl = f"{tid}\\n({hw_name})"
+        in_str, out_str, badges = _get_ip_size_info(tid, hw, ip_settings)
+        if in_str:
+            if out_str and out_str != in_str:
+                lbl = f"{tid}\\n({hw_name})\\n{in_str}\u2192{out_str}"
+            else:
+                lbl = f"{tid}\\n({hw_name})\\n{in_str}"
+        else:
+            lbl = f"{tid}\\n({hw_name})"
+
+        size_changed = in_str and out_str and out_str != in_str
+        h = 62 if size_changed else (50 if in_str else 45)
         w = max(len(tid) * 8 + 20, len(hw_name) * 8 + 40, 120)
-        elk["children"].append({"id": tid, "width": w, "height": 45})
+        if size_changed:
+            w = max(w, (len(in_str) + len(out_str) + 4) * 7 + 20)
+        elif in_str:
+            w = max(w, len(in_str) * 7 + 20)
+        elk["children"].append({"id": tid, "width": w, "height": h})
         bd = _get_hierarchy_border(hier)
-        meta[tid] = {"type": "leaf", "label": lbl, "color": bg, "border": bd}
+        meta[tid] = {"type": "leaf", "label": lbl, "color": bg, "border": bd,
+                     "badges": badges}
 
     # Edges
     _build_cross_edges(elk, meta, scenario, ip_settings)
@@ -988,6 +1083,21 @@ function drawNode(g,node,ox,oy){
         if(i===0)t.setAttribute('font-weight','bold');
         t.textContent=ln;g.appendChild(t);
       });
+      // S/C badges: small superscript circles in top-right corner
+      if(m.badges&&m.badges.length){
+        const bColors={S:'#E65100',C:'#1565C0'};
+        const bLabels={S:'S',C:'C'};
+        let bx=x+node.width-6;
+        const by=y+6;
+        m.badges.slice().reverse().forEach(b=>{
+          const bc=bColors[b]||'#666';
+          const r=ce('circle',{cx:bx,cy:by,r:7,fill:bc,'fill-opacity':'0.92',stroke:'white','stroke-width':1});
+          g.appendChild(r);
+          const t=ce('text',{x:bx,y:by+4,'text-anchor':'middle','font-size':8,'font-weight':'bold',fill:'white'});
+          t.textContent=bLabels[b]||b;g.appendChild(t);
+          bx-=16;
+        });
+      }
     }
     // Click handler for tooltip popup (if detail exists)
     if(m.detail){
