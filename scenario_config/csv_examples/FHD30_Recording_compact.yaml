@@ -1,0 +1,450 @@
+# FHD30_Recording Scenario (Compact Version)
+# Auto-generated from CSV by csv_to_scenario
+compact: true
+name: FHD30_Recording
+writer: YHJOO
+num_frames: 1
+asv_group: 4
+sw_margin: 0.25
+h_blank_margin: 0.05
+bw_power: 80.0
+vBat: 4.0
+pmic_efficiency: 0.85
+bw_margin: 1.25
+mem_util: 0.55
+mif_channel_width: 16
+config_paths:
+  hw_config: ../../hw_config/projectA_hw.yaml
+  sensor_config: ../../hw_config/sensor_config.yaml
+  hw_info: ../../hw_config/projectA_info.csv
+  hw_dvfs: ../../hw_config/projectA_dvfs.csv
+sensor:
+  hw: HP2
+  mode: mode1
+tasks:
+- id: t_sensor
+  hw: HP2
+  description: FHD30 LN2
+ip_blocks:
+- ip_settings:
+    hw: CSIS_LINK
+    inputs:
+    - port: DC_PHY
+      size: [0, 0, 4000, 2252]
+    outputs:
+    - port: LINK
+  tasks:
+  - id: t_csislink
+    hw: CSIS_LINK
+    description: CPHY
+  edges:
+  - src: t_sensor
+    dst: t_csislink
+    type: OTF
+- ip_settings:
+    hw: CSIS
+    inputs:
+    - port: NFI_DEC
+    outputs:
+    - port: COUTFIFO
+    - port: CSIS_WDMA
+      format: BAYER_PACKED
+      bitwidth: 12
+      comp: enable
+      comp_ratio: 0.5
+  edges:
+  - src: t_csislink
+    src_port: LINK
+    dst: t_csis
+    dst_port: NFI_DEC
+    type: OTF
+- ip_settings:
+    hw: PDP
+    inputs:
+    - port: REORDER
+    outputs:
+    - port: STAT_WDMA
+      size: [0, 0, 4000, 282]
+      format: STAT
+      bitwidth: 10
+    - port: HPD_WDMA
+      size: [0, 0, 4000, 382]
+      format: STAT
+      bitwidth: 10
+    - port: VPD_WDMA
+      size: [0, 0, 2000, 382]
+      format: STAT
+      bitwidth: 10
+  edges:
+  - src: t_csis
+    src_port: IBUF
+    dst: t_pdp
+    dst_port: REORDER
+    type: OTF
+- ip_settings:
+    hw: PREP
+    inputs:
+    - port: CINFIFO
+      size: [0, 0, 4000, 2252]
+    outputs:
+    - port: COUTFIFO
+  edges:
+  - src: t_csis
+    src_port: COUTFIFO
+    dst: t_prep
+    dst_port: CINFIFO
+    type: OTF
+- ip_settings:
+    hw: CSTAT
+    inputs:
+    - port: CINFIFO
+    outputs:
+    - port: CDAF_WDMA
+      size: [0, 0, 19, 15]
+      format: STAT
+      bitwidth: 384
+    - port: RGBHIST_WDMA
+      size: [0, 0, 40960, 1]
+      format: STAT
+      bitwidth: 8
+    - port: THSTAT_AE_WDMA
+      size: [0, 0, 64, 64]
+      format: STAT
+      bitwidth: 128
+    - port: THSTAT_AWB_WDMA
+      size: [0, 0, 64, 64]
+      format: STAT
+      bitwidth: 128
+    - port: DRC_CLCT_WDMA
+      size: [0, 0, 500, 200]
+      format: STAT
+      bitwidth: 8
+    - port: SPE_RGB_STAT_WDMA
+      size: [0, 0, 400, 300]
+      format: STAT
+      bitwidth: 8
+    - port: SPE_Y_HIST_WDMA
+      size: [0, 0, 400, 300]
+      format: STAT
+      bitwidth: 8
+    - port: DS_FDPIG_WDMA
+      size: [0, 0, 512, 288]
+      format: RGB
+      bitwidth: 8
+    - port: DS_CAV_WDMA
+      size: [0, 0, 512, 288]
+      format: RGB
+      bitwidth: 8
+    - port: SAT_Y_WDMA
+      size: [0, 0, 1920, 1080]
+      format: Y8
+      bitwidth: 8
+    - port: SAT_UV_WDMA
+      size: [0, 0, 1920, 1080]
+      format: UV8
+      bitwidth: 8
+    - port: DS_LME0_WDMA
+      size: [0, 0, 1024, 768]
+      format: Y8
+      bitwidth: 8
+    - port: DS_LME1_WDMA
+      size: [0, 0, 1024, 768]
+      format: Y8
+      bitwidth: 8
+  edges:
+  - src: t_prep
+    src_port: COUTFIFO
+    dst: t_cstat
+    dst_port: CINFIFO
+    type: OTF
+- ip_settings:
+    hw: BYRP
+    inputs:
+    - port: COMP_RD0_RDMA
+      size: [0, 0, 4000, 2252]
+      format: BAYER_PACKED
+      bitwidth: 12
+      comp: enable
+      comp_ratio: 0.5
+    - port: SPE_Y_HIST_RDMA
+      size: [0, 0, 400, 300]
+      format: STAT
+      bitwidth: 8
+    - port: SPE_AI_STAT_RDMA
+      size: [0, 0, 400, 300]
+      format: STAT
+      bitwidth: 8
+    - port: SPE_GRID_STAT_RDMA
+      size: [0, 0, 400, 300]
+      format: STAT
+      bitwidth: 8
+    - port: SPE_FRAME_STAT_RDMA
+      size: [0, 0, 400, 300]
+      format: STAT
+      bitwidth: 8
+    outputs:
+    - port: COUTFIFO
+    - port: CROP_DNG_WDMA
+      format: BAYER_UNPACKED
+      bitwidth: 12
+      comp: disable
+    - port: SPE_GRID_STAT_WDMA
+      size: [0, 0, 400, 300]
+      format: STAT
+      bitwidth: 8
+    - port: SPE_FRAME_STAT_WDMA
+      size: [0, 0, 400, 300]
+      format: STAT
+      bitwidth: 8
+  edges:
+  - src: t_csis
+    src_port: CSIS_WDMA
+    dst: t_byrp
+    dst_port: COMP_RD0_RDMA
+    type: M2M
+- ip_settings:
+    hw: RGBP
+    inputs:
+    - port: CINFIFO
+    outputs:
+    - port: COUTFIFO
+    - port: CROP_DNG_WDMA
+      format: BAYER_UNPACKED
+      bitwidth: 12
+      comp: disable
+  edges:
+  - src: t_byrp
+    src_port: COUTFIFO
+    dst: t_rgbp
+    dst_port: CINFIFO
+    type: OTF
+- ip_settings:
+    hw: MLSC
+    inputs:
+    - port: CINFIFO
+    outputs:
+    - port: L0_WDMA
+      size: [0, 0, 1920, 1080]
+      format: YUV444
+      bitwidth: 14
+    - port: L1_WDMA
+      size: [0, 0, 960, 540]
+      format: YUV444
+      bitwidth: 14
+    - port: L2_WDMA
+      size: [0, 0, 480, 270]
+      format: YUV444
+      bitwidth: 14
+    - port: L3_WDMA
+      size: [0, 0, 240, 135]
+      format: YUV444
+      bitwidth: 14
+    - port: G4_WDMA
+      size: [0, 0, 120, 68]
+      format: YUV444
+      bitwidth: 14
+  edges:
+  - src: t_rgbp
+    src_port: COUTFIFO
+    dst: t_mlsc
+    dst_port: CINFIFO
+    type: OTF
+- sw_tasks:
+  - id: t_postIRTA
+    name: postIRTA
+    group: IRTA
+    processor: CPU_MID_Clustor
+    duration_ms: 4.0
+  edges:
+  - src: t_mlsc
+    dst: t_postIRTA
+    type: M2M
+- sw_tasks:
+  - id: t_postIRTA2
+    name: postIRTA2
+    group: IRTA
+    processor: CPU_MID_Clustor
+    duration_ms: 2.0
+  edges:
+  - src: t_postIRTA
+    dst: t_postIRTA2
+    type: M2M
+- ip_settings:
+    hw: MTNR0
+    inputs:
+    - port: L0_RDMA
+      format: YUV444
+      bitwidth: 14
+    outputs:
+    - port: L0_COUTFIFO
+  edges:
+  - src: t_postIRTA2
+    dst: t_mtnr0
+    dst_port: L0_RDMA
+    type: M2M
+- ip_settings:
+    hw: MTNR1
+    inputs:
+    - port: L1_RDMA
+      size: [0, 0, 960, 540]
+      format: YUV444
+      bitwidth: 14
+    - port: L2_RDMA
+      size: [0, 0, 480, 270]
+      format: YUV444
+      bitwidth: 14
+    - port: L3_RDMA
+      size: [0, 0, 240, 135]
+      format: YUV444
+      bitwidth: 14
+    - port: G4_RDMA
+      size: [0, 0, 120, 68]
+      format: YUV444
+      bitwidth: 14
+    outputs:
+    - port: L1_COUTFIFO
+    - port: L2_COUTFIFO
+      size: [0, 0, 480, 270]
+    - port: L3_COUTFIFO
+      size: [0, 0, 240, 135]
+    - port: G4_COUTFIFO
+      size: [0, 0, 120, 68]
+  edges:
+  - src: t_postIRTA2
+    dst: t_mtnr1
+    dst_port: L1_RDMA
+    type: M2M
+  - src: t_postIRTA2
+    dst: t_mtnr1
+    dst_port: L2_RDMA
+    type: M2M
+  - src: t_postIRTA2
+    dst: t_mtnr1
+    dst_port: L3_RDMA
+    type: M2M
+  - src: t_postIRTA2
+    dst: t_mtnr1
+    dst_port: G4_RDMA
+    type: M2M
+- ip_settings:
+    hw: MSNR
+    inputs:
+    - port: L0_CINFIFO
+      size: [0, 0, 1920, 1080]
+    - port: L1_CINFIFO
+    - port: L2_CINFIFO
+      size: [0, 0, 480, 270]
+    - port: L3_CINFIFO
+      size: [0, 0, 240, 135]
+    - port: G4_CINFIFO
+      size: [0, 0, 120, 68]
+    outputs:
+    - port: COUTFIFO
+  edges:
+  - src: t_mtnr0
+    src_port: L0_COUTFIFO
+    dst: t_msnr
+    dst_port: L0_CINFIFO
+    type: OTF
+  - src: t_mtnr1
+    src_port: L1_COUTFIFO
+    dst: t_msnr
+    dst_port: L1_CINFIFO
+    type: OTF
+  - src: t_mtnr1
+    src_port: L2_COUTFIFO
+    dst: t_msnr
+    dst_port: L2_CINFIFO
+    type: OTF
+  - src: t_mtnr1
+    src_port: L3_COUTFIFO
+    dst: t_msnr
+    dst_port: L3_CINFIFO
+    type: OTF
+  - src: t_mtnr1
+    src_port: G4_COUTFIFO
+    dst: t_msnr
+    dst_port: G4_CINFIFO
+    type: OTF
+- ip_settings:
+    hw: YUVP
+    inputs:
+    - port: CINFIFO
+    outputs:
+    - port: COUTFIFO
+  edges:
+  - src: t_msnr
+    src_port: COUTFIFO
+    dst: t_yuvp
+    dst_port: CINFIFO
+    type: OTF
+- ip_settings:
+    hw: MCSC
+    inputs:
+    - port: CINFIFO
+    outputs:
+    - port: P0_WDMA
+      format: YUV420
+      bitwidth: 10
+    - port: P1_WDMA
+      format: YUV420
+      bitwidth: 10
+  edges:
+  - src: t_yuvp
+    src_port: COUTFIFO
+    dst: t_mcsc
+    dst_port: CINFIFO
+    type: OTF
+- sw_tasks:
+  - id: t_codec2
+    name: Codec2
+    group: Codec2
+    processor: CPU_MID_Clustor
+    duration_ms: 4.0
+    latency_ms: 1.0
+  edges:
+  - src: t_mcsc
+    src_port: P0_WDMA
+    dst: t_codec2
+    type: M2M
+- sw_tasks:
+  - id: t_hw_composer
+    name: HWcomposer
+    group: HWcomposer
+    processor: CPU_MID_Clustor
+    duration_ms: 2.0
+  edges:
+  - src: t_mcsc
+    src_port: P1_WDMA
+    dst: t_hw_composer
+    type: M2M
+- ip_settings:
+    hw: MFC
+    inputs:
+    - port: MFC_RDMA
+      format: YUV420
+      bitwidth: 10
+    outputs:
+    - port: MFC_WDMA
+      size: [0, 0, 40000, 1000]
+      format: STAT
+      bitwidth: 10
+  edges:
+  - src: t_codec2
+    dst: t_mfc
+    dst_port: MFC_RDMA
+    type: M2M
+- ip_settings:
+    hw: DPU
+    inputs:
+    - port: DPU_RDMA
+      size: [0, 0, 1920, 1080]
+      format: YUV420
+      bitwidth: 10
+    outputs:
+    - port: COUTFIFO
+  edges:
+  - src: t_hw_composer
+    dst: t_dpu
+    dst_port: DPU_RDMA
+    type: M2M

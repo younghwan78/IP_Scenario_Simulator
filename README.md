@@ -57,6 +57,27 @@ python main.py -hw ... -sc ... --hw-info ... --hw-dvfs ... --gantt --csv
 python main.py -hw ... -sc ... --hw-info ... --hw-dvfs ... --all-formats
 ```
 
+### Generate Scenario YAML from CSV
+
+작성하기 어려운 500줄 이상의 복잡한 YAML 파일 대신 사람이 읽기 쉽고 관리하기 쉬운 **CSV 테이블로부터 YAML 파일을 생성**할 수 있습니다. `meta`, `ports`(포트 및 연결 통합), `sw_tasks` (선택) 등 2~3개의 단일화된 형식 파일 단위로 관리할 수 있습니다.
+
+```bash
+# 가장 간편한 방식 (FHD30_recording 단어로 시작하는 모든 CSV 자동 탐색)
+python main.py --generate-scenario \
+    --csv-prefix scenario_config/csv_examples/FHD30_recording \
+    --format both
+
+# 낱개 파일별로 명시하는 방식 (compact 모드만 출력)
+python main.py --generate-scenario \
+    --csv-meta my_scenario_meta.csv \
+    --csv-ports my_scenario_ports.csv \
+    --csv-sw-tasks my_sw_tasks.csv \
+    --output custom_out.yaml \
+    --format compact
+```
+
+* 제공되는 예제 파일 경로: `scenario_config/csv_examples/`
+
 ## Command Line Options
 
 | Option | Description |
@@ -71,6 +92,18 @@ python main.py -hw ... -sc ... --hw-info ... --hw-dvfs ... --all-formats
 | `--graph-only` | Show graph structure and exit (no simulation) |
 | `--demo` | Run built-in demo |
 | `-v`, `--verbose` | Enable verbose output (show all diagnostic info) |
+
+### CSV to YAML Generation Flags
+
+| Flag | Description |
+|------|-------------|
+| `--generate-scenario` | Generate scenario YAML from CSV files |
+| `--csv-prefix` | Prefix to auto-discover CSV files (e.g., `scenario_config/csv_examples/FHD30_recording`) |
+| `--csv-meta` | Path to explicit meta CSV file |
+| `--csv-ports` | Path to explicit ports CSV file |
+| `--csv-sw-tasks` | Path to explicit SW tasks CSV file |
+| `--format` | Output format: `compact`, `normal`, `both` (default) |
+| `--output-yaml` | Output yaml path. Derived from meta name if empty |
 
 ### Output Selection Flags
 

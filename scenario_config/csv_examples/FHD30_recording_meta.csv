@@ -1,0 +1,4 @@
+# [META] Scenario metadata. Required: name, sensor_hw, sensor_mode
+# Optional columns use defaults if empty: num_frames=1, asv_group=4, sw_margin=0.25, etc.
+name,writer,sensor_hw,sensor_mode,sensor_task_id,sensor_task_desc,num_frames,asv_group,sw_margin,h_blank_margin,bw_power,vBat,pmic_efficiency,bw_margin,mem_util,mif_channel_width,hw_config,sensor_config,hw_info,hw_dvfs
+FHD30_Recording,YHJOO,HP2,mode1,t_sensor,FHD30 LN2,1,4,0.25,0.05,80,4.0,0.85,1.25,0.55,16,../../hw_config/projectA_hw.yaml,../../hw_config/sensor_config.yaml,../../hw_config/projectA_info.csv,../../hw_config/projectA_dvfs.csv

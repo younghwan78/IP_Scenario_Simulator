@@ -1030,6 +1030,49 @@ def main():
         action='store_true',
         help='Copy all outputs to docs/reports/ with timestamp prefix for archiving'
     )
+    # ── CSV → YAML Generation ──
+    parser.add_argument(
+        '--generate-scenario',
+        action='store_true',
+        help='Generate scenario YAML from CSV files (use with --csv-prefix or --csv-meta/--csv-ports)'
+    )
+    parser.add_argument(
+        '--csv-prefix',
+        type=str,
+        default=None,
+        help='CSV file prefix for auto-discovery (e.g., scenario_config/csv_examples/FHD30_recording)'
+    )
+    parser.add_argument(
+        '--csv-meta',
+        type=str,
+        default=None,
+        help='Explicit path to meta CSV file'
+    )
+    parser.add_argument(
+        '--csv-ports',
+        type=str,
+        default=None,
+        help='Explicit path to ports CSV file'
+    )
+    parser.add_argument(
+        '--csv-sw-tasks',
+        type=str,
+        default=None,
+        help='Explicit path to SW tasks CSV file'
+    )
+    parser.add_argument(
+        '--format',
+        type=str,
+        choices=['compact', 'normal', 'both'],
+        default='both',
+        help='YAML output format: compact, normal, or both (default: both)'
+    )
+    parser.add_argument(
+        '--output-yaml',
+        type=str,
+        default=None,
+        help='Output YAML file path (default: auto-derived from scenario name)'
+    )
 
     args = parser.parse_args()
 
@@ -1050,6 +1093,42 @@ def main():
     do_puml = args.puml or all_fmt
     do_png = args.png or all_fmt
     do_md = args.md or all_fmt
+
+    # ── Handle CSV → YAML generation mode ──
+    if args.generate_scenario:
+        from src.model.csv_to_scenario import generate_from_csvs
+
+        fmt = args.format
+        formats = ['compact', 'normal'] if fmt == 'both' else [fmt]
+
+        for out_fmt in formats:
+            is_compact = (out_fmt == 'compact')
+            output_path = args.output_yaml
+
+            # For 'both' mode, auto-suffix the output path
+            if fmt == 'both' and output_path:
+                base, ext = os.path.splitext(output_path)
+                output_path = f"{base}_{out_fmt}{ext}"
+
+            if args.csv_prefix:
+                generate_from_csvs(
+                    prefix_or_meta=args.csv_prefix,
+                    output=output_path,
+                    compact=is_compact,
+                )
+            elif args.csv_meta and args.csv_ports:
+                generate_from_csvs(
+                    prefix_or_meta=args.csv_meta,
+                    ports_csv=args.csv_ports,
+                    sw_tasks_csv=args.csv_sw_tasks,
+                    output=output_path,
+                    compact=is_compact,
+                )
+            else:
+                print("Error: --generate-scenario requires --csv-prefix or (--csv-meta + --csv-ports)")
+                sys.exit(1)
+
+        sys.exit(0)
 
     if args.demo or (args.hw_config is None and args.scenario_config is None):
         # Run demo mode

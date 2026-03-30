@@ -1,0 +1,8 @@
+# [SW_TASKS] Software task definitions. Required: id, name, processor, duration_ms
+# after_task: predecessor task. Use task_id:port for specific port (e.g. t_mcsc:P0_WDMA)
+# latency_ms: optional, default 0.0
+id,name,group,processor,duration_ms,latency_ms,after_task,edge_type
+t_postIRTA,postIRTA,IRTA,CPU_MID_Clustor,4.0,,t_mlsc,M2M
+t_postIRTA2,postIRTA2,IRTA,CPU_MID_Clustor,2.0,,t_postIRTA,M2M
+t_codec2,Codec2,Codec2,CPU_MID_Clustor,4.0,1.0,t_mcsc:P0_WDMA,M2M
+t_hw_composer,HWcomposer,HWcomposer,CPU_MID_Clustor,2.0,,t_mcsc:P1_WDMA,M2M
