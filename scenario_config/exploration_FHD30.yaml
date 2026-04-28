@@ -17,14 +17,10 @@ sweep:
     YUVP: [Normal, FHD]
 
   # 3. IP feature sweep — per-port size / LLC / comp combos
-  # ip_features:
-  #   MCSC:
-  #     - port: L0_WDMA
-  #       output_size:
-  #         - [1920, 1080]
-  #         - [1280, 720]
-  #       comp: [enable, disable]
-  #       llc_enable: [enable, disable]
+  ip_features:
+    all:
+      - port: "*DMA*"
+        comp: [SBWC, disable]
 
 constraints:
   timing: auto          # auto = (1000/fps) * (1 - sw_margin)
@@ -32,4 +28,4 @@ constraints:
 
 evaluation:
   minimize: total_power   # total_power | core_power | bw_power
-  top_k: 5
+  top_k: 1000

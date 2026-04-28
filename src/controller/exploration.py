@@ -99,7 +99,7 @@ def _calc_bw_for_port(port_info: dict, fps: float,
     r_w_rate = port_info.get('r_w_rate', 1.0)
 
     comp = port_info.get('comp', 'disable')
-    comp_ratio = port_info.get('comp_ratio', 1.0) if comp == 'enable' else 1.0
+    comp_ratio = port_info.get('comp_ratio', 1.0) if comp != 'disable' else 1.0
 
     llc_enable = port_info.get('llc_enable', 'disable')
     llc_weight = port_info.get('llc_weight', 1.0) if llc_enable == 'enable' else 1.0
@@ -179,7 +179,18 @@ class ExplorationEngine:
                 self.sweep_modes[ip_name] = list(modes)
 
         # 3. IP features — per port: output_size × comp × llc_enable
-        for ip_name, port_list in sweep.get('ip_features', {}).items():
+        ip_features_sweep = sweep.get('ip_features', {})
+        if 'all' in ip_features_sweep:
+            scenario_ips = set()
+            for task_id, settings in getattr(self.scenario, '_ip_settings', {}).items():
+                if 'hw' in settings:
+                    scenario_ips.add(settings['hw'])
+            port_list = ip_features_sweep.pop('all')
+            for ip in scenario_ips:
+                if ip not in ip_features_sweep:
+                    ip_features_sweep[ip] = copy.deepcopy(port_list)
+
+        for ip_name, port_list in ip_features_sweep.items():
             port_combos = []
             for port_cfg in port_list:
                 port_name = port_cfg.get('port', '')
@@ -265,6 +276,7 @@ class ExplorationEngine:
         """Create modified ip_settings with feature overrides applied."""
         ip_settings = copy.deepcopy(ip_settings)
         features = combo.get('features', {})
+        combo['feature_applied'] = {}
 
         for task_id, settings in ip_settings.items():
             hw = settings.get('hw', '')
@@ -274,18 +286,50 @@ class ExplorationEngine:
             feat = features[hw]
             port_name = feat.get('port', '')
 
+            if hw not in combo['feature_applied']:
+                combo['feature_applied'][hw] = False
+
             # Apply to matching port in inputs or outputs
             for port_list_key in ('inputs', 'outputs'):
                 for port_info in settings.get(port_list_key, []):
-                    if port_info.get('port', '') != port_name:
+                    actual_port = port_info.get('port', '')
+                    match = False
+                    if port_name == '*':
+                        match = True
+                    elif port_name.upper() == 'ALL_DMA' and _is_dma_port(actual_port):
+                        match = True
+                    elif port_name.startswith('*') and port_name.endswith('*'):
+                        # e.g. *DMA*
+                        if port_name[1:-1].upper() in actual_port.upper():
+                            match = True
+                    elif actual_port == port_name:
+                        match = True
+
+                    if not match:
                         continue
+                    
                     if 'output_size' in feat:
                         sz = feat['output_size']
                         port_info['size'] = [0, 0, sz[0], sz[1]]
+                        combo['feature_applied'][hw] = True
                     if 'comp' in feat:
-                        port_info['comp'] = feat['comp']
+                        comp_val = feat['comp']
+                        if comp_val in ('disable', 'enable'):
+                            port_info['comp'] = comp_val
+                            combo['feature_applied'][hw] = True
+                        else:
+                            # Specific compression type like SBWC, AFBC
+                            hw_node = self.hw_registry.get(hw)
+                            if hw_node:
+                                module = hw_node.get_module(actual_port)
+                                if module and hasattr(module, 'supported_compressions'):
+                                    if comp_val in module.supported_compressions:
+                                        port_info['comp'] = comp_val
+                                        port_info['comp_ratio'] = module.compression_ratios.get(comp_val, 1.0)
+                                        combo['feature_applied'][hw] = True
                     if 'llc_enable' in feat:
                         port_info['llc_enable'] = feat['llc_enable']
+                        combo['feature_applied'][hw] = True
 
         return ip_settings
 
@@ -408,6 +452,14 @@ class ExplorationEngine:
         # 7. BW power calculation with feature overrides
         ip_settings = copy.deepcopy(getattr(self.scenario, '_ip_settings', {}))
         ip_settings = self._apply_ip_settings_overrides(ip_settings, combo)
+        
+        # Check if any feature override was unsupported and had no effect
+        for hw, applied in combo.get('feature_applied', {}).items():
+            if not applied:
+                result.feasible = False
+                result.infeasible_reason = f"Feature override for {hw} had no effect (unsupported)"
+                self._restore_modes(orig_modes, orig_task_modes)
+                return result
         dma_records, total_bw, total_bw_power = self._collect_bw(ip_settings)
         result.dma_records = dma_records
         result.total_bw_mbs = total_bw
