@@ -132,24 +132,26 @@ def _build_cross_edges(elk, meta, scenario, ip_settings):
             if port_pairs and port_pairs[0][0] != 'output':
                 for sp, dp in port_pairs:
                     info = src_out.get(sp) or dst_in.get(dp) or {}
-                    parts = [f"{sp}→{dp}"]
+                    lines = [f"{sp}→{dp}"]
                     sz = info.get('size', [])
                     if len(sz) == 4 and sz[2] > 0:
-                        parts.append(f"{sz[2]}×{sz[3]}")
+                        lines.append(f"{sz[2]}×{sz[3]}")
                     if info.get('format'):
-                        parts.append(info['format'])
+                        lines.append(info['format'])
                     if info.get('bitwidth'):
-                        parts.append(f"{info['bitwidth']}bit")
+                        lines.append(f"{info['bitwidth']}bit")
                     if info.get('comp') == 'enable':
-                        parts.append("COMP")
-                    lbl = " | ".join(parts)
-                    eid = f"em_{eidx}"
-                    lw = max(len(lbl) * 6, 60)
-                    elk["edges"].append({
-                        "id": eid, "sources": [src_id], "targets": [dst_id],
-                        "labels": [{"text": lbl, "width": lw, "height": 14}]
-                    })
-                    meta[eid] = {"type": edge_type, "label": lbl}
+                        lines.append("COMP")
+                    lbl = "\\n".join(lines)
+                    buf_id = f"buf_{eidx}"
+                    bw = max(len(l) * 7 for l in lines) + 24
+                    bh = len(lines) * 13 + 10
+                    elk["children"].append({"id": buf_id, "width": bw, "height": bh})
+                    meta[buf_id] = {"type": "buffer", "label": lbl}
+                    elk["edges"].append({"id": f"eb_{eidx}a", "sources": [src_id], "targets": [buf_id]})
+                    elk["edges"].append({"id": f"eb_{eidx}b", "sources": [buf_id], "targets": [dst_id]})
+                    meta[f"eb_{eidx}a"] = {"type": edge_type}
+                    meta[f"eb_{eidx}b"] = {"type": edge_type}
                     eidx += 1
             else:
                 eid = f"em_{eidx}"
@@ -260,24 +262,26 @@ def generate_top_html(hw_registry, scenario, output_path):
             if port_pairs and port_pairs[0][0] != 'output':
                 for sp, dp in port_pairs:
                     info = src_out.get(sp) or dst_in.get(dp) or {}
-                    parts = [f"{sp}→{dp}"]
+                    lines = [f"{sp}→{dp}"]
                     sz = info.get('size', [])
                     if len(sz) == 4 and sz[2] > 0:
-                        parts.append(f"{sz[2]}×{sz[3]}")
+                        lines.append(f"{sz[2]}×{sz[3]}")
                     if info.get('format'):
-                        parts.append(info['format'])
+                        lines.append(info['format'])
                     if info.get('bitwidth'):
-                        parts.append(f"{info['bitwidth']}bit")
+                        lines.append(f"{info['bitwidth']}bit")
                     if info.get('comp') == 'enable':
-                        parts.append("COMP")
-                    lbl = " | ".join(parts)
-                    eid = f"em_{eidx}"
-                    lw = max(len(lbl) * 6, 60)
-                    elk["edges"].append({
-                        "id": eid, "sources": [src_g], "targets": [dst_g],
-                        "labels": [{"text": lbl, "width": lw, "height": 14}]
-                    })
-                    meta[eid] = {"type": edge_type, "label": lbl}
+                        lines.append("COMP")
+                    lbl = "\\n".join(lines)
+                    buf_id = f"buf_{eidx}"
+                    bw = max(len(l) * 7 for l in lines) + 24
+                    bh = len(lines) * 13 + 10
+                    elk["children"].append({"id": buf_id, "width": bw, "height": bh})
+                    meta[buf_id] = {"type": "buffer", "label": lbl}
+                    elk["edges"].append({"id": f"eb_{eidx}a", "sources": [src_g], "targets": [buf_id]})
+                    elk["edges"].append({"id": f"eb_{eidx}b", "sources": [buf_id], "targets": [dst_g]})
+                    meta[f"eb_{eidx}a"] = {"type": edge_type}
+                    meta[f"eb_{eidx}b"] = {"type": edge_type}
                     eidx += 1
             else:
                 eid = f"em_{eidx}"
@@ -617,24 +621,26 @@ def _build_cross_edges_level2(elk, meta, scenario, ip_settings, hw_raw, task_hw)
                     src_node = mod_node_map.get((src_id, sp), src_id)
                     dst_node = mod_node_map.get((dst_id, dp), dst_id)
                     info = src_out.get(sp) or dst_in.get(dp) or {}
-                    parts = [f"{sp}→{dp}"]
+                    lines = [f"{sp}→{dp}"]
                     sz = info.get('size', [])
                     if len(sz) == 4 and sz[2] > 0:
-                        parts.append(f"{sz[2]}×{sz[3]}")
+                        lines.append(f"{sz[2]}×{sz[3]}")
                     if info.get('format'):
-                        parts.append(info['format'])
+                        lines.append(info['format'])
                     if info.get('bitwidth'):
-                        parts.append(f"{info['bitwidth']}bit")
+                        lines.append(f"{info['bitwidth']}bit")
                     if info.get('comp') == 'enable':
-                        parts.append("COMP")
-                    lbl = " | ".join(parts)
-                    eid = f"em_{eidx}"
-                    lw = max(len(lbl) * 6, 60)
-                    elk["edges"].append({
-                        "id": eid, "sources": [src_node], "targets": [dst_node],
-                        "labels": [{"text": lbl, "width": lw, "height": 14}]
-                    })
-                    meta[eid] = {"type": edge_type, "label": lbl}
+                        lines.append("COMP")
+                    lbl = "\\n".join(lines)
+                    buf_id = f"buf_{eidx}"
+                    bw = max(len(l) * 7 for l in lines) + 24
+                    bh = len(lines) * 13 + 10
+                    elk["children"].append({"id": buf_id, "width": bw, "height": bh})
+                    meta[buf_id] = {"type": "buffer", "label": lbl}
+                    elk["edges"].append({"id": f"eb_{eidx}a", "sources": [src_node], "targets": [buf_id]})
+                    elk["edges"].append({"id": f"eb_{eidx}b", "sources": [buf_id], "targets": [dst_node]})
+                    meta[f"eb_{eidx}a"] = {"type": edge_type}
+                    meta[f"eb_{eidx}b"] = {"type": edge_type}
                     eidx += 1
             else:
                 eid = f"em_{eidx}"
@@ -1079,6 +1085,17 @@ function drawNode(g,node,ox,oy){
         const t2=ce('text',{x:x+node.width/2,y:y+23,'text-anchor':'middle','font-size':8,fill:subColor});
         t2.textContent=m.sub;g.appendChild(t2);
       }
+    }else if(m.type==='buffer'){
+      // Buffer node: rounded-rect with distinct lavender tone
+      const r=ce('rect',{x,y,width:node.width,height:node.height,rx:4,ry:4,
+        fill:'#EDE7F6',stroke:'#7E57C2','stroke-width':1.2,'stroke-dasharray':'4,2'});
+      g.appendChild(r);
+      lines.forEach((ln,i)=>{
+        const t=ce('text',{x:x+node.width/2,y:y+node.height/2+3+(i-(lines.length-1)/2)*12,
+          'text-anchor':'middle','font-size':9,fill:'#4A148C'});
+        if(i===0)t.setAttribute('font-weight','bold');
+        t.textContent=ln;g.appendChild(t);
+      });
     }else{
       lines.forEach((ln,i)=>{
         const t=ce('text',{x:x+node.width/2,y:y+node.height/2+4+(i-(lines.length-1)/2)*14,
