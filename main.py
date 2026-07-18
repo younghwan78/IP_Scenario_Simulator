@@ -778,6 +778,73 @@ def sanity_check_config(hw_registry: dict, hw_raw: dict,
     return errors
 
 
+def build_gantt_hw_order(scenario_config: dict, scenario: 'ScenarioGraph') -> list:
+    """Build the Gantt chart HW row order.
+
+    Order: SW groups first (top of chart), then sensor, then ip_blocks in
+    YAML definition order, then any remaining HW from tasks.
+    """
+    hw_order = []
+    seen_hw = set()
+    # Sensor task first
+    sensor_cfg = scenario_config.get('sensor', {})
+    if sensor_cfg.get('hw'):
+        hw_order.append(sensor_cfg['hw'])
+        seen_hw.add(sensor_cfg['hw'])
+    # Then ip_blocks in YAML definition order
+    for block in scenario_config.get('ip_blocks', []):
+        ip_set = block.get('ip_settings', {})
+        hw_name = ip_set.get('hw', '')
+        if hw_name and hw_name not in seen_hw:
+            hw_order.append(hw_name)
+            seen_hw.add(hw_name)
+    # Fallback: append any HW from tasks not in ip_blocks (excl SW)
+    sw_group_order = []  # unique SW group names in topological order
+    sw_group_seen = set()
+    for tid in scenario.topological_order():
+        task = scenario.get_task(tid)
+        if task and task.is_sw_task:
+            grp = task.sw_group or task.mapped_hw
+            if grp not in sw_group_seen:
+                sw_group_order.append(grp)
+                sw_group_seen.add(grp)
+        elif task and task.mapped_hw not in seen_hw:
+            hw_order.append(task.mapped_hw)
+            seen_hw.add(task.mapped_hw)
+    # SW groups at the START of hw_order → top of Gantt (reversed)
+    return sw_group_order + hw_order
+
+
+def publish_outputs(output_dirs: list, output_prefix: str,
+                    project_name: str, scenario_name: str,
+                    scenario_config: dict) -> None:
+    """Copy prefixed outputs to docs/reports/ with a timestamped name."""
+    import shutil
+    publish_dir = os.path.join('docs', 'reports', project_name)
+    os.makedirs(publish_dir, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    scenario_data = scenario_config.get('scenario', scenario_config)
+    writer = scenario_data.get('writer', 'anonymous')
+    publish_prefix = f"{project_name}-{scenario_name}-{ts}-{writer}_"
+
+    published_files = []
+    for src_dir in output_dirs:
+        if not os.path.isdir(src_dir):
+            continue
+        for fname in os.listdir(src_dir):
+            if fname.startswith(output_prefix):
+                suffix = fname[len(output_prefix):]
+                dst_name = f"{publish_prefix}{suffix}"
+                src_path = os.path.join(src_dir, fname)
+                dst_path = os.path.join(publish_dir, dst_name)
+                shutil.copy2(src_path, dst_path)
+                published_files.append(dst_name)
+
+    print(f"\n[Publish] {len(published_files)} files copied to {publish_dir}/")
+    for pf in published_files:
+        print(f"  → {pf}")
+
+
 def run_demo():
     """Run a demonstration with sample configuration."""
     vprint("=" * 60)
@@ -856,9 +923,9 @@ def run_demo():
     vprint("[Validation]")
     errors = scenario.validate_constraints(hw_registry)
     if errors:
-        vprint("Error: Scenario validation failed:")
+        print("Error: Scenario validation failed:")
         for err in errors:
-            vprint(f"  - {err}")
+            print(f"  - {err}")
         sys.exit(1)
 
     # Create simulator
@@ -1166,8 +1233,8 @@ def main():
     if args.scenario_config:
         scenario_config = load_scenario_config(args.scenario_config)
     else:
-        vprint("Error: --scenario-config required when not in demo mode")
-        return
+        print("Error: --scenario-config required when not in demo mode")
+        sys.exit(1)
 
     # Step 2: Resolve config_paths from scenario config
     # CLI args take priority; if not specified, use config_paths from scenario
@@ -1200,31 +1267,20 @@ def main():
             hw_list = hw_config
         else:
             hw_list = hw_config.get('hardware', [])
-        # Build HW nodes, expanding 'instances' key if present
+        # Build HW nodes + raw config map, expanding 'instances' in one pass.
+        # (hw_raw keeps raw YAML dicts for Level2 HTML view module info)
         hw_nodes = []
+        hw_raw = {}
         for cfg in hw_list:
             instances = cfg.get('instances')
-            if instances:
-                for inst_name in instances:
-                    inst_cfg = dict(cfg)
-                    inst_cfg['name'] = inst_name
-                    hw_nodes.append(create_hw_node(inst_cfg))
-            else:
-                hw_nodes.append(create_hw_node(cfg))
-        # Keep raw config for Level2 HTML view (module info)
-        hw_raw = {}
-        for item in hw_list:
-            instances = item.get('instances')
-            if instances:
-                for inst_name in instances:
-                    inst_item = dict(item)
-                    inst_item['name'] = inst_name
-                    hw_raw[inst_name] = inst_item
-            else:
-                hw_raw[item['name']] = item
+            expanded = ([{**cfg, 'name': inst} for inst in instances]
+                        if instances else [cfg])
+            for inst_cfg in expanded:
+                hw_nodes.append(create_hw_node(inst_cfg))
+                hw_raw[inst_cfg['name']] = inst_cfg
     else:
-        vprint("Error: --hw-config required (or set config_paths.hw_config in scenario)")
-        return
+        print("Error: --hw-config required (or set config_paths.hw_config in scenario)")
+        sys.exit(1)
 
     # ── Sensor Config Resolution ──
     resolved_sensor = None
@@ -1315,13 +1371,15 @@ def main():
         if validation_errors:
             print("\n[Error] CSV validation failed:")
             for err in validation_errors:
-                vprint(f"  - {err}")
+                print(f"  - {err}")
             sys.exit(1)
         vprint("  Validation: PASSED")
 
         # Resolve DVFS/Voltage
         scenario_data = scenario_config.get('scenario', scenario_config)
-        asv_group = args.asv_group or scenario_data.get('asv_group', 4)
+        # NOTE: explicit None check — ASV group 0 is a valid CLI value
+        asv_group = (args.asv_group if args.asv_group is not None
+                     else scenario_data.get('asv_group', 4))
         resolver = HWResolver(hw_info_db, asv_group=asv_group)
         resolved_configs = resolver.resolve_scenario(
             hw_registry, scenario, scenario_config
@@ -1443,9 +1501,9 @@ def main():
     vprint("[Validation]")
     errors = scenario.validate_constraints(hw_registry)
     if errors:
-        vprint("Error: Scenario validation failed:")
+        print("Error: Scenario validation failed:")
         for err in errors:
-            vprint(f"  - {err}")
+            print(f"  - {err}")
         sys.exit(1)
 
     # Run simulation
@@ -1455,7 +1513,7 @@ def main():
     simulator.load_scenario(scenario)
     simulator.add_analyzer(PerformanceAnalyzer())
     simulator.add_analyzer(PowerAnalyzer())
-    simulator.add_analyzer(TimingAnalyzer())
+    simulator.add_analyzer(TimingAnalyzer(scenario=scenario))
 
     vprint(text_viewer.print_hw_hierarchy(simulator.hw_registry))
     vprint()
@@ -1464,7 +1522,8 @@ def main():
 
     # Determine num_frames: CLI arg > scenario config > default (1)
     scenario_data = scenario_config.get('scenario', scenario_config)
-    num_frames = args.num_frames or scenario_data.get('num_frames', 1)
+    num_frames = (args.num_frames if args.num_frames is not None
+                  else scenario_data.get('num_frames', 1))
     
     if num_frames > 1:
         vprint(f"[Multi-Frame Simulation] Running {num_frames} frames...")
@@ -1489,35 +1548,7 @@ def main():
         visualizer = Visualizer()
         df = monitor.to_dataframe()
         # Build HW order from scenario config (ip_blocks definition order)
-        hw_order = []
-        seen_hw = set()
-        # Sensor task first
-        sensor_cfg = scenario_config.get('sensor', {})
-        if sensor_cfg.get('hw'):
-            hw_order.append(sensor_cfg['hw'])
-            seen_hw.add(sensor_cfg['hw'])
-        # Then ip_blocks in YAML definition order
-        for block in scenario_config.get('ip_blocks', []):
-            ip_set = block.get('ip_settings', {})
-            hw_name = ip_set.get('hw', '')
-            if hw_name and hw_name not in seen_hw:
-                hw_order.append(hw_name)
-                seen_hw.add(hw_name)
-        # Fallback: append any HW from tasks not in ip_blocks (excl SW)
-        sw_group_order = []  # unique SW group names in topological order
-        sw_group_seen = set()
-        for tid in scenario.topological_order():
-            task = scenario.get_task(tid)
-            if task and task.is_sw_task:
-                grp = task.sw_group or task.mapped_hw
-                if grp not in sw_group_seen:
-                    sw_group_order.append(grp)
-                    sw_group_seen.add(grp)
-            elif task and task.mapped_hw not in seen_hw:
-                hw_order.append(task.mapped_hw)
-                seen_hw.add(task.mapped_hw)
-        # SW groups at the START of hw_order → top of Gantt (reversed)
-        hw_order = sw_group_order + hw_order
+        hw_order = build_gantt_hw_order(scenario_config, scenario)
         fig = visualizer.create_gantt_chart_ms(df, title=results.scenario_name, hw_order=hw_order, scenario=scenario)
         if fig:
             gantt_path = os.path.join(args.output_sim_dir, f"{output_prefix}timing_chart.html")
@@ -1588,30 +1619,9 @@ def main():
 
     # ── Publish: copy outputs to docs/reports/ with timestamp ──
     if args.publish:
-        import shutil
-        publish_dir = os.path.join('docs', 'reports', project_name)
-        os.makedirs(publish_dir, exist_ok=True)
-        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-        scenario_data_for_writer = scenario_config.get('scenario', scenario_config)
-        writer = scenario_data_for_writer.get('writer', 'anonymous')
-        publish_prefix = f"{project_name}-{scenario_name}-{ts}-{writer}_"
-
-        published_files = []
-        for src_dir in [args.output_view_dir, args.output_sim_dir]:
-            if not os.path.isdir(src_dir):
-                continue
-            for fname in os.listdir(src_dir):
-                if fname.startswith(output_prefix):
-                    suffix = fname[len(output_prefix):]
-                    dst_name = f"{publish_prefix}{suffix}"
-                    src_path = os.path.join(src_dir, fname)
-                    dst_path = os.path.join(publish_dir, dst_name)
-                    shutil.copy2(src_path, dst_path)
-                    published_files.append(dst_name)
-
-        print(f"\n[Publish] {len(published_files)} files copied to {publish_dir}/")
-        for pf in published_files:
-            print(f"  → {pf}")
+        publish_outputs([args.output_view_dir, args.output_sim_dir],
+                        output_prefix, project_name, scenario_name,
+                        scenario_config)
 
 
 if __name__ == "__main__":

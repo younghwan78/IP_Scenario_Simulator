@@ -13,9 +13,9 @@ from enum import Enum
 
 import networkx as nx
 
-from src.model.hw_nodes import HWNode, IPNode
-from src.model.modules import ScalerModule, CropModule
-from src.model.tokens import JoinPolicy, DEFAULT_QUEUE_CAPACITY
+from .hw_nodes import HWNode, IPNode
+from .modules import ScalerModule, CropModule
+from .tokens import JoinPolicy, DEFAULT_QUEUE_CAPACITY
 
 
 class ConnectionType(Enum):
@@ -144,6 +144,15 @@ class ScenarioGraph:
         self.graph = nx.DiGraph()
         self._tasks: Dict[str, Task] = {}
 
+        # ── Scenario-level metadata (populated by the YAML loader) ──
+        # Formal fields so consumers don't rely on getattr defaults.
+        self._ip_settings: Dict[str, dict] = {}    # task_id → ip_settings dict
+        self._manual_clocks: Dict[str, float] = {}  # hw_name → manual clock [MHz]
+        self._resolved_sensor: Dict[str, Any] = {}  # resolved sensor config
+        self._bw_power_coeff: float = 80.0          # mW/GB/s
+        self._vBat: float = 4.0                     # battery voltage [V]
+        self._pmic_efficiency: float = 0.85
+
     def add_task(self, task_id: str, mapped_hw: str,
                  workload: Optional[Dict[str, Any]] = None,
                  task_type: str = "hw",
@@ -183,8 +192,8 @@ class ScenarioGraph:
         Returns:
             self for method chaining
         """
-        if workload is None:
-            workload = {}
+        # Copy so the caller's dict is never mutated
+        workload = dict(workload) if workload else {}
         workload.update(kwargs)
 
         task = Task(
@@ -247,16 +256,27 @@ class ScenarioGraph:
         if isinstance(conn_type, str):
             conn_type = ConnectionType(conn_type.upper())
 
+        channel = {
+            'src_port': src_port,
+            'dst_port': dst_port,
+            'data': data,
+            'transfer': transfer,
+            'buffer_size': buffer_size,
+        }
+
         # Check if edge already exists (parallel edges for different ports)
         if self.graph.has_edge(src, dst):
             existing = self.graph[src][dst]
-            # Append port pair to existing edge
-            if 'port_pairs' not in existing:
-                # Migrate existing single port pair to list
-                existing['port_pairs'] = [
-                    (existing.get('src_port', 'output'), existing.get('dst_port', 'input'))
-                ]
+            if existing.get('conn_type') != conn_type:
+                raise ValueError(
+                    f"Conflicting connection types for edge '{src}'→'{dst}': "
+                    f"existing {existing.get('conn_type')}, new {conn_type}. "
+                    f"Parallel channels must share the same connection type."
+                )
+            # Append port pair + full channel config to the existing edge
+            # (each channel keeps its own data/transfer — nothing is dropped)
             existing['port_pairs'].append((src_port, dst_port))
+            existing['channels'].append(channel)
         else:
             self.graph.add_edge(
                 src, dst,
@@ -266,7 +286,8 @@ class ScenarioGraph:
                 transfer=transfer,
                 src_port=src_port,
                 dst_port=dst_port,
-                port_pairs=[(src_port, dst_port)]
+                port_pairs=[(src_port, dst_port)],
+                channels=[channel]
             )
         return self
 

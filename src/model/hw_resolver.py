@@ -69,6 +69,9 @@ class ResolvedIPConfig:
     set_volt_power: float = 0.0
     vdd_leader: str = ""
     manual_clock: float = 0.0            # manual clock override [MHz] (0 = auto)
+    level_voltage: float = 0.0           # voltage needed for the actual set_clock
+                                         # level [mV] (≥ required_voltage when the
+                                         # clock was raised by group alignment)
     
     def _calc_dynamic_power(self, voltage_mv: float) -> float:
         """Calculate dynamic power at a given voltage [mW].
@@ -285,6 +288,7 @@ class HWResolver:
             config.set_clock = level.speed
             config.dvfs_level = level.level
             config.required_voltage = dvfs_table.get_voltage(level, self.asv_group)
+            config.level_voltage = config.required_voltage
         
         # Step 3.5: Align set_clock within DVFS groups (shared clock domain)
         #   All IPs in the same DVFS group must share one clock.
@@ -307,7 +311,10 @@ class HWResolver:
                     c.set_clock = max_set_clock
                     c.dvfs_level = target_level.level
                     # Keep c.required_voltage from its own req_clock (Step 3)
-                    # — VDD alignment (Step 4) will handle set_voltage
+                    # so reports show the penalty; level_voltage tracks the
+                    # voltage actually needed to run the aligned clock and
+                    # is what VDD alignment (Step 4) must satisfy.
+                    c.level_voltage = target_voltage
         
         # Step 4: Align same VDD domain to highest voltage
         vdd_groups: Dict[str, List[str]] = defaultdict(list)
@@ -315,21 +322,35 @@ class HWResolver:
             if config.vdd:
                 vdd_groups[config.vdd].append(ip_name)
         
+        def _effective_voltage(c: ResolvedIPConfig) -> float:
+            # The voltage a config actually needs: its own requirement, or
+            # the (possibly higher) voltage of the group-aligned set_clock.
+            return max(c.required_voltage, c.level_voltage)
+
         for vdd_name, ip_names in vdd_groups.items():
-            # Find all IPs at highest required_voltage (VDD leaders)
-            max_voltage = max(resolved[n].required_voltage for n in ip_names)
+            # Find all IPs at highest effective voltage (VDD leaders)
+            max_voltage = max(_effective_voltage(resolved[n]) for n in ip_names)
             leader_ips = sorted([n for n in ip_names
-                                 if resolved[n].required_voltage == max_voltage])
+                                 if _effective_voltage(resolved[n]) == max_voltage])
             leader_str = ','.join(leader_ips)
             for ip_name in ip_names:
                 resolved[ip_name].set_voltage = max_voltage
                 resolved[ip_name].vdd_leader = leader_str
-        
-        # IPs with no VDD group: use their own required_voltage
+
+        # IPs with no VDD group: use their own effective voltage
         for ip_name, config in resolved.items():
             if not config.vdd:
-                config.set_voltage = config.required_voltage
+                config.set_voltage = _effective_voltage(config)
                 config.vdd_leader = ip_name
+
+        # Safety check: every IP must end up at a voltage sufficient for its
+        # actual set_clock level (guards against alignment corner cases)
+        for ip_name, config in resolved.items():
+            if config.level_voltage > 0 and config.set_voltage < config.level_voltage:
+                print(f"[Warning] {ip_name}: set_voltage {config.set_voltage:.1f}mV "
+                      f"< level voltage {config.level_voltage:.1f}mV for "
+                      f"set_clock {config.set_clock:.1f}MHz — raising.")
+                config.set_voltage = config.level_voltage
         
         # Step 5: Calculate req_volt_power and set_volt_power
         for ip_name, config in resolved.items():
@@ -380,6 +401,23 @@ class HWResolver:
             csv_modes = self.db.get_ip_modes(ip_name)
             if csv_modes:
                 hw.supported_modes = csv_modes
+
+            # Unify the power model: make the simulator's per-task energy use
+            # the same formula as the report/exploration path
+            # (unit_power × MP × (V/0.71)² × fps/30), instead of IPNode's
+            # dimensionally-inconsistent unit_power × set_clock approximation.
+            hw._power_calculator = self._make_power_calculator(config)
+
+    @staticmethod
+    def _make_power_calculator(config: ResolvedIPConfig):
+        """Build a per-IP power callback bound to its resolved config.
+
+        Energy [mJ] = (active + idle power [mW]) × duration [s], with the
+        active power formula shared with ResolvedIPConfig (report path).
+        """
+        def _calc(ip: Any, duration: float) -> float:
+            return config.get_total_power() * duration
+        return _calc
     
     def get_exploration_report(
         self,
@@ -480,13 +518,18 @@ class HWResolver:
             scenario: ScenarioGraph (to find task mode)
         """
         # Find mode from scenario tasks mapped to this HW
+        # (first task in scenario order wins; warn if tasks disagree)
         mode = "Normal"
         if scenario:
-            for task in scenario.get_tasks():
-                if task.mapped_hw == hw_name and task.ip_mode:
-                    mode = task.ip_mode
-                    break
-        
+            task_modes = [task.ip_mode for task in scenario.get_tasks()
+                          if task.mapped_hw == hw_name and task.ip_mode]
+            if task_modes:
+                mode = task_modes[0]
+                if len(set(task_modes)) > 1:
+                    print(f"[Warning] HW '{hw_name}' is mapped by tasks with "
+                          f"different modes {sorted(set(task_modes))}; using "
+                          f"'{mode}' for DVFS/power resolution.")
+
         return self.db.get_ip_info(hw_name, mode)
     
     def _get_input_pixels(self, hw_name: str, scenario: Any) -> int:
@@ -539,13 +582,14 @@ class HWResolver:
             return set()
         
         # BFS: follow OTF edges from sensor tasks
+        from collections import deque
         from .scenario import ConnectionType
         visited = set()
-        queue = list(sensor_tasks)
+        queue = deque(sensor_tasks)
         otf_hws = set()
-        
+
         while queue:
-            tid = queue.pop(0)
+            tid = queue.popleft()
             if tid in visited:
                 continue
             visited.add(tid)

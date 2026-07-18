@@ -10,7 +10,7 @@ Modules represent functional units within an IP that can:
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .hw_nodes import IPNode
@@ -171,14 +171,14 @@ class ScalerModule(Module):
         Calculate processing time considering both input and output pixels.
 
         Scaler processing time is typically based on output pixels.
+        Pure calculation — module state (input/output size) is not mutated.
         """
-        # Update sizes if input provided
+        # Derive output pixels from workload input size if provided
         if 'input_size' in workload:
-            w, h = workload['input_size']
-            self.set_input_size(w, h)
-
-        # Use output pixels for processing time (scaler writes output)
-        output_pixels = self.get_output_pixels()
+            out_w, out_h = self.calculate_output_size(tuple(workload['input_size']))
+            output_pixels = out_w * out_h
+        else:
+            output_pixels = self.get_output_pixels()
         if output_pixels <= 0:
             output_pixels = workload.get('pixels', 0)
 

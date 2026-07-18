@@ -53,7 +53,7 @@ python -m pytest tests/ -v -k "power or clock"
 
 ---
 
-## 테스트 파일 구성 (211 tests)
+## 테스트 파일 구성
 
 | 파일 | 테스트 수 | 영역 |
 |------|:---------:|------|
@@ -84,6 +84,6 @@ python -m pytest tests/ -v -k "power or clock"
 1. **전체 실행** — `python -m pytest tests/ -v`
 2. **실패 확인** — 실패가 있으면 `--tb=short`로 원인 파악
 3. **관련 파일만 재실행** — 수정 후 해당 파일만 빠르게 확인
-4. **전체 재실행** — 최종 확인 (211 passed, 0 failed)
+4. **전체 재실행** — 최종 확인 (all passed, 0 failed)
 
 > **Tip**: 코드 push 전에 항상 `python -m pytest tests/ -v`로 전체 회귀 테스트를 실행하세요.

@@ -240,16 +240,24 @@ class TokenJoin:
         elif self.policy == JoinPolicy.OR_JOIN:
             # Wait for any single input (first to arrive)
             events = {
-                port_name: queue.store.get() 
+                port_name: queue.store.get()
                 for port_name, queue in self.input_queues.items()
             }
             # Use simpy.AnyOf to wait for first completion
             if self._env:
-                result = yield simpy.AnyOf(self._env, events.values())
+                result = yield simpy.AnyOf(self._env, list(events.values()))
                 for port_name, event in events.items():
-                    if event in result:
-                        tokens[port_name] = result[event]
-                        break
+                    if event.triggered and not tokens:
+                        # Take the first triggered token
+                        tokens[port_name] = event.value
+                    elif event.triggered:
+                        # Simultaneously triggered but not selected:
+                        # return the consumed token to the queue front
+                        self.input_queues[port_name].store.items.insert(0, event.value)
+                    else:
+                        # Cancel pending get so it doesn't silently consume
+                        # a token that arrives later (token-loss bug)
+                        event.cancel()
             else:
                 # Fallback: just get from first queue
                 first_port = next(iter(self.input_queues))

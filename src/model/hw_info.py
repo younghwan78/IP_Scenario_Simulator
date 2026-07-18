@@ -166,18 +166,14 @@ class HWInfoDB:
         Returns:
             List of error messages (empty = valid)
         """
-        from .hw_nodes import IPNode, ProcessorNode, MemoryNode
-        
+        from .hw_nodes import IPNode
+
         errors = []
         
         for hw_name, hw_node in hw_registry.items():
-            # Only validate IPNode types (not Sensor, Display, Processor, Memory)
+            # Only IPNode types are validated against info.csv
+            # (Sensor/Display/Processor/Memory don't need CSV entries)
             if not isinstance(hw_node, IPNode):
-                # ProcessorNode and MemoryNode also need info.csv matching
-                if isinstance(hw_node, (ProcessorNode, MemoryNode)):
-                    if hw_name not in self.ip_infos:
-                        # Warning only, not error for non-IP nodes
-                        continue
                 continue
             
             # Check 1: IP name exists in info.csv
@@ -312,7 +308,7 @@ def load_dvfs_csv(path: str) -> Dict[str, DVFSTable]:
     
     i = 0
     # Skip first row (project name/version)
-    if rows and rows[0][0].strip():
+    if rows and rows[0] and rows[0][0].strip():
         i = 1
     
     while i < len(rows):

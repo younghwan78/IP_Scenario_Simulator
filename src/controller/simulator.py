@@ -17,10 +17,7 @@ import simpy
 from ..model.hw_nodes import HWNode, IPNode, ProcessorNode, MemoryNode
 from ..model.modules import DMAModule
 from ..model.scenario import ScenarioGraph, ConnectionType, Task
-from ..model.tokens import (
-    FrameToken, TokenQueue, TokenJoin, TokenFork, TokenTransform,
-    JoinPolicy, DEFAULT_QUEUE_CAPACITY, DMA_QUEUE_CAPACITY, create_source_token
-)
+from ..model.tokens import JoinPolicy
 
 
 from ..model.constants import BPP_MAP, BPP_DEFAULT  # noqa: F401 — re-exported for backward compat
@@ -55,10 +52,18 @@ class SimulationResults:
         """Get results for specific hardware."""
         return [r for r in self.task_results if r.hw_name == hw_name]
 
-    def get_by_task(self, task_id: str) -> Optional[TaskResult]:
-        """Get result for specific task."""
+    def get_by_task(self, task_id: str,
+                    frame_id: Optional[int] = None) -> Optional[TaskResult]:
+        """Get result for specific task.
+
+        Args:
+            task_id: Task identifier
+            frame_id: If given, match only that frame's result.
+                      If None (default), return the first match
+                      (frame 0 in multi-frame runs).
+        """
         for r in self.task_results:
-            if r.task_id == task_id:
+            if r.task_id == task_id and (frame_id is None or r.frame_id == frame_id):
                 return r
         return None
     
@@ -107,14 +112,9 @@ class SoCSimulator:
         self.analyzers: List[BaseAnalyzer] = []
 
         # Internal state for simulation
-        self._task_events: Dict[str, simpy.Event] = {}
         self._task_results: List[TaskResult] = []
         self._otf_groups: List[Set[str]] = []
-        
-        # Token infrastructure (Principle #1: separate queues per input)
-        self._token_joins: Dict[str, TokenJoin] = {}  # task_id -> TokenJoin
-        self._token_forks: Dict[str, TokenFork] = {}  # task_id -> TokenFork
-        self._token_enabled: bool = False  # Enable token mode for multi-input scenarios
+        self._placeholder_warned: Set[str] = set()
 
     def register_hw(self, node: HWNode) -> 'SoCSimulator':
         """
@@ -175,6 +175,11 @@ class SoCSimulator:
             return self.hw_registry[name]
 
         # Create placeholder IP node for unknown hardware
+        if name not in self._placeholder_warned:
+            self._placeholder_warned.add(name)
+            print(f"[Warning] HW '{name}' is not registered; "
+                  f"using placeholder IPNode (1GHz, ppc=1). "
+                  f"Check for typos in the scenario's mapped HW names.")
         placeholder = IPNode(name=name, clock_freq=1e9, ppc=1.0)
         self.hw_registry[name] = placeholder
         return placeholder
@@ -248,8 +253,9 @@ class SoCSimulator:
             return int(base_size * ratio)
         return int(base_size)
 
-    def _simulate_dma_transfer(self, src_task_id: str, dst_task_id: str, 
-                             transfer_config: Dict, data_config: Dict) -> Generator:
+    def _simulate_dma_transfer(self, src_task_id: str, dst_task_id: str,
+                             transfer_config: Dict, data_config: Dict,
+                             frame_id: int = 0) -> Generator:
         """Simulate Write DMA -> Memory -> Read DMA chain."""
         # 1. Parse config
         write_dma_name = transfer_config.get('write_dma')
@@ -282,8 +288,8 @@ class SoCSimulator:
             with write_dma.resource.request() as req:
                 yield req
                 yield self.env.timeout(dma_time)
-            
-            self._record_dma_result(src_task_id, f"{write_dma.name}(Write)", dma_time, size, fmt)
+
+            self._record_dma_result(src_task_id, f"{write_dma.name}(Write)", dma_time, size, fmt, frame_id)
 
         # 3. Read DMA (Resolve from IP)
         if read_dma_name:
@@ -295,8 +301,8 @@ class SoCSimulator:
             with read_dma.resource.request() as req:
                 yield req
                 yield self.env.timeout(dma_time)
-                
-            self._record_dma_result(dst_task_id, f"{read_dma.name}(Read)", dma_time, size, fmt)
+
+            self._record_dma_result(dst_task_id, f"{read_dma.name}(Read)", dma_time, size, fmt, frame_id)
 
     def _resolve_dma_module(self, task_id: str, module_name: str) -> DMAModule:
         """Find DMAModule within the IP mapped to the task."""
@@ -312,10 +318,10 @@ class SoCSimulator:
         
         raise ValueError(f"DMA Module '{module_name}' not found in HW '{hw.name}' (mapped to '{task_id}')")
 
-    def _record_dma_result(self, owner_task_id: str, hw_name: str, duration: float, size: int, fmt: str):
+    def _record_dma_result(self, owner_task_id: str, hw_name: str, duration: float,
+                           size: int, fmt: str, frame_id: int = 0):
         """Helper to record DMA task result."""
         start = self.env.now - duration
-        frame_id = getattr(self, '_current_frame_id', 0)
         result = TaskResult(
             task_id=f"dma_{owner_task_id}_{hw_name}", 
             hw_name=hw_name,
@@ -329,123 +335,36 @@ class SoCSimulator:
         self._task_results.append(result)
 
     def _simulate_dma_transfer_process(self, src_task_id: str, dst_task_id: str,
-                                       transfer_config: Dict, data_config: Dict) -> Generator:
+                                       transfer_config: Dict, data_config: Dict,
+                                       frame_id: int = 0) -> Generator:
         """SimPy process wrapper for _simulate_dma_transfer (for parallel execution)."""
-        yield from self._simulate_dma_transfer(src_task_id, dst_task_id, transfer_config, data_config)
+        yield from self._simulate_dma_transfer(src_task_id, dst_task_id,
+                                               transfer_config, data_config, frame_id)
 
-    def _run_task_process(self, task: Task, frame_start_offset: float = 0.0) -> Generator:
+    def _spawn_m2m_dma_processes(self, m2m_preds: List[str], task_id: str,
+                                 frame_id: int) -> List[Any]:
+        """Spawn DMA transfer processes for all M2M edges into a task.
+
+        Each edge may carry multiple channels (parallel port pairs with
+        independent transfer/data configs).
         """
-        SimPy process for executing a single task.
-
-        Args:
-            task: Task to execute
-            frame_start_offset: Time offset for this frame (for multi-frame)
-        """
-        task_id = task.task_id
-        hw = self._get_hw(task.mapped_hw)
-        frame_id = getattr(self, '_current_frame_id', 0)
-
-        # Wait until frame start time
-        if frame_start_offset > self.env.now:
-            yield self.env.timeout(frame_start_offset - self.env.now)
-
-        # Wait for predecessor events (M2M dependencies)
-        predecessors = self.scenario.get_predecessors(task_id)
-        m2m_preds = []
-        otf_preds = []
-
-        for pred_id in predecessors:
-            edge_type = self.scenario.get_edge_type(pred_id, task_id)
-            if edge_type == ConnectionType.M2M:
-                m2m_preds.append(pred_id)
-            else:  # OTF
-                otf_preds.append(pred_id)
-
-        # Wait for ALL M2M predecessors to complete in parallel
-        if m2m_preds:
-            pred_events = [self._task_events[p] for p in m2m_preds if p in self._task_events]
-            if pred_events:
-                yield self.env.all_of(pred_events)
-
-        # Run DMA transfers in parallel (all predecessors already completed)
         dma_processes = []
         for pred_id in m2m_preds:
-            edge_transfer = self.scenario.graph.edges[pred_id, task_id].get('transfer')
-            if edge_transfer:
-                edge_data = self.scenario.graph.edges[pred_id, task_id].get('data', {})
+            edge = self.scenario.graph.edges[pred_id, task_id]
+            channels = edge.get('channels') or []
+            if not channels and edge.get('transfer'):
+                # Backward compat: edge built without channels list
+                channels = [{'transfer': edge.get('transfer'),
+                             'data': edge.get('data', {})}]
+            for ch in channels:
+                transfer = ch.get('transfer')
+                if not transfer:
+                    continue
                 dma_processes.append(
                     self.env.process(self._simulate_dma_transfer_process(
-                        pred_id, task_id, edge_transfer, edge_data)))
-        if dma_processes:
-            yield self.env.all_of(dma_processes)
-
-        # For OTF: wait for all OTF group members to be ready
-        # (handled by _run_otf_group separately)
-
-        # Record start time
-        start_time = self.env.now
-
-        # SW task: apply latency then use fixed duration, skip HW processing
-        if task.is_sw_task:
-            # Latency before task execution begins
-            if task.latency_ms > 0:
-                yield self.env.timeout(task.latency_ms / 1000.0)
-            start_time = self.env.now
-            processing_time = (task.duration_ms or 0.0) / 1000.0
-            yield self.env.timeout(processing_time)
-            end_time = self.env.now
-            result = TaskResult(
-                task_id=task_id,
-                hw_name=task.mapped_hw,
-                start_time=start_time,
-                end_time=end_time,
-                duration=end_time - start_time,
-                power_consumed=0.0,  # SW tasks excluded from power
-                frame_id=frame_id,
-                workload=task.workload
-            )
-            self._task_results.append(result)
-            self._task_events[task_id].succeed()
-            return
-
-        # Calculate processing time (inject h_blank_margin into workload)
-        workload = {**task.workload, 'h_blank_margin': task.h_blank_margin}
-        processing_time = hw.get_processing_time(workload)
-
-        # Request hardware resource (for contention)
-        with hw.resource.request() as req:
-            yield req
-
-            # Simulate processing
-            yield self.env.timeout(processing_time)
-
-        # Record end time
-        end_time = self.env.now
-        duration = end_time - start_time
-
-        # Calculate power
-        hw.utilization = 1.0  # Active during processing
-        power = hw.get_power_consumption(duration)
-
-        # Store result
-        result = TaskResult(
-            task_id=task_id,
-            hw_name=hw.name,
-            start_time=start_time,
-            end_time=end_time,
-            duration=duration,
-            power_consumed=power,
-            frame_id=frame_id,
-            workload=task.workload
-        )
-        self._task_results.append(result)
-
-        # Signal task completion
-        self._task_events[task_id].succeed()
-
-    def _run_otf_group_process(self, group: List[str], frame_start_offset: float = 0.0) -> Generator:
-        """Legacy OTF group process for single-frame (backward compatibility)."""
-        yield from self._run_otf_group_process_framed(group, 0, frame_start_offset)
+                        pred_id, task_id, transfer, ch.get('data') or {},
+                        frame_id)))
+        return dma_processes
 
     def _run_task_process_framed(self, task: Task, frame_id: int, frame_start_offset: float = 0.0) -> Generator:
         """
@@ -480,15 +399,7 @@ class SoCSimulator:
                 yield self.env.all_of(pred_events)
 
         # Run DMA transfers in parallel (all predecessors already completed)
-        dma_processes = []
-        for pred_id in m2m_preds:
-            edge_transfer = self.scenario.graph.edges[pred_id, task_id].get('transfer')
-            if edge_transfer:
-                edge_data = self.scenario.graph.edges[pred_id, task_id].get('data', {})
-                self._current_frame_id = frame_id
-                dma_processes.append(
-                    self.env.process(self._simulate_dma_transfer_process(
-                        pred_id, task_id, edge_transfer, edge_data)))
+        dma_processes = self._spawn_m2m_dma_processes(m2m_preds, task_id, frame_id)
         if dma_processes:
             yield self.env.all_of(dma_processes)
 
@@ -583,18 +494,42 @@ class SoCSimulator:
             yield self.env.timeout(frame_start_offset - self.env.now)
 
         # Wait for any M2M predecessors of the group (from same frame)
+        group_ids = {t.task_id for t in tasks}
+        m2m_preds_by_task: Dict[str, List[str]] = {}
         all_preds = set()
         for task in tasks:
             for pred_id in self.scenario.get_predecessors(task.task_id):
                 edge_type = self.scenario.get_edge_type(pred_id, task.task_id)
-                if edge_type == ConnectionType.M2M:
+                if edge_type == ConnectionType.M2M and pred_id not in group_ids:
+                    m2m_preds_by_task.setdefault(task.task_id, []).append(pred_id)
                     all_preds.add(pred_id)
 
-        for pred_id in all_preds:
-            if pred_id in task_events:
-                yield task_events[pred_id]
+        pred_events = [task_events[p] for p in all_preds if p in task_events]
+        if pred_events:
+            yield self.env.all_of(pred_events)
 
-        # Record start time (same for all)
+        # Run DMA transfers for M2M edges entering the group (in parallel)
+        dma_processes = []
+        for member_id, preds in m2m_preds_by_task.items():
+            dma_processes.extend(
+                self._spawn_m2m_dma_processes(preds, member_id, frame_id))
+        if dma_processes:
+            yield self.env.all_of(dma_processes)
+
+        # Acquire HW resources of all group members (contention across frames).
+        # Sorted by name for a deterministic acquisition order (deadlock-safe).
+        member_hws = {}
+        for task in tasks:
+            hw = self._get_hw(task.mapped_hw)
+            member_hws[hw.name] = hw
+        acquired = []
+        for hw_name in sorted(member_hws):
+            hw = member_hws[hw_name]
+            req = hw.resource.request()
+            yield req
+            acquired.append((hw, req))
+
+        # Record start time (same for all) — after resources are acquired
         start_time = self.env.now
 
         # Calculate processing times for all tasks (inject h_blank_margin)
@@ -616,6 +551,10 @@ class SoCSimulator:
         base_start = start_time
         yield self.env.timeout(max_time)
         base_end = self.env.now
+
+        # Release HW resources so the next frame can start
+        for hw, req in acquired:
+            hw.resource.release(req)
 
         # Store results with Latency Offsets
         for task, hw, ppc_time, timing_time in processing_times:
@@ -680,7 +619,13 @@ class SoCSimulator:
 
         # Create per-frame task events (each frame has independent completion tracking)
         self._frame_task_events = {}
-        
+
+        # Find OTF groups once (graph topology is frame-invariant)
+        otf_groups = self.scenario.get_otf_groups()
+        otf_task_ids = set()
+        for group in otf_groups:
+            otf_task_ids.update(group)
+
         # Schedule ALL frames at once - they will run in parallel/pipelined
         for frame_id in range(num_frames):
             # Create task events for this frame
@@ -688,15 +633,9 @@ class SoCSimulator:
                 task.task_id: self.env.event()
                 for task in self.scenario.get_tasks()
             }
-            
+
             # Calculate frame start time offset
             frame_start_offset = frame_id * frame_interval
-
-            # Find OTF groups
-            otf_groups = self.scenario.get_otf_groups()
-            otf_task_ids = set()
-            for group in otf_groups:
-                otf_task_ids.update(group)
 
             # Schedule OTF groups for this frame
             for group in otf_groups:
@@ -760,45 +699,6 @@ class SoCSimulator:
     # Token Infrastructure Methods
     # ============================================================
     
-    def _init_token_infrastructure(self) -> None:
-        """
-        Initialize token queues for each task's input ports.
-        
-        Implements Principle #1: Each input port has a separate TokenQueue.
-        """
-        self._token_joins = {}
-        self._token_forks = {}
-        
-        for task in self.scenario.get_tasks():
-            # Create input queues based on incoming edges
-            input_queues: Dict[str, TokenQueue] = {}
-            
-            for pred_id in self.scenario.get_predecessors(task.task_id):
-                edge = self.scenario.graph.edges[pred_id, task.task_id]
-                dst_port = edge.get('dst_port', 'input')
-                buffer_size = edge.get('buffer_size', None)
-                
-                # Principle #1: Separate queue per input port
-                if dst_port not in input_queues:
-                    input_queues[dst_port] = TokenQueue.create(
-                        self.env, 
-                        name=dst_port,
-                        capacity=buffer_size
-                    )
-            
-            # Create TokenJoin with task's join policy (Principle #2)
-            if input_queues:
-                self._token_joins[task.task_id] = TokenJoin(
-                    input_queues=input_queues,
-                    policy=task.join_policy,
-                    window_size=task.window_size,
-                    _env=self.env
-                )
-            
-            # Create TokenFork for output distribution
-            # Will be populated when processing successors
-            self._token_forks[task.task_id] = TokenFork()
-    
     def _detect_token_mode(self) -> bool:
         """
         Detect if token mode should be enabled.
@@ -828,57 +728,3 @@ class SoCSimulator:
                 return True
         
         return False
-    
-    def _create_output_token(self, task: Task, input_tokens: Dict[str, FrameToken],
-                             timestamp: float) -> FrameToken:
-        """
-        Create output token based on task processing.
-        
-        Handles size changes from Scaler/Crop modules.
-        """
-        # Start with first input token or create new
-        if input_tokens:
-            first_key = next(iter(input_tokens))
-            base_token = input_tokens[first_key]
-            frame_id = base_token.frame_id
-        else:
-            frame_id = 0
-            base_token = None
-        
-        # Get output size (may be modified by crop_size)
-        width = task.get_width()
-        height = task.get_height()
-        
-        if task.crop_size:
-            width, height = task.crop_size
-        elif base_token:
-            width = width or base_token.width
-            height = height or base_token.height
-        
-        # Create output token
-        output_token = FrameToken(
-            frame_id=frame_id,
-            timestamp=timestamp,
-            width=width,
-            height=height,
-            format=task.workload.get('format', 'NV12'),
-            metadata={'source_task': task.task_id}
-        )
-        
-        return output_token
-    
-    def _distribute_token(self, task: Task, token: FrameToken) -> Generator:
-        """
-        Distribute output token to all successors.
-        
-        Implements Principle #3: Token is COPIED for each output (never shared).
-        """
-        for succ_id in self.scenario.get_successors(task.task_id):
-            edge = self.scenario.graph.edges[task.task_id, succ_id]
-            dst_port = edge.get('dst_port', 'input')
-            
-            succ_join = self._token_joins.get(succ_id)
-            if succ_join and dst_port in succ_join.input_queues:
-                # Principle #3: Create NEW token (deep copy)
-                copied_token = token.copy()
-                yield succ_join.input_queues[dst_port].store.put(copied_token)

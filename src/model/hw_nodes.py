@@ -422,7 +422,7 @@ class IPNode(HWNode):
             # by HWResolver via ResolvedIPConfig.get_active_power()
             # Here we just use active_power_mW * duration_s = energy_mJ
             # For accurate power, use HWResolver.get_exploration_report()
-            from .hw_resolver import REFERENCE_VOLTAGE_MV, REFERENCE_FPS
+            from .hw_resolver import REFERENCE_VOLTAGE_MV
             v_scale = (self.set_voltage / REFERENCE_VOLTAGE_MV) ** 2 if self.set_voltage > 0 else 1.0
             active_mw = self.unit_power * self.set_clock * v_scale  # approximate
             idle_mw = self.idc * v_scale if self.idc > 0 else 0.0

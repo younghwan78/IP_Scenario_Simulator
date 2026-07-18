@@ -21,61 +21,26 @@ from typing import Any, Dict, List, Optional
 from ..model.hw_resolver import ResolvedIPConfig, REFERENCE_VOLTAGE_MV
 
 
-from ..model.constants import BPP_MAP, BPP_DEFAULT
+from ..model.bw import calc_port_bw, is_dma_port_name
 
 
 def _is_dma_port(port_name: str) -> bool:
     """Check if a port is a DMA port (RDMA/WDMA)."""
-    upper = port_name.upper()
-    return 'RDMA' in upper or 'WDMA' in upper
+    return is_dma_port_name(port_name)
 
 
 def _calc_bw(port_info: dict, fps: float) -> dict:
     """Calculate BW and related info for a single port.
 
     Returns dict with bw_mbs, bw_power_mw, bw_power_ma, and port details.
+    Delegates to the shared model-level formula (src/model/bw.py).
     """
-    sz = port_info.get('size', [])
-    if len(sz) < 4 or sz[2] <= 0 or sz[3] <= 0:
-        return {'bw_mbs': 0, 'bw_power_mw': 0, 'bw_power_ma': 0,
-                'width': 0, 'height': 0}
-
-    width, height = sz[2], sz[3]
-    bitwidth = port_info.get('bitwidth', 8)
-    fmt = port_info.get('format', '')
-    bpp = BPP_MAP.get(fmt, BPP_DEFAULT)
-    r_w_rate = port_info.get('r_w_rate', 1.0)
-
-    comp = port_info.get('comp', 'disable')
-    comp_ratio = port_info.get('comp_ratio', 1.0) if comp == 'enable' else 1.0
-
-    llc_enable = port_info.get('llc_enable', 'disable')
-    llc_weight = port_info.get('llc_weight', 1.0) if llc_enable == 'enable' else 1.0
-    llc_hit_ratio = port_info.get('llc_hit_ratio', 0.0) if llc_enable == 'enable' else 0.0
-
-    bw_mbs = comp_ratio * fps * width * height * (bitwidth / 8) * bpp * r_w_rate / 1e6
-
-    bw_power_coeff = port_info.get('_bw_power_coeff', 80.0)
-    vBat = port_info.get('_vBat', 4.0)
-    pmic_eff = port_info.get('_pmic_eff', 0.85)
-
-    bw_power_mw = bw_mbs * bw_power_coeff / 1000 * llc_weight
-    bw_power_ma = bw_power_mw / vBat / pmic_eff if (vBat > 0 and pmic_eff > 0) else 0.0
-
-    return {
-        'bw_mbs': bw_mbs,
-        'bw_power_mw': bw_power_mw,
-        'bw_power_ma': bw_power_ma,
-        'width': width,
-        'height': height,
-        'bitwidth': bitwidth,
-        'format': fmt,
-        'comp': comp,
-        'comp_ratio': comp_ratio,
-        'llc_enable': llc_enable,
-        'llc_hit_ratio': llc_hit_ratio,
-        'r_w_rate': r_w_rate,
-    }
+    return calc_port_bw(
+        port_info, fps,
+        bw_power_coeff=port_info.get('_bw_power_coeff', 80.0),
+        vBat=port_info.get('_vBat', 4.0),
+        pmic_eff=port_info.get('_pmic_eff', 0.85),
+    )
 
 
 class ReportGenerator:

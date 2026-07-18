@@ -822,7 +822,7 @@ class Visualizer:
         from ..model.scenario import ConnectionType
         from ..model.modules import DMAModule
         from ..model.hw_nodes import SensorNode
-        from ..controller.simulator import BPP_MAP, BPP_DEFAULT
+        from ..model.bw import calc_port_bw, is_dma_port_name
         
         ip_settings = getattr(scenario, '_ip_settings', {})
         records = []
@@ -860,8 +860,7 @@ class Visualizer:
                         if module.name == port_name:
                             return isinstance(module, DMAModule)
             # Fallback: name-based heuristic
-            upper = port_name.upper()
-            return 'RDMA' in upper or 'WDMA' in upper
+            return is_dma_port_name(port_name)
         
         def _get_dma_direction(hw_name, port_name):
             """Get DMA direction from hw_registry module definition."""
@@ -876,44 +875,14 @@ class Visualizer:
         
         def _calc_bw_and_power(port_info):
             """Calculate DMA bandwidth (MB/s) and power (mW, mA).
-            
-            BW (MB/s) = comp_ratio × fps × W × H × (bitwidth/8)
-                        × BPP_MAP[format] × r_w_rate / 1e6
-            BW_power (mW) = bw (MB/s) × bw_power_coeff (mW/GB/s) / 1000 × llc_weight
-            BW_power (mA) = bw_power_mw / vBat / pmic_efficiency
-            
+
+            Delegates to the shared formula in src/model/bw.py.
+
             Returns:
                 (bw_mbs, bw_power_mw, bw_power_ma) or (0, 0, 0) if invalid
             """
-            sz = port_info.get('size', [])
-            if len(sz) < 4 or sz[2] <= 0 or sz[3] <= 0:
-                return 0.0, 0.0, 0.0
-            width, height = sz[2], sz[3]
-            bitwidth = port_info.get('bitwidth', 8)
-            fmt = port_info.get('format', '')
-            bpp = BPP_MAP.get(fmt, BPP_DEFAULT)
-            r_w_rate = port_info.get('r_w_rate', 1.0)
-            
-            # Compression ratio (only if comp is enabled)
-            comp_ratio = port_info.get('comp_ratio', 1.0)
-            if port_info.get('comp') != 'enable':
-                comp_ratio = 1.0
-            
-            # LLC weight (only if llc_enable is enabled)
-            llc_weight = 1.0
-            if port_info.get('llc_enable') == 'enable':
-                llc_weight = port_info.get('llc_weight', 1.0)
-            
-            # BW (MB/s)
-            bw_mbs = comp_ratio * fps * width * height * (bitwidth / 8) * bpp * r_w_rate / 1e6
-            
-            # BW Power (mW) = bw (MB/s) × bw_power_coeff (mW/GB/s) / 1000 × llc_weight
-            bw_power_mw = bw_mbs * bw_power_coeff / 1000 * llc_weight
-            
-            # BW Power (mA) = bw_power_mw / vBat / pmic_efficiency
-            bw_power_ma = bw_power_mw / vBat / pmic_eff if (vBat > 0 and pmic_eff > 0) else 0.0
-            
-            return bw_mbs, bw_power_mw, bw_power_ma
+            rec = calc_port_bw(port_info, fps, bw_power_coeff, vBat, pmic_eff)
+            return rec['bw_mbs'], rec['bw_power_mw'], rec['bw_power_ma']
         
         def _append_record(records, task_result, port_info, hw_name, direction, frame_id):
             """Calculate BW/power and append record."""

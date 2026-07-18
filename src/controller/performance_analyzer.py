@@ -67,16 +67,17 @@ class PerformanceAnalyzer(BaseAnalyzer):
                 'utilization': bottleneck_hw[1]
             }
 
-        # Calculate FPS if pixel-based tasks
+        # Calculate FPS from actual simulated frame count
+        if results.num_frames > 0:
+            report['throughput']['estimated_fps'] = results.num_frames / results.total_time
+
+        # Pixel throughput if pixel-based tasks
         total_pixels = 0
         for task_result in results.task_results:
             pixels = task_result.workload.get('pixels', 0)
             total_pixels += pixels
 
         if total_pixels > 0:
-            # Estimate frames (assuming 4K = 8.3M pixels)
-            estimated_frames = total_pixels / 8294400  # 4K reference
-            report['throughput']['estimated_fps'] = estimated_frames / results.total_time
             report['throughput']['pixels_per_sec'] = total_pixels / results.total_time
 
         return report
@@ -94,6 +95,7 @@ class PerformanceAnalyzer(BaseAnalyzer):
 
         if 'estimated_fps' in report['throughput']:
             lines.append(f"  Estimated FPS: {report['throughput']['estimated_fps']:.2f}")
+        if 'pixels_per_sec' in report['throughput']:
             lines.append(f"  Pixels/sec: {report['throughput']['pixels_per_sec']/1e6:.2f} MP/s")
 
         lines.append("")

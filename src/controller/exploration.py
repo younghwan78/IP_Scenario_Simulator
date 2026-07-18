@@ -28,7 +28,7 @@ from ..model.hw_info import HWInfoDB, DVFSTable, DVFSLevel, IPInfo
 from ..model.hw_resolver import HWResolver, ResolvedIPConfig
 
 
-from ..model.constants import BPP_MAP, BPP_DEFAULT
+from ..model.bw import calc_port_bw, is_dma_port_name
 
 
 @dataclass
@@ -80,42 +80,22 @@ class ExplorationResult:
 
 
 def _is_dma_port(port_name: str) -> bool:
-    upper = port_name.upper()
-    return 'RDMA' in upper or 'WDMA' in upper
+    return is_dma_port_name(port_name)
 
 
 def _calc_bw_for_port(port_info: dict, fps: float,
                       bw_power_coeff: float = 80.0,
                       vBat: float = 4.0, pmic_eff: float = 0.85) -> dict:
-    """Calculate BW and BW power for a single DMA port."""
-    sz = port_info.get('size', [])
-    if len(sz) < 4 or sz[2] <= 0 or sz[3] <= 0:
-        return {'bw_mbs': 0, 'bw_power_mw': 0, 'bw_power_ma': 0}
+    """Calculate BW and BW power for a single DMA port.
 
-    width, height = sz[2], sz[3]
-    bitwidth = port_info.get('bitwidth', 8)
-    fmt = port_info.get('format', '')
-    bpp = BPP_MAP.get(fmt, BPP_DEFAULT)
-    r_w_rate = port_info.get('r_w_rate', 1.0)
-
-    comp = port_info.get('comp', 'disable')
-    comp_ratio = port_info.get('comp_ratio', 1.0) if comp != 'disable' else 1.0
-
-    llc_enable = port_info.get('llc_enable', 'disable')
-    llc_weight = port_info.get('llc_weight', 1.0) if llc_enable == 'enable' else 1.0
-
-    bw_mbs = comp_ratio * fps * width * height * (bitwidth / 8) * bpp * r_w_rate / 1e6
-    bw_power_mw = bw_mbs * bw_power_coeff / 1000 * llc_weight
-    bw_power_ma = bw_power_mw / vBat / pmic_eff if (vBat > 0 and pmic_eff > 0) else 0.0
-
-    return {
-        'bw_mbs': bw_mbs,
-        'bw_power_mw': bw_power_mw,
-        'bw_power_ma': bw_power_ma,
-        'hw': port_info.get('_hw', ''),
-        'port': port_info.get('port', ''),
-        'direction': port_info.get('_direction', 'Read'),
-    }
+    Delegates to the shared formula (src/model/bw.py) and adds
+    exploration-specific record fields (hw/port/direction).
+    """
+    rec = calc_port_bw(port_info, fps, bw_power_coeff, vBat, pmic_eff)
+    rec['hw'] = port_info.get('_hw', '')
+    rec['port'] = port_info.get('port', '')
+    rec['direction'] = port_info.get('_direction', 'Read')
+    return rec
 
 
 class ExplorationEngine:
@@ -388,7 +368,18 @@ class ExplorationEngine:
                 orig_task_modes[task_id] = getattr(task, 'ip_mode', None)
                 task.ip_mode = mode_overrides[hw]
 
-        # 2. Run resolver
+        # 2. Evaluate with modes applied; modes are ALWAYS restored
+        #    (try/finally so an exception can't leak mutated scenario state)
+        try:
+            return self._evaluate_with_modes(combo, result)
+        finally:
+            self._restore_modes(orig_modes, orig_task_modes)
+
+    def _evaluate_with_modes(self, combo: dict, result: CandidateResult) -> CandidateResult:
+        """Evaluate a combination after mode overrides are applied.
+
+        The caller (_evaluate) restores the scenario's original modes.
+        """
         resolver = HWResolver(self.db, asv_group=self.asv_group)
         try:
             resolved = resolver.resolve_scenario(
@@ -397,7 +388,6 @@ class ExplorationEngine:
         except Exception as e:
             result.feasible = False
             result.infeasible_reason = f"Resolver error: {e}"
-            self._restore_modes(orig_modes, orig_task_modes)
             return result
 
         # 3. Apply DVFS level overrides (force specific levels)
@@ -414,6 +404,7 @@ class ExplorationEngine:
                             config.set_clock = level.speed
                             config.dvfs_level = level.level
                             config.required_voltage = voltage
+                            config.level_voltage = voltage
 
         # 4. Re-align VDD domains after DVFS overrides
         vdd_groups: Dict[str, List[str]] = defaultdict(list)
@@ -421,10 +412,13 @@ class ExplorationEngine:
             if config.vdd:
                 vdd_groups[config.vdd].append(ip_name)
 
+        def _effective_voltage(c) -> float:
+            return max(c.required_voltage, c.level_voltage)
+
         for vdd_name, ip_names in vdd_groups.items():
-            max_voltage = max(resolved[n].required_voltage for n in ip_names)
+            max_voltage = max(_effective_voltage(resolved[n]) for n in ip_names)
             leader_ips = sorted([n for n in ip_names
-                                 if resolved[n].required_voltage == max_voltage])
+                                 if _effective_voltage(resolved[n]) == max_voltage])
             leader_str = ','.join(leader_ips)
             for ip_name in ip_names:
                 resolved[ip_name].set_voltage = max_voltage
@@ -444,7 +438,6 @@ class ExplorationEngine:
                         f"{ip_name}: set_clock {config.set_clock:.1f} < "
                         f"req_clock {config.required_clock:.1f} MHz"
                     )
-                    self._restore_modes(orig_modes, orig_task_modes)
                     return result
 
         result.resolved = resolved
@@ -458,7 +451,6 @@ class ExplorationEngine:
             if not applied:
                 result.feasible = False
                 result.infeasible_reason = f"Feature override for {hw} had no effect (unsupported)"
-                self._restore_modes(orig_modes, orig_task_modes)
                 return result
         dma_records, total_bw, total_bw_power = self._collect_bw(ip_settings)
         result.dma_records = dma_records
@@ -482,6 +474,15 @@ class ExplorationEngine:
                 result.ip_exec_times[ip_name] = 0.0
         result.hw_time_ms = max(result.ip_exec_times.values()) if result.ip_exec_times else 0.0
 
+        # 8.6. Timing feasibility against budget (constraints.timing)
+        if self.timing_budget_ms is not None and result.hw_time_ms > self.timing_budget_ms:
+            result.feasible = False
+            result.infeasible_reason = (
+                f"hw_time {result.hw_time_ms:.2f}ms > "
+                f"budget {self.timing_budget_ms:.2f}ms"
+            )
+            return result
+
         # 9. Per-VDD breakdown
         for vdd_name, ip_names in vdd_groups.items():
             vdd_core = sum(resolved[n].set_volt_power for n in ip_names)
@@ -493,9 +494,6 @@ class ExplorationEngine:
                 'total_mw': vdd_core + vdd_bw,
                 'set_volt_v': max(resolved[n].set_voltage for n in ip_names) / 1000,
             }
-
-        # Restore original modes
-        self._restore_modes(orig_modes, orig_task_modes)
 
         return result
 

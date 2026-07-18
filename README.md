@@ -269,7 +269,7 @@ docs/
 ├── scenario_config/
 │   ├── projectA_FHD30_recording_scenario.yaml
 │   └── exploration_FHD30.yaml  # Exploration sweep config
-├── tests/                    # Unit & Integration tests (211 tests)
+├── tests/                    # Unit & Integration tests
 ├── main.py                   # Entry point
 ├── generate_index.py         # GitHub Pages index.html generator
 ├── publish_report.py         # Report publishing helper
@@ -438,7 +438,7 @@ Domain,Level,Frequency,Voltage_ASV0,...,Voltage_ASV15
 ## Testing
 
 ```bash
-# Run all tests (211 tests)
+# Run all tests
 pytest tests/ -v
 
 # Quick run
