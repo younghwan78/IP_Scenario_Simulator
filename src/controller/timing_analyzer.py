@@ -4,9 +4,9 @@ Timing Analyzer for simulation results.
 Analyzes latency, critical path, and timing bottlenecks.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-from .simulator import BaseAnalyzer, SimulationResults, TaskResult
+from .simulator import BaseAnalyzer, SimulationResults
 
 
 class TimingAnalyzer(BaseAnalyzer):

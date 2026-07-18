@@ -192,10 +192,10 @@ def generate_html(grouped: dict, reports_dir: str) -> str:
                            f"</div>")
                 for cat in CATEGORY_ORDER:
                     if cat_links[cat]:
-                        html.append(f"<div class='cat-row'>")
+                        html.append("<div class='cat-row'>")
                         html.append(f"<span class='cat-label {CATEGORY_CSS[cat]}'>{cat}</span>")
                         html.append(f"<span class='cat-links'>{' '.join(cat_links[cat])}</span>")
-                        html.append(f"</div>")
+                        html.append("</div>")
                 html.append("</div>")
         
         html.append("</section>")

@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.model.hw_nodes import IPNode
-from src.model.modules import ScalerModule, CropModule
+from src.model.modules import ScalerModule
 from src.model.scenario import ScenarioGraph
 from src.controller.simulator import SoCSimulator
 from src.controller.performance_analyzer import PerformanceAnalyzer
@@ -41,7 +41,8 @@ class TestIntegration4KRecording:
                 ppc=4,
                 efficiency=0.95,
                 power_static=15.0,
-                power_dynamic=80.0
+                power_dynamic=80.0,
+                supports_scale=True,  # Scaler0 (0.5x) is attached below
             ),
             IPNode(
                 name="ISP_BE",

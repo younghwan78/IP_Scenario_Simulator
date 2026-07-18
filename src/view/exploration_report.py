@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import Dict, List, Set
 
 from ..controller.exploration import CandidateResult, ExplorationResult
 
@@ -493,7 +493,7 @@ class ExplorationReportGenerator:
             max_val = 1.0
 
         svg = []
-        svg.append(f"<h3>Power Comparison Chart</h3>")
+        svg.append("<h3>Power Comparison Chart</h3>")
         svg.append(f"<svg width='{chart_w}' height='{chart_h}' "
                    f"xmlns='http://www.w3.org/2000/svg' style='background:#fafafa;border:1px solid #ddd;margin:10px 0;'>")
 
@@ -705,7 +705,9 @@ table.comparison th { position: sticky; top: 0; z-index: 1; }
         for group_name, group_cands in groups:
             if group_name == "Bottom 5 Configurations":
                 # Add a separator row for bottom 5
-                sep_row = f"| **--- Bottom 5 ---** |" + " --- |" * (len(domains) + len(mode_ips) if 'mode_ips' in locals() else len(domains) + 7)
+                # Columns after the label: one per domain + hw_time, core,
+                # bw, total, mA, delta, delta% (7 fixed columns)
+                sep_row = "| **--- Bottom 5 ---** |" + " --- |" * (len(domains) + 7)
                 lines.append(sep_row)
             
             for c in group_cands:

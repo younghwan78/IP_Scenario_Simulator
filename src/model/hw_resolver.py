@@ -17,10 +17,10 @@ Power Calculation:
 
 from __future__ import annotations
 from collections import defaultdict
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
-from .hw_info import HWInfoDB, IPInfo, DVFSTable, DVFSLevel
+from .hw_info import HWInfoDB, IPInfo
 
 
 # Reference voltage for power scaling (0.71V in mV)
@@ -164,7 +164,7 @@ class HWResolver:
         Returns:
             Dict of ip_name → ResolvedIPConfig
         """
-        from .hw_nodes import IPNode, SensorNode
+        from .hw_nodes import IPNode
         
         # Extract scenario parameters
         scenario_data = scenario_config.get('scenario', scenario_config)
@@ -566,7 +566,6 @@ class HWResolver:
         Returns:
             Set of HW names connected to sensor via OTF
         """
-        from .hw_nodes import SensorNode
         if scenario is None:
             return set()
         

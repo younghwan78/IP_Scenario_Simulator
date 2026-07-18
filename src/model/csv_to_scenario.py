@@ -605,7 +605,7 @@ def generate_yaml(scenario_dict: dict, output_path: str) -> str:
     
     header_lines = [
         f"# {name} Scenario ({'Compact' if is_compact else 'Normal'} Version)",
-        f"# Auto-generated from CSV by csv_to_scenario",
+        "# Auto-generated from CSV by csv_to_scenario",
         "",
     ]
     header = '\n'.join(header_lines)

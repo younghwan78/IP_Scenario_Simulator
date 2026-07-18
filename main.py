@@ -30,7 +30,7 @@ from src.model.hw_nodes import (
     IPNode, ProcessorNode, MemoryNode
 )
 from src.model.modules import Module, ScalerModule, CropModule, GenericModule, DMAModule
-from src.model.scenario import ScenarioGraph, ConnectionType
+from src.model.scenario import ScenarioGraph
 from src.controller.simulator import SoCSimulator
 from src.controller.performance_analyzer import PerformanceAnalyzer
 from src.controller.power_analyzer import PowerAnalyzer
@@ -818,14 +818,18 @@ def build_gantt_hw_order(scenario_config: dict, scenario: 'ScenarioGraph') -> li
 def publish_outputs(output_dirs: list, output_prefix: str,
                     project_name: str, scenario_name: str,
                     scenario_config: dict) -> None:
-    """Copy prefixed outputs to docs/reports/ with a timestamped name."""
+    """Copy prefixed outputs to docs/reports/ with a timestamped name.
+
+    Naming rule is shared with publish_report.py (build_publish_name)
+    so published files are always parseable by generate_index.py.
+    """
     import shutil
+    from publish_report import build_publish_name
     publish_dir = os.path.join('docs', 'reports', project_name)
     os.makedirs(publish_dir, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     scenario_data = scenario_config.get('scenario', scenario_config)
     writer = scenario_data.get('writer', 'anonymous')
-    publish_prefix = f"{project_name}-{scenario_name}-{ts}-{writer}_"
 
     published_files = []
     for src_dir in output_dirs:
@@ -834,7 +838,8 @@ def publish_outputs(output_dirs: list, output_prefix: str,
         for fname in os.listdir(src_dir):
             if fname.startswith(output_prefix):
                 suffix = fname[len(output_prefix):]
-                dst_name = f"{publish_prefix}{suffix}"
+                dst_name = build_publish_name(
+                    project_name, scenario_name, ts, writer, suffix)
                 src_path = os.path.join(src_dir, fname)
                 dst_path = os.path.join(publish_dir, dst_name)
                 shutil.copy2(src_path, dst_path)

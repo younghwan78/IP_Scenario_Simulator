@@ -15,7 +15,7 @@ from src.model.hw_nodes import IPNode
 from src.model.modules import DMAModule
 from src.model.scenario import ScenarioGraph
 from src.controller.simulator import (
-    SoCSimulator, SimulationResults, TaskResult, BPP_MAP, BPP_DEFAULT,
+    SimulationResults, TaskResult, BPP_MAP, BPP_DEFAULT,
 )
 from src.view.visualizer import Monitor, Visualizer
 

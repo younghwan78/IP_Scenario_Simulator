@@ -17,14 +17,14 @@ import sys
 
 sys.path.insert(0, '.')
 from src.view.plantuml_view import (
-    _safe_id, _build_groups, _mod_color, _mod_type_short, _ip_label,
-    HIERARCHY_ORDER, HIERARCHY_COLORS, IP_GROUP_COLORS, _load_data,
+    _safe_id, _build_groups, _mod_color, _mod_type_short, _load_data,
     _get_effective_hierarchy_order, _get_hierarchy_color, _get_ip_group_color,
     _get_hierarchy_border, _get_ip_group_border, _darken_hex,
     _is_sw_edge,
 )
 from src.model.hw_nodes import SensorNode, IPNode
 from src.model.scenario import ConnectionType
+from src.model.bw import comp_enabled
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -73,7 +73,6 @@ def _get_ip_size_info(tid, hw, ip_settings):
     if out_w is None:
         best_px = -1
         for out in outputs:
-            port = out.get('port', '')
             if out.get('format') == 'STAT':
                 continue  # skip statistical outputs
             w, h = _extract_wh_ip(out.get('size', []))
@@ -140,7 +139,7 @@ def _build_cross_edges(elk, meta, scenario, ip_settings):
                         lines.append(info['format'])
                     if info.get('bitwidth'):
                         lines.append(f"{info['bitwidth']}bit")
-                    if info.get('comp') == 'enable':
+                    if comp_enabled(info.get('comp')):
                         lines.append("COMP")
                     lbl = "\\n".join(lines)
                     buf_id = f"buf_{eidx}"
@@ -270,7 +269,7 @@ def generate_top_html(hw_registry, scenario, output_path):
                         lines.append(info['format'])
                     if info.get('bitwidth'):
                         lines.append(f"{info['bitwidth']}bit")
-                    if info.get('comp') == 'enable':
+                    if comp_enabled(info.get('comp')):
                         lines.append("COMP")
                     lbl = "\\n".join(lines)
                     buf_id = f"buf_{eidx}"
@@ -323,7 +322,7 @@ def _build_port_detail(tid, hw_name, hw, ip_settings, scenario=None):
         p["bitwidth"] = f"{bw}b" if bw else ''
         comp = port_cfg.get('comp', '')
         ratio = port_cfg.get('comp_ratio', '')
-        p["comp"] = f"{comp}({ratio})" if comp == 'enable' and ratio else comp
+        p["comp"] = f"{comp}({ratio})" if comp_enabled(comp) and ratio else comp
         detail["inputs"].append(p)
 
     for port_cfg in ts.get('outputs', []):
@@ -335,7 +334,7 @@ def _build_port_detail(tid, hw_name, hw, ip_settings, scenario=None):
         p["bitwidth"] = f"{bw}b" if bw else ''
         comp = port_cfg.get('comp', '')
         ratio = port_cfg.get('comp_ratio', '')
-        p["comp"] = f"{comp}({ratio})" if comp == 'enable' and ratio else comp
+        p["comp"] = f"{comp}({ratio})" if comp_enabled(comp) and ratio else comp
         detail["outputs"].append(p)
 
     # SW tasks: show processor info
@@ -384,8 +383,6 @@ def generate_level1_html(hw_registry, scenario, output_path):
 
             # Build label with resolution info (input + output)
             lbl = hw_name
-            ts = ip_settings.get(tid, {})
-            inputs = ts.get('inputs', [])
             in_str, out_str, badges = _get_ip_size_info(tid, hw, ip_settings)
 
             if in_str:
@@ -511,7 +508,7 @@ def _build_l2_module_detail(mod, tid, ip_settings, is_disabled):
             detail['bitwidth'] = f"{bw_val}b" if bw_val else '-'
             comp = port_cfg.get('comp', '')
             ratio = port_cfg.get('comp_ratio', '')
-            detail['comp'] = f"{comp}({ratio})" if comp == 'enable' and ratio else (comp or '-')
+            detail['comp'] = f"{comp}({ratio})" if comp_enabled(comp) and ratio else (comp or '-')
         else:
             detail['size'] = '-'
             detail['format'] = '-'
@@ -629,7 +626,7 @@ def _build_cross_edges_level2(elk, meta, scenario, ip_settings, hw_raw, task_hw)
                         lines.append(info['format'])
                     if info.get('bitwidth'):
                         lines.append(f"{info['bitwidth']}bit")
-                    if info.get('comp') == 'enable':
+                    if comp_enabled(info.get('comp')):
                         lines.append("COMP")
                     lbl = "\\n".join(lines)
                     buf_id = f"buf_{eidx}"

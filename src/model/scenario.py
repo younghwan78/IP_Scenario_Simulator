@@ -8,14 +8,14 @@ Uses NetworkX DiGraph to represent:
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from enum import Enum
 
 import networkx as nx
 
 from .hw_nodes import HWNode, IPNode
 from .modules import ScalerModule, CropModule
-from .tokens import JoinPolicy, DEFAULT_QUEUE_CAPACITY
+from .tokens import JoinPolicy
 
 
 class ConnectionType(Enum):
@@ -299,9 +299,13 @@ class ScenarioGraph:
         """Get all tasks in the scenario."""
         return list(self._tasks.values())
 
-    def validate_constraints(self, hw_registry: Dict[str, HWNode]) -> List[str]:
+    def validate_constraints(self, hw_registry: Dict[str, HWNode],
+                             allow_unknown_hw: bool = False) -> List[str]:
         """
         Validate scenario requirements against hardware capabilities.
+
+        Single source of truth for HW capability validation — the simulator
+        (SoCSimulator._validate_hw_capabilities) delegates here.
 
         Checks:
         1. IP Mode support (defaults to 'default' if unspecified)
@@ -310,6 +314,9 @@ class ScenarioGraph:
 
         Args:
             hw_registry: Dictionary of available hardware nodes
+            allow_unknown_hw: If True, tasks mapped to unregistered HW are
+                skipped instead of reported (the simulator creates
+                placeholder nodes for them).
 
         Returns:
             List of error messages. Empty list if valid.
@@ -322,13 +329,18 @@ class ScenarioGraph:
                 continue
 
             if task.mapped_hw not in hw_registry:
-                errors.append(f"Task '{task.task_id}' maps to unknown HW '{task.mapped_hw}'")
+                if not allow_unknown_hw:
+                    errors.append(f"Task '{task.task_id}' maps to unknown HW '{task.mapped_hw}'")
                 continue
 
             hw = hw_registry[task.mapped_hw]
 
             # Only IPNodes have specific constraints like modes/scale/crop
             if not isinstance(hw, IPNode):
+                # Crop requires an IPNode with crop capability
+                if task.requires_crop():
+                    errors.append(f"Task '{task.task_id}' requires crop but HW "
+                                  f"'{hw.name}' is not an IPNode")
                 continue
 
             # 1. IP Mode Validation
@@ -536,7 +548,6 @@ class ScenarioGraph:
 
         for group in otf_groups:
             # Find the sensor node in this group (entry point)
-            sensor_task = None
             sensor_node = None
 
             for task_id in group:
@@ -544,7 +555,6 @@ class ScenarioGraph:
                 if task:
                     hw = hw_nodes.get(task.mapped_hw)
                     if isinstance(hw, SensorNode):
-                        sensor_task = task
                         sensor_node = hw
                         break
 

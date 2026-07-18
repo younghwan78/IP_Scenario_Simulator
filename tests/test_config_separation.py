@@ -4,7 +4,7 @@ Tests for config separation (static HW config vs dynamic scenario config).
 
 import pytest
 from src.model.hw_nodes import (
-    HWNode, IPNode, SensorNode
+    IPNode, SensorNode
 )
 from src.model.modules import ScalerModule, CropModule
 

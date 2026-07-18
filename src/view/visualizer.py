@@ -6,9 +6,13 @@ Provides:
 - Visualizer: Generates Gantt charts and exports CSV
 """
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import List, Optional, TYPE_CHECKING
 import pandas as pd
+
+if TYPE_CHECKING:
+    from ..controller.simulator import SimulationResults
+    from ..model.scenario import ScenarioGraph
 
 try:
     import plotly.express as px
@@ -105,7 +109,6 @@ class Monitor:
         Returns:
             self for method chaining
         """
-        from ..controller.simulator import SimulationResults
 
         self.clear()
         for task_result in results.task_results:
@@ -819,7 +822,6 @@ class Visualizer:
         
         BW is assumed uniform during task duration.
         """
-        from ..model.scenario import ConnectionType
         from ..model.modules import DMAModule
         from ..model.hw_nodes import SensorNode
         from ..model.bw import calc_port_bw, is_dma_port_name

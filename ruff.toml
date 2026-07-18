@@ -1,0 +1,21 @@
+# Ruff configuration — lint only (no formatting enforcement)
+# Run: ruff check src tests main.py publish_report.py generate_index.py
+
+line-length = 120
+target-version = "py310"
+
+[lint]
+# F = pyflakes (undefined names, unused imports/variables)
+# E7/E9 = comparison & runtime-error prone pycodestyle rules
+select = ["F", "E7", "E9"]
+ignore = [
+    "E731",  # lambda assignment — used intentionally for small callbacks
+    "E741",  # ambiguous variable names (l) — used in DVFS level loops
+    "E701",  # one-line `if x: continue` — established idiom in this codebase
+]
+
+[lint.per-file-ignores]
+# Re-export modules: unused imports are the public API surface
+"src/model/__init__.py" = ["F401"]
+"src/controller/__init__.py" = ["F401"]
+"src/view/__init__.py" = ["F401"]

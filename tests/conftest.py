@@ -9,8 +9,8 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.model.hw_nodes import IPNode, SensorNode, DisplayNode
-from src.model.modules import ScalerModule, CropModule, DMAModule
+from src.model.hw_nodes import IPNode, SensorNode
+from src.model.modules import ScalerModule, DMAModule
 from src.model.scenario import ScenarioGraph
 
 

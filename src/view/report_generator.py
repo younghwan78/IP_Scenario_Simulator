@@ -16,9 +16,9 @@ from __future__ import annotations
 import os
 from collections import defaultdict
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from ..model.hw_resolver import ResolvedIPConfig, REFERENCE_VOLTAGE_MV
+from ..model.hw_resolver import ResolvedIPConfig
 
 
 from ..model.bw import calc_port_bw, is_dma_port_name
@@ -470,8 +470,8 @@ class ReportGenerator:
         lines.append("")
         lines.append("## 1. Scenario Description")
         lines.append("")
-        lines.append(f"| Item | Value |")
-        lines.append(f"|------|-------|")
+        lines.append("| Item | Value |")
+        lines.append("|------|-------|")
         lines.append(f"| Sensor | {s1['sensor']} |")
         lines.append(f"| Sensor Mode | {s1['sensor_mode']} |")
         lines.append(f"| Resolution | {s1['width']}×{s1['height']} |")

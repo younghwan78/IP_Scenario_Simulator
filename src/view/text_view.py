@@ -7,12 +7,15 @@ Provides human-readable text output for:
 - Simulation results summary
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from ..model.hw_nodes import (
     HWNode, ExternalNode, SensorNode, DisplayNode,
     IPNode, ProcessorNode, MemoryNode
 )
+
+if TYPE_CHECKING:
+    from ..controller.simulator import SimulationResults
 from ..model.modules import Module, ScalerModule, CropModule, DMAModule
 from ..model.scenario import ScenarioGraph, ConnectionType
 
@@ -400,11 +403,10 @@ class TextViewer:
         Returns:
             Formatted summary string
         """
-        from ..controller.simulator import SimulationResults
 
         lines = [
             f"[Simulation Results: {results.scenario_name}]",
-            f"",
+            "",
             f"Total Time: {results.total_time * 1000:.3f} ms",
             f"Total Tasks: {len(results.task_results)}",
             f"Total Energy: {results.get_total_power():.3f} mJ",
@@ -445,11 +447,6 @@ class TextViewer:
             total_ms = results.total_time * 1000
             scale_label = f"Scale: {bar_width} chars = {total_ms:.1f} ms ({total_ms/bar_width:.2f} ms/char)"
             lines.append(scale_label)
-            
-            # Ruler
-            ruler = " " * (MAX_HW_LEN + 3)
-            tick_vals = [0.0, total_ms * 0.25, total_ms * 0.5, total_ms * 0.75, total_ms]
-            tick_pos  = [0, int(bar_width * 0.25), int(bar_width * 0.5), int(bar_width * 0.75), bar_width-1]
             
             # Simple fixed ruler line
             lines.append(f"{'':<{MAX_HW_LEN}} | 0" + "." * (bar_width-2) + f"{total_ms:.1f}ms")

@@ -4,19 +4,16 @@ Unit tests for CSV-based HW info loading and DVFS/voltage resolution.
 
 import pytest
 import sys
-import os
-import tempfile
 from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.model.hw_info import (
-    IPInfo, DVFSLevel, DVFSTable, HWInfoDB,
     load_info_csv, load_dvfs_csv, create_hw_info_db
 )
 from src.model.hw_resolver import (
-    ResolvedIPConfig, HWResolver, REFERENCE_VOLTAGE_MV, REFERENCE_FPS
+    HWResolver
 )
 from src.model.hw_nodes import IPNode, ProcessorNode, MemoryNode
 

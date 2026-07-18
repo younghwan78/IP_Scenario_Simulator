@@ -2,7 +2,6 @@
 Tests for OTF clock optimization logic.
 """
 
-import pytest
 from src.model.hw_nodes import IPNode, SensorNode
 from src.model.scenario import ScenarioGraph
 
@@ -43,7 +42,7 @@ class TestOTFClockOptimization:
 
         hw_nodes = {"Sensor": sensor, "IP": ip}
 
-        messages = scenario.optimize_otf_clocks(hw_nodes)
+        scenario.optimize_otf_clocks(hw_nodes)
 
         assert ip.required_freq == 300e6
         assert ip.target_freq == 300e6

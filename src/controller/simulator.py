@@ -9,12 +9,12 @@ Orchestrates SimPy-based discrete event simulation using:
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Generator, List, Optional, Set
+from typing import Any, Dict, Generator, List, Optional, Set
 from abc import ABC, abstractmethod
 
 import simpy
 
-from ..model.hw_nodes import HWNode, IPNode, ProcessorNode, MemoryNode
+from ..model.hw_nodes import HWNode, IPNode
 from ..model.modules import DMAModule
 from ..model.scenario import ScenarioGraph, ConnectionType, Task
 from ..model.tokens import JoinPolicy
@@ -181,6 +181,10 @@ class SoCSimulator:
                   f"using placeholder IPNode (1GHz, ppc=1). "
                   f"Check for typos in the scenario's mapped HW names.")
         placeholder = IPNode(name=name, clock_freq=1e9, ppc=1.0)
+        # Late creation (during simulation): attach a SimPy resource since
+        # _init_resources() already ran for the registered nodes
+        if self.env is not None:
+            placeholder.resource = simpy.Resource(self.env, capacity=1)
         self.hw_registry[name] = placeholder
         return placeholder
 
@@ -188,45 +192,15 @@ class SoCSimulator:
         """
         Validate that hardware supports required task features.
 
-        Checks:
-        - Crop support if task requires crop
-        - IP mode compatibility
+        Delegates to ScenarioGraph.validate_constraints() (single source of
+        truth for mode/crop/scale rules). Unknown HW is allowed here because
+        the simulator creates placeholder nodes for it (_get_hw).
 
         Raises:
             ValueError: If validation fails
         """
-        errors = []
-
-        for task in self.scenario.get_tasks():
-            # Skip SW tasks — they don't require HW capability validation
-            if task.is_sw_task:
-                continue
-
-            hw = self._get_hw(task.mapped_hw)
-
-            # Check crop support
-            if task.requires_crop():
-                if isinstance(hw, IPNode):
-                    if not hw.supports_crop:
-                        errors.append(
-                            f"Task '{task.task_id}' requires crop but HW '{hw.name}' "
-                            f"does not support crop (set supports_crop=True)"
-                        )
-                else:
-                    errors.append(
-                        f"Task '{task.task_id}' requires crop but HW '{hw.name}' "
-                        f"is not an IPNode"
-                    )
-
-            # Check IP mode support (treat None/missing as 'default')
-            ip_mode = task.ip_mode if task.ip_mode else 'default'
-            if isinstance(hw, IPNode):
-                if ip_mode not in hw.supported_modes:
-                    errors.append(
-                        f"Task '{task.task_id}' uses mode '{ip_mode}' but HW "
-                        f"'{hw.name}' only supports: {hw.supported_modes}"
-                    )
-
+        errors = self.scenario.validate_constraints(
+            self.hw_registry, allow_unknown_hw=True)
         if errors:
             raise ValueError("HW capability validation failed:\n  " + "\n  ".join(errors))
 
@@ -662,13 +636,23 @@ class SoCSimulator:
         return results
     
     def _get_frame_interval(self) -> float:
-        """Get frame interval in seconds based on sensor fps."""
+        """Get frame interval in seconds based on sensor fps.
+
+        Multi-sensor scenarios use the first sensor's fps; a warning is
+        printed when sensors disagree (per-sensor intervals unsupported).
+        """
         from ..model.hw_nodes import SensorNode
-        
-        for hw in self.hw_registry.values():
-            if isinstance(hw, SensorNode):
-                return 1.0 / hw.fps
-        
+
+        sensors = [hw for hw in self.hw_registry.values()
+                   if isinstance(hw, SensorNode)]
+        if sensors:
+            fps_values = {s.fps for s in sensors}
+            if len(fps_values) > 1:
+                print(f"[Warning] Multiple sensors with different fps "
+                      f"{sorted(fps_values)} — using '{sensors[0].name}' "
+                      f"({sensors[0].fps} fps) for the frame interval.")
+            return 1.0 / sensors[0].fps
+
         # Default: 30fps = 33.3ms
         return 1.0 / 30.0
 

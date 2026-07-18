@@ -4,9 +4,9 @@ Power Analyzer for simulation results.
 Analyzes static/dynamic power and energy consumption.
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from .simulator import BaseAnalyzer, SimulationResults, TaskResult
+from .simulator import BaseAnalyzer, SimulationResults
 
 
 class PowerAnalyzer(BaseAnalyzer):

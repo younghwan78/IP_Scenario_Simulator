@@ -24,9 +24,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.model.hw_nodes import IPNode, SensorNode
+from src.model.hw_nodes import IPNode
 from src.model.modules import DMAModule
-from src.model.scenario import ScenarioGraph, ConnectionType
+from src.model.scenario import ScenarioGraph
 from src.model.tokens import (
     TokenQueue, TokenJoin, JoinPolicy, create_source_token
 )

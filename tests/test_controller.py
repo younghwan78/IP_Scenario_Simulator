@@ -9,8 +9,8 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.model.hw_nodes import IPNode, ProcessorNode
-from src.model.scenario import ScenarioGraph, ConnectionType
+from src.model.hw_nodes import IPNode
+from src.model.scenario import ScenarioGraph
 from src.controller.simulator import SoCSimulator, SimulationResults, TaskResult
 from src.controller.performance_analyzer import PerformanceAnalyzer
 from src.controller.power_analyzer import PowerAnalyzer
@@ -163,9 +163,6 @@ class TestSoCSimulator:
         simulator.load_scenario(scenario)
 
         results = simulator.run()
-
-        result_1 = results.get_by_task("t_1")
-        result_2 = results.get_by_task("t_2")
 
         # Due to resource contention, one should wait for the other
         # Total time should be ~2 seconds

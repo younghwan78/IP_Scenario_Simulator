@@ -15,17 +15,25 @@ Usage:
 """
 
 import argparse
+import io
 import os
 import re
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 
-# Report file pattern: {project}-{scenario}-{YYYYMMDD-HHMMSS}-{writer}_suffix.ext
-REPORT_PATTERN = re.compile(
-    r'^(?P<project>[^-]+)-(?P<scenario>.+?)'
-    r'(?:-(?P<timestamp>\d{8}-\d{6}))?'
-    r'(?:-(?P<writer>[^_]+))?_'
+# Fix encoding for Windows console (cp949 can't render arrows/checkmarks)
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+# Full (publishable) pattern: {project}-{scenario}-{YYYYMMDD-HHMMSS}-{writer}_suffix.ext
+# — this is what generate_index.py can parse.
+STRICT_PATTERN = re.compile(
+    r'^(?P<project>[^-]+)-(?P<scenario>.+)'
+    r'-(?P<timestamp>\d{8}-\d{6})'
+    r'-(?P<writer>[^_]+)'
+    r'_(?P<suffix>.+)$'
 )
 
 # Output directories to scan (in order)
@@ -33,6 +41,72 @@ DEFAULT_SOURCE_DIRS = ['output_simulation', 'output_exploration', 'output_view']
 
 # File extensions to publish
 PUBLISH_EXTENSIONS = {'.html', '.md', '.png', '.csv', '.json'}
+
+# Fallback suffix list for splitting non-timestamped filenames when
+# generate_index.py is not importable
+_FALLBACK_SUFFIXES = [
+    'simulation_result.html', 'simulation_result.md',
+    'exploration_result.html', 'exploration_result.md',
+    'timing_chart.html', 'bw_chart.html',
+    'timing_chart.png', 'bw_chart.png',
+    'top_view.html', 'level1_view.html', 'level2_view.html',
+    'level3_view.html', 'task_topology_view.html',
+    'results.csv', 'trace.json',
+]
+
+
+def _known_suffixes() -> list:
+    """Suffixes recognized by the index generator (single source: generate_index)."""
+    try:
+        from generate_index import SUFFIX_LABELS
+        return list(SUFFIX_LABELS.keys())
+    except ImportError:
+        return list(_FALLBACK_SUFFIXES)
+
+
+def build_publish_name(project: str, scenario: str, timestamp: str,
+                       writer: str, suffix: str) -> str:
+    """Canonical published filename — MUST stay parseable by generate_index.py.
+
+    Shared by publish_report.py and main.py --publish so the naming rule
+    has a single definition.
+    """
+    return f"{project}-{scenario}-{timestamp}-{writer}_{suffix}"
+
+
+def parse_report_filename(filename: str) -> dict | None:
+    """Parse a report filename into components.
+
+    Supports both forms:
+      1. Published form:  {project}-{scenario}-{ts}-{writer}_{suffix}
+      2. Raw output form: {project}-{scenario}_{suffix}  (no timestamp/writer)
+         — suffix must be one of the known report suffixes so the
+         scenario/suffix split is unambiguous.
+    """
+    m = STRICT_PATTERN.match(filename)
+    if m:
+        return {
+            'project': m.group('project'),
+            'scenario': m.group('scenario'),
+            'timestamp': m.group('timestamp'),
+            'writer': m.group('writer'),
+            'suffix': m.group('suffix'),
+        }
+
+    # Raw output form: split on a known suffix (longest first)
+    for sfx in sorted(_known_suffixes(), key=len, reverse=True):
+        if filename.endswith('_' + sfx):
+            prefix = filename[:-(len(sfx) + 1)]
+            if '-' in prefix:
+                project, scenario = prefix.split('-', 1)
+                return {
+                    'project': project,
+                    'scenario': scenario,
+                    'timestamp': None,
+                    'writer': None,
+                    'suffix': sfx,
+                }
+    return None
 
 
 def find_report_files(source_dirs: list, filter_str: str = None) -> list:
@@ -48,32 +122,47 @@ def find_report_files(source_dirs: list, filter_str: str = None) -> list:
             _, ext = os.path.splitext(filename)
             if ext.lower() not in PUBLISH_EXTENSIONS:
                 continue
-            m = REPORT_PATTERN.match(filename)
-            if not m:
+            info = parse_report_filename(filename)
+            if not info:
                 continue
             if filter_str and filter_str not in filename:
                 continue
             files.append({
                 'source': filepath,
                 'filename': filename,
-                'project': m.group('project'),
+                **info,
             })
     return files
 
 
-def publish_files(files: list, dest_base: str, dry_run: bool = False) -> list:
-    """Copy files to docs/reports/{project}/."""
+def publish_files(files: list, dest_base: str, dry_run: bool = False,
+                  default_writer: str = 'anonymous') -> list:
+    """Copy files to docs/reports/{project}/ under the canonical name.
+
+    Files lacking timestamp/writer (raw output form) are renamed on copy:
+    timestamp from the file's mtime, writer from default_writer — so every
+    published file is parseable by generate_index.py.
+    """
     published = []
     for f in files:
+        timestamp = f['timestamp']
+        if not timestamp:
+            mtime = os.path.getmtime(f['source'])
+            timestamp = datetime.fromtimestamp(mtime).strftime('%Y%m%d-%H%M%S')
+        writer = f['writer'] or default_writer
+
+        dest_name = build_publish_name(
+            f['project'], f['scenario'], timestamp, writer, f['suffix'])
         dest_dir = os.path.join(dest_base, f['project'])
-        dest_path = os.path.join(dest_dir, f['filename'])
-        
+        dest_path = os.path.join(dest_dir, dest_name)
+
+        renamed = " (renamed)" if dest_name != f['filename'] else ""
         if dry_run:
-            print(f"  [DRY-RUN] {f['source']} → {dest_path}")
+            print(f"  [DRY-RUN] {f['source']} → {dest_path}{renamed}")
         else:
             os.makedirs(dest_dir, exist_ok=True)
             shutil.copy2(f['source'], dest_path)
-            print(f"  ✓ {f['filename']} → {dest_dir}/")
+            print(f"  ✓ {f['filename']} → {dest_dir}/{dest_name}{renamed}")
         published.append(dest_path)
     return published
 
@@ -102,6 +191,10 @@ def main():
         '--local-index', action='store_true',
         help='Also regenerate index.html locally (default: let GitHub Action handle it)'
     )
+    parser.add_argument(
+        '--writer', '-w', default='anonymous',
+        help='Writer name used when a file has no writer in its name (default: anonymous)'
+    )
     args = parser.parse_args()
     
     source_dirs = args.source or DEFAULT_SOURCE_DIRS
@@ -118,7 +211,8 @@ def main():
         return
     
     print(f"\nFound {len(files)} file(s) to publish:")
-    published = publish_files(files, args.dest, dry_run=args.dry_run)
+    published = publish_files(files, args.dest, dry_run=args.dry_run,
+                              default_writer=args.writer)
     
     # Optionally regenerate index.html locally
     if not args.dry_run and args.local_index:

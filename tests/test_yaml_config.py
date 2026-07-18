@@ -363,7 +363,7 @@ class TestInvalidYAMLHandling:
     def test_dependency_missing_task_raises(self):
         """Dependency referencing non-existent task should raise ValueError."""
         with pytest.raises(ValueError, match="not found"):
-            scenario = _parse_scenario_yaml(
+            _parse_scenario_yaml(
                 "scenario:\n  name: Bad\n"
                 "tasks:\n  - task_id: t_a\n    mapped_hw: IP\n"
                 "dependencies:\n  - src: t_a\n    dst: t_nonexistent\n    type: M2M"

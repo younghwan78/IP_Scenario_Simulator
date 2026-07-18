@@ -15,9 +15,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.model.tokens import (
     FrameToken, TokenQueue, TokenJoin, TokenFork, TokenTransform,
-    JoinPolicy, DEFAULT_QUEUE_CAPACITY, DMA_QUEUE_CAPACITY, create_source_token
+    JoinPolicy, DEFAULT_QUEUE_CAPACITY, DMA_QUEUE_CAPACITY
 )
-from src.model.scenario import ScenarioGraph, ConnectionType, Task
+from src.model.scenario import ScenarioGraph, Task
 from src.model.hw_nodes import IPNode
 from src.controller.simulator import SoCSimulator
 

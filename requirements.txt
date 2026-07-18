@@ -4,4 +4,6 @@ pandas>=2.0
 numpy>=1.24
 pyyaml>=6.0
 plotly>=5.0
+kaleido>=1.0    # optional: PNG chart export (--png / --all-formats)
 pytest>=7.0
+ruff>=0.4       # dev: lint (ruff check src tests main.py)

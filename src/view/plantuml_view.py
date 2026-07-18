@@ -8,12 +8,11 @@ Generates 3 levels:
 M2M paths are shown as individual memory (cylinder) shapes.
 OTF paths are shown as thick arrows.
 """
-import yaml
 import sys
 import os
-import warnings
 from src.model.hw_nodes import IPNode, SensorNode
 from src.model.scenario import ConnectionType
+from src.model.bw import comp_enabled
 
 
 # ── Shared constants ────────────────────────────────────────────────
@@ -295,7 +294,7 @@ def _m2m_detail_label(src_port, dst_port, src_info, dst_info):
         parts.append(f"{bw}bit")
 
     comp = info.get('comp', '')
-    if comp == 'enable':
+    if comp_enabled(comp):
         parts.append("<color:red>COMP</color>")
 
     return "\\n".join(parts)
@@ -360,7 +359,7 @@ def generate_top_view(hw_registry, scenario, output_path):
         lines.append(f'package "{grp}" as pkg_{grp} {bg} {{')
         lines.append(f'    note as N_{grp}')
         lines.append(f'        {ip_list}')
-        lines.append(f'    end note')
+        lines.append('    end note')
         lines.append("}")
         lines.append("")
 

@@ -6,7 +6,7 @@ Analyzes throughput, FPS, and hardware utilization.
 
 from typing import Any, Dict, List
 
-from .simulator import BaseAnalyzer, SimulationResults, TaskResult
+from .simulator import BaseAnalyzer, SimulationResults
 
 class PerformanceAnalyzer(BaseAnalyzer):
     """

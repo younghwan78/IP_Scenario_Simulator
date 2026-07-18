@@ -28,6 +28,10 @@ projectA-FHD30_Recording-20260218-022057-YHJOO_simulation_result.html
 
 원본 output 파일을 `docs/reports/{project}/`에 직접 복사하면 regex가 매칭되지 않아 "No reports found"가 발생합니다.
 
+> **Note (2026-07 업데이트)**: `publish_report.py`가 timestamp 없는 원본 파일도
+> **자동으로 timestamp(파일 mtime)·writer(`--writer`, 기본 anonymous)를 붙여 복사**하도록
+> 개선되었습니다. 이제 이 케이스는 `docs/reports/`에 **수동으로** 파일을 복사한 경우에만 발생합니다.
+
 ### Solution
 
 **방법 A: `publish_report.py` 사용 (권장)**

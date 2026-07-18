@@ -15,16 +15,14 @@ from __future__ import annotations
 
 import copy
 import itertools
-import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
-from ..model.hw_info import HWInfoDB, DVFSTable, DVFSLevel, IPInfo
+from ..model.hw_info import HWInfoDB
 from ..model.hw_resolver import HWResolver, ResolvedIPConfig
 
 
@@ -443,9 +441,14 @@ class ExplorationEngine:
         result.resolved = resolved
 
         # 7. BW power calculation with feature overrides
-        ip_settings = copy.deepcopy(getattr(self.scenario, '_ip_settings', {}))
-        ip_settings = self._apply_ip_settings_overrides(ip_settings, combo)
-        
+        #    (_apply_ip_settings_overrides deepcopies internally; combos
+        #    without feature overrides read the shared dict directly)
+        if combo.get('features'):
+            ip_settings = self._apply_ip_settings_overrides(
+                self.scenario._ip_settings, combo)
+        else:
+            ip_settings = self.scenario._ip_settings
+
         # Check if any feature override was unsupported and had no effect
         for hw, applied in combo.get('feature_applied', {}).items():
             if not applied:
@@ -510,18 +513,56 @@ class ExplorationEngine:
             if task_id in self.scenario._tasks:
                 self.scenario._tasks[task_id].ip_mode = orig_mode
 
+    def _prune_infeasible_dvfs_levels(self, baseline: CandidateResult) -> None:
+        """Drop swept DVFS levels that can never meet the required clock.
+
+        A level whose speed is below the baseline required_clock of its DVFS
+        group is guaranteed infeasible (set_clock < req_clock check), so
+        evaluating it is wasted work. Domains whose IPs are also mode-swept
+        are NOT pruned — a mode change alters ppc and thus required_clock.
+        """
+        if not baseline.resolved:
+            return
+        for domain, levels in list(self.sweep_dvfs.items()):
+            group_ips = [c for c in baseline.resolved.values()
+                         if c.dvfs_group == domain]
+            if not group_ips:
+                continue
+            # Mode sweep on any IP of this group can change required_clock
+            if any(c.ip_name in self.sweep_modes for c in group_ips):
+                continue
+            req = max(c.required_clock for c in group_ips)
+            if req <= 0:
+                continue
+            table = self.db.get_dvfs_table(domain)
+            if not table:
+                continue
+            valid = []
+            for lv in levels:
+                level = table.get_level(lv)
+                if level and level.speed >= req:
+                    valid.append(lv)
+            if valid and len(valid) < len(levels):
+                print(f"[Exploration] Pruned {len(levels) - len(valid)} "
+                      f"infeasible DVFS level(s) from '{domain}' "
+                      f"(speed < required {req:.1f} MHz)")
+                self.sweep_dvfs[domain] = valid
+
     def run(self) -> ExplorationResult:
         """Run the full exploration sweep."""
         t0 = time.time()
 
-        combinations = self._generate_combinations()
-        total = len(combinations)
-        print(f"[Exploration] Total combinations: {total}")
-
-        # Evaluate baseline (no overrides)
+        # Evaluate baseline (no overrides) first — its resolved configs
+        # drive DVFS-level pruning before the sweep
         baseline = self._evaluate({})
         baseline.rank = 0
         baseline.label = "Baseline"
+
+        self._prune_infeasible_dvfs_levels(baseline)
+
+        combinations = self._generate_combinations()
+        total = len(combinations)
+        print(f"[Exploration] Total combinations: {total}")
 
         # Evaluate all combinations
         all_results = []

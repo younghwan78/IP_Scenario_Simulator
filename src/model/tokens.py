@@ -13,7 +13,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Callable, Dict, Generator, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     import simpy
@@ -245,7 +245,7 @@ class TokenJoin:
             }
             # Use simpy.AnyOf to wait for first completion
             if self._env:
-                result = yield simpy.AnyOf(self._env, list(events.values()))
+                yield simpy.AnyOf(self._env, list(events.values()))
                 for port_name, event in events.items():
                     if event.triggered and not tokens:
                         # Take the first triggered token

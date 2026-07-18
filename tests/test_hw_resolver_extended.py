@@ -11,9 +11,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.model.hw_nodes import IPNode, SensorNode
-from src.model.hw_info import HWInfoDB, create_hw_info_db
-from src.model.hw_resolver import HWResolver, ResolvedIPConfig
+from src.model.hw_nodes import IPNode
+from src.model.hw_info import create_hw_info_db
+from src.model.hw_resolver import HWResolver
 from src.model.scenario import ScenarioGraph
 
 
