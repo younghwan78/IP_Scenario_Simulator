@@ -63,7 +63,8 @@ MVC 구조: `src/model` (HW/시나리오 모델), `src/controller` (SimPy 시뮬
 - **HWResolver** (`src/model/hw_resolver.py`): `req_clock = pixels×fps / (1-sw_margin) / ppc`로 요구 클럭 계산 → DVFS 테이블(ASV group별 전압)에서 레벨 선택 → 같은 VDD 도메인 내 최대 클럭으로 정렬 → 전력 계산. MIF 레벨은 total DMA BW 기반 자동 결정(`mif_bw = freq × channel_width × mem_util`).
 - **수동 오버라이드**: `manual_clock`은 DVFS 자동 계산을 무시하고 클럭 강제(리포트에 🟢 표시). `manual_hw_time`은 PPC 기반 시간 계산 대신 Gantt에만 반영 — BW/전력에는 영향 없음 (MFC처럼 PPC 추정 불가능한 IP용).
 - **Token 모델** (`src/model/tokens.py`): FrameToken/TokenQueue/TokenJoin(AND/OR/WINDOW) 라이브러리. 시뮬레이터 실행 경로에는 아직 통합되지 않음 (`_detect_token_mode()`는 감지만 수행). 멀티프레임은 FPS 기반 frame interval로 파이프라인 중첩하며, OTF 그룹은 HW 자원을 점유해 프레임 간 경합이 모델링됨.
-- **공용 BW 공식** (`src/model/bw.py`): 리포트/BW 차트/exploration이 모두 `calc_port_bw()` 하나를 공유. BW 공식 수정은 반드시 이 파일에서.
+- **공용 BW 공식** (`src/model/bw.py`): 리포트/BW 차트/exploration이 모두 `calc_port_bw()` 하나를 공유. BW 공식 수정은 반드시 이 파일에서. `bw_mbs`는 **DRAM 유효 BW** (LLC hit 제외).
+- **LLC 모델**: hw.yaml `- llc:` (capacity_mb/default_hit_ratio/power_coeff, 과제별 고정) + 시나리오 `llc_paths` (상황별 사용 여부). `main.apply_llc_settings()`가 path를 포트별 `llc_enable`/`llc_hit_ratio`로 해석·주입. `DRAM_BW = raw×(1−hit)`이 MIF 레벨/총 BW에 자동 반영.
 - **시나리오 전역 파라미터** (sw_margin, bw_margin, mem_util, vBat 등)는 시나리오 YAML 최상위에 정의 — 기본값과 의미는 README의 Global Parameters 표 참조.
 
 ### 설정 파일 체계

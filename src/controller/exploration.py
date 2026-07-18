@@ -83,13 +83,17 @@ def _is_dma_port(port_name: str) -> bool:
 
 def _calc_bw_for_port(port_info: dict, fps: float,
                       bw_power_coeff: float = 80.0,
-                      vBat: float = 4.0, pmic_eff: float = 0.85) -> dict:
+                      vBat: float = 4.0, pmic_eff: float = 0.85,
+                      llc_power_coeff: float = 8.0,
+                      llc_default_hit_ratio: float = 0.0) -> dict:
     """Calculate BW and BW power for a single DMA port.
 
     Delegates to the shared formula (src/model/bw.py) and adds
     exploration-specific record fields (hw/port/direction).
     """
-    rec = calc_port_bw(port_info, fps, bw_power_coeff, vBat, pmic_eff)
+    rec = calc_port_bw(port_info, fps, bw_power_coeff, vBat, pmic_eff,
+                       llc_power_coeff=llc_power_coeff,
+                       llc_default_hit_ratio=llc_default_hit_ratio)
     rec['hw'] = port_info.get('_hw', '')
     rec['port'] = port_info.get('port', '')
     rec['direction'] = port_info.get('_direction', 'Read')
@@ -122,6 +126,9 @@ class ExplorationEngine:
         self.bw_power_coeff = float(sc.get('bw_power', 80.0))
         self.vBat = float(sc.get('vBat', 4.0))
         self.pmic_eff = float(sc.get('pmic_efficiency', 0.85))
+        # LLC params (resolved onto the scenario by apply_llc_settings)
+        self.llc_power_coeff = getattr(scenario, '_llc_power_coeff', 8.0)
+        self.llc_default_hit = getattr(scenario, '_llc_default_hit_ratio', 0.0)
 
         # Exploration config
         self.sweep_dvfs: Dict[str, list] = {}
@@ -322,7 +329,8 @@ class ExplorationEngine:
                     continue
                 enriched = {**port_info, '_hw': hw, '_direction': 'Read'}
                 rec = _calc_bw_for_port(enriched, self.fps,
-                                        self.bw_power_coeff, self.vBat, self.pmic_eff)
+                                        self.bw_power_coeff, self.vBat, self.pmic_eff,
+                                        self.llc_power_coeff, self.llc_default_hit)
                 records.append(rec)
 
             for port_info in settings.get('outputs', []):
@@ -331,7 +339,8 @@ class ExplorationEngine:
                     continue
                 enriched = {**port_info, '_hw': hw, '_direction': 'Write'}
                 rec = _calc_bw_for_port(enriched, self.fps,
-                                        self.bw_power_coeff, self.vBat, self.pmic_eff)
+                                        self.bw_power_coeff, self.vBat, self.pmic_eff,
+                                        self.llc_power_coeff, self.llc_default_hit)
                 records.append(rec)
 
         total_bw = sum(r['bw_mbs'] for r in records)

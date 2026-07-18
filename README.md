@@ -317,6 +317,8 @@ docs/
 | `bw_margin` | `1.25` | MIF 레벨 결정 시 BW 마진 |
 | `mem_util` | `0.55` | MIF BW 계산용 메모리 활용률 |
 | `mif_channel_width` | `16` | MIF 채널 폭 (bytes) |
+| `llc_hit_ratio` | hw.yaml `llc.default_hit_ratio` | LLC 사용 시 DRAM BW 감소율 오버라이드 |
+| `llc_power` | hw.yaml `llc.power_coeff` (기본 8) | LLC 접근 전력 계수 (mW/GB/s) |
 
 ```yaml
 # 예시
@@ -422,6 +424,44 @@ config_paths:
   hw_info: "../hw_config/projectA_info.csv"
   hw_dvfs: "../hw_config/projectA_dvfs.csv"
 ```
+
+### LLC (Last Level Cache) Paths
+
+특정 IP의 output이 **다음 frame의 input**으로 재사용될 때 해당 버퍼를 LLC에 상주시켜
+DRAM BW를 절감하는 실제 SoC 동작을 모델링합니다 (compression과 유사한 포트 속성).
+
+**과제별 고정 속성** — `hw_config/*_hw.yaml`:
+
+```yaml
+- llc:
+    capacity_mb: 8            # 과제 LLC 용량
+    default_hit_ratio: 0.7    # LLC path 사용 시 평균 DRAM BW 감소율 (과제별 평균)
+    power_coeff: 8            # LLC 접근 전력 (mW/GB/s)
+```
+
+**시나리오별 사용 여부** — Recording은 사용, Still capture는 미사용 등 상황에 따라 정의:
+
+```yaml
+llc_paths:
+  # 형식 1: 단일 포트 (해당 output 버퍼가 LLC 상주)
+  - port: "CSIS.CSIS_WDMA"
+    hit_ratio: 0.65           # (선택) path별 오버라이드
+  # 형식 2: producer output → 다음 frame consumer input (양쪽 포트 적용)
+  - from: "CSIS.CSIS_WDMA"
+    to: "BYRP.COMP_RD0_RDMA"
+```
+
+**계산 모델** (hit ratio 우선순위: 포트 → 시나리오 → HW 기본값):
+
+```
+DRAM BW  = raw_BW × (1 − hit_ratio)     ← 총 BW/MIF 레벨/BW 차트에 반영
+LLC BW   = raw_BW × hit_ratio
+BW Power = DRAM_BW × bw_power + LLC_BW × llc_power
+```
+
+- 포트에 직접 `llc_enable: enable` (+ `llc_hit_ratio`)로 지정도 가능
+- LLC 상주 버퍼 footprint가 `capacity_mb` 초과 시 경고 출력
+- LLC 사용 시 Simulation Report에 **LLC Summary** 섹션(용량/절감량/path 목록) 추가
 
 ## CSV-based HW Configuration
 

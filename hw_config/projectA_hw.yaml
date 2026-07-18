@@ -2,6 +2,20 @@
 # This file defines HW specs and constraints that remain constant per project.
 
 #########################
+# LLC (Last Level Cache) — project-fixed properties
+#########################
+# capacity_mb:        LLC capacity for this SoC project [MB]
+# default_hit_ratio:  average DRAM BW reduction when an LLC path is used
+#                     (project-specific average; override per scenario/port)
+# power_coeff:        LLC access power [mW/GB/s] (vs DRAM bw_power)
+# NOTE: This entry only takes effect when a scenario defines llc_paths
+#       (or per-port llc_enable) — no impact otherwise.
+- llc:
+    capacity_mb: 8
+    default_hit_ratio: 0.7
+    power_coeff: 8
+
+#########################
 # Block CSIS
 #########################
 # CSIS_Wrapper

@@ -203,6 +203,8 @@ def load_ports_csv(path: str) -> List[dict]:
             'bitwidth': _int_or_none(_val(row, 'bitwidth')),
             'comp': _val(row, 'comp') or None,
             'comp_ratio': _float_or_none(_val(row, 'comp_ratio')),
+            'llc': _val(row, 'llc') or None,
+            'llc_hit_ratio': _float_or_none(_val(row, 'llc_hit_ratio')),
             'src_task': _val(row, 'src_task') or None,
             'src_port': _val(row, 'src_port') or None,
             'edge_type': _val(row, 'edge_type') or None,
@@ -271,7 +273,11 @@ def _build_port_dict(p: dict, include_size: bool = True) -> dict:
         port['comp'] = p['comp']
     if p['comp_ratio'] is not None:
         port['comp_ratio'] = p['comp_ratio']
-    
+    if p.get('llc'):
+        port['llc_enable'] = p['llc']
+    if p.get('llc_hit_ratio') is not None:
+        port['llc_hit_ratio'] = p['llc_hit_ratio']
+
     return port
 
 

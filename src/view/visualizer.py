@@ -841,6 +841,8 @@ class Visualizer:
         bw_power_coeff = getattr(scenario, '_bw_power_coeff', 80.0)   # mW/GB/s
         vBat = getattr(scenario, '_vBat', 4.0)                        # V
         pmic_eff = getattr(scenario, '_pmic_efficiency', 0.85)
+        llc_power_coeff = getattr(scenario, '_llc_power_coeff', 8.0)
+        llc_default_hit = getattr(scenario, '_llc_default_hit_ratio', 0.0)
         
         # Build lookup: task_id → TaskResult per frame
         frame_results = {}  # {frame_id: {task_id: TaskResult}}
@@ -879,11 +881,15 @@ class Visualizer:
             """Calculate DMA bandwidth (MB/s) and power (mW, mA).
 
             Delegates to the shared formula in src/model/bw.py.
+            bw_mbs is the DRAM-effective BW (LLC hits excluded), so the
+            BW timeline chart shows actual DRAM traffic.
 
             Returns:
                 (bw_mbs, bw_power_mw, bw_power_ma) or (0, 0, 0) if invalid
             """
-            rec = calc_port_bw(port_info, fps, bw_power_coeff, vBat, pmic_eff)
+            rec = calc_port_bw(port_info, fps, bw_power_coeff, vBat, pmic_eff,
+                               llc_power_coeff=llc_power_coeff,
+                               llc_default_hit_ratio=llc_default_hit)
             return rec['bw_mbs'], rec['bw_power_mw'], rec['bw_power_ma']
         
         def _append_record(records, task_result, port_info, hw_name, direction, frame_id):

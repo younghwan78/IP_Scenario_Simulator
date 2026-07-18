@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 from collections import defaultdict
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from ..model.hw_resolver import ResolvedIPConfig
 
@@ -32,7 +32,8 @@ def _is_dma_port(port_name: str) -> bool:
 def _calc_bw(port_info: dict, fps: float) -> dict:
     """Calculate BW and related info for a single port.
 
-    Returns dict with bw_mbs, bw_power_mw, bw_power_ma, and port details.
+    Returns dict with bw_mbs (DRAM-effective), raw_bw_mbs, llc_bw_mbs,
+    bw_power_mw, bw_power_ma, and port details.
     Delegates to the shared model-level formula (src/model/bw.py).
     """
     return calc_port_bw(
@@ -40,6 +41,8 @@ def _calc_bw(port_info: dict, fps: float) -> dict:
         bw_power_coeff=port_info.get('_bw_power_coeff', 80.0),
         vBat=port_info.get('_vBat', 4.0),
         pmic_eff=port_info.get('_pmic_eff', 0.85),
+        llc_power_coeff=port_info.get('_llc_power_coeff', 8.0),
+        llc_default_hit_ratio=port_info.get('_llc_default_hit', 0.0),
     )
 
 
@@ -87,6 +90,12 @@ class ReportGenerator:
         self.bw_margin = float(sc.get('bw_margin', 1.25))
         self.mem_util = float(sc.get('mem_util', 0.55))
         self.mif_channel_width = int(sc.get('mif_channel_width', 16))
+
+        # LLC params (resolved onto the scenario by apply_llc_settings)
+        self.llc_config = getattr(scenario, '_llc_config', {}) or {}
+        self.llc_power_coeff = getattr(scenario, '_llc_power_coeff', 8.0)
+        self.llc_default_hit = getattr(scenario, '_llc_default_hit_ratio', 0.0)
+        self.llc_paths = getattr(scenario, '_llc_paths', []) or []
 
         # Config file paths
         self.config_paths = sc.get('config_paths', {})
@@ -419,37 +428,46 @@ class ReportGenerator:
         if not ip_settings:
             return records
 
+        params = {
+            '_bw_power_coeff': self.bw_power_coeff,
+            '_vBat': self.vBat,
+            '_pmic_eff': self.pmic_eff,
+            '_llc_power_coeff': self.llc_power_coeff,
+            '_llc_default_hit': self.llc_default_hit,
+        }
         for task_id, settings in ip_settings.items():
             hw = settings.get('hw', '')
-            for port_info in settings.get('inputs', []):
-                port_name = port_info.get('port', '')
-                if not _is_dma_port(port_name):
-                    continue
-                enriched = {**port_info,
-                            '_bw_power_coeff': self.bw_power_coeff,
-                            '_vBat': self.vBat,
-                            '_pmic_eff': self.pmic_eff}
-                bw = _calc_bw(enriched, self.fps)
-                bw['hw'] = hw
-                bw['port'] = port_name
-                bw['direction'] = 'Read'
-                records.append(bw)
-
-            for port_info in settings.get('outputs', []):
-                port_name = port_info.get('port', '')
-                if not _is_dma_port(port_name):
-                    continue
-                enriched = {**port_info,
-                            '_bw_power_coeff': self.bw_power_coeff,
-                            '_vBat': self.vBat,
-                            '_pmic_eff': self.pmic_eff}
-                bw = _calc_bw(enriched, self.fps)
-                bw['hw'] = hw
-                bw['port'] = port_name
-                bw['direction'] = 'Write'
-                records.append(bw)
+            for direction, key in (('Read', 'inputs'), ('Write', 'outputs')):
+                for port_info in settings.get(key, []):
+                    port_name = port_info.get('port', '')
+                    if not _is_dma_port(port_name):
+                        continue
+                    bw = _calc_bw({**port_info, **params}, self.fps)
+                    bw['hw'] = hw
+                    bw['port'] = port_name
+                    bw['direction'] = direction
+                    records.append(bw)
 
         return records
+
+    def _llc_summary(self, records: List[dict]) -> Optional[dict]:
+        """Build LLC summary from DMA records. None when LLC is unused."""
+        total_llc = sum(r.get('llc_bw_mbs', 0.0) for r in records)
+        if total_llc <= 0 and not self.llc_paths:
+            return None
+        total_raw = sum(r.get('raw_bw_mbs', r['bw_mbs']) for r in records)
+        total_dram = sum(r['bw_mbs'] for r in records)
+        return {
+            'capacity_mb': self.llc_config.get('capacity_mb', '-'),
+            'footprint_mb': self.llc_config.get('footprint_mb'),
+            'default_hit_ratio': self.llc_default_hit,
+            'power_coeff': self.llc_power_coeff,
+            'paths': self.llc_paths,
+            'total_raw_bw': total_raw,
+            'total_dram_bw': total_dram,
+            'total_llc_bw': total_llc,
+            'saved_bw': total_raw - total_dram,
+        }
 
     def _section_dma(self) -> Dict[str, List[dict]]:
         records = self._collect_dma_records()
@@ -651,6 +669,29 @@ class ReportGenerator:
         total_bw_pwr = sum(p['bw_power_mw'] for ports in s7.values() for p in ports)
         lines.append(f"**Total DMA BW: {total_bw:.1f} MB/s | Total BW Power: {total_bw_pwr:.2f} mW**")
         lines.append("")
+
+        # ── LLC Summary (only when LLC paths/ports are active) ──
+        llc = self._llc_summary([p for ports in s7.values() for p in ports])
+        if llc:
+            lines.append("## 8. LLC Summary")
+            lines.append("")
+            cap = llc['capacity_mb']
+            fp = llc['footprint_mb']
+            fp_str = f"{fp:.1f} MB" if fp is not None else "-"
+            lines.append(f"- **Capacity**: {cap} MB | **Resident footprint**: {fp_str}")
+            lines.append(f"- **Default hit ratio**: {llc['default_hit_ratio']} | "
+                         f"**LLC power coeff**: {llc['power_coeff']} mW/GB/s")
+            lines.append(f"- **Raw BW**: {llc['total_raw_bw']:.1f} MB/s → "
+                         f"**DRAM BW**: {llc['total_dram_bw']:.1f} MB/s "
+                         f"(**saved {llc['saved_bw']:.1f} MB/s**, "
+                         f"LLC serves {llc['total_llc_bw']:.1f} MB/s)")
+            if llc['paths']:
+                lines.append("")
+                lines.append("| LLC Path | Hit Ratio |")
+                lines.append("|----------|:---------:|")
+                for p in llc['paths']:
+                    lines.append(f"| {p['path']} | {p['hit_ratio']:.2f} |")
+            lines.append("")
 
         return "\n".join(lines)
 
@@ -927,6 +968,30 @@ class ReportGenerator:
             f"<td><b>{total_bw:.1f}</b></td><td><b>{total_bw_pwr:.2f}</b></td><td></td></tr>"
         )
         html.append("</tbody></table>")
+
+        # Section 8: LLC Summary (only when LLC paths/ports are active)
+        llc = self._llc_summary([p for ports in s7_html.values() for p in ports])
+        if llc:
+            html.append("<h2>8. LLC Summary</h2>")
+            fp = llc['footprint_mb']
+            fp_str = f"{fp:.1f} MB" if fp is not None else "-"
+            html.append("<table><tbody>")
+            html.append(f"<tr><td>Capacity</td><td>{llc['capacity_mb']} MB</td>"
+                        f"<td>Resident footprint</td><td>{fp_str}</td></tr>")
+            html.append(f"<tr><td>Default hit ratio</td><td>{llc['default_hit_ratio']}</td>"
+                        f"<td>LLC power coeff</td><td>{llc['power_coeff']} mW/GB/s</td></tr>")
+            html.append(f"<tr><td>Raw BW</td><td>{llc['total_raw_bw']:.1f} MB/s</td>"
+                        f"<td>DRAM BW (after LLC)</td>"
+                        f"<td><b>{llc['total_dram_bw']:.1f} MB/s "
+                        f"(saved {llc['saved_bw']:.1f})</b></td></tr>")
+            html.append("</tbody></table>")
+            if llc['paths']:
+                html.append("<table><thead><tr><th>LLC Path</th>"
+                            "<th>Hit Ratio</th></tr></thead><tbody>")
+                for p in llc['paths']:
+                    html.append(f"<tr><td>{p['path']}</td>"
+                                f"<td>{p['hit_ratio']:.2f}</td></tr>")
+                html.append("</tbody></table>")
 
         html.append("<script>")
         html.append(self._filter_js())

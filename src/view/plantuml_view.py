@@ -159,6 +159,8 @@ def _load_data(hw_path, sc_path):
     from main import load_hw_config, create_hw_node, load_scenario_config, create_scenario, apply_scenario_settings
     hw_config = load_hw_config(hw_path)
     hw_list = hw_config if isinstance(hw_config, list) else hw_config.get('hardware', [])
+    # Skip non-node entries (e.g. project-level '- llc: {...}' config)
+    hw_list = [cfg for cfg in hw_list if 'name' in cfg]
     hw_nodes = [create_hw_node(cfg) for cfg in hw_list]
     hw_registry = {n.name: n for n in hw_nodes}
 

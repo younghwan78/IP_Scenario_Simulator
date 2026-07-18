@@ -459,14 +459,17 @@ def _get_used_port_names(tid, ip_settings):
 
 
 def _get_port_comp_info(tid, port_name, ip_settings):
-    """Check if a port has SBWC/compression or LLC enabled in ip_settings."""
+    """Check if a port has SBWC/compression or LLC enabled in ip_settings.
+
+    Uses the shared model helpers so the view badges/colors always agree
+    with the BW/power calculation ('llc' and 'llc_enable' both accepted).
+    """
+    from src.model.bw import llc_enabled
     settings = ip_settings.get(tid, {})
     for port_list in (settings.get('inputs', []), settings.get('outputs', [])):
         for p in port_list:
             if p.get('port', '') == port_name:
-                comp = p.get('comp', 'disable')
-                llc = p.get('llc', 'disable')
-                return comp == 'enable', llc == 'enable'
+                return comp_enabled(p.get('comp')), llc_enabled(p)
     return False, False
 
 

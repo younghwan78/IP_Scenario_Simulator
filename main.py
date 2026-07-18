@@ -657,6 +657,142 @@ def apply_scenario_settings(hw_nodes: Dict[str, HWNode],
                     vprint(f"[Config] Manual clock set for {hw_name}: {clock/1e6:.1f} MHz")
 
 
+def apply_llc_settings(scenario: 'ScenarioGraph', scenario_config: dict,
+                       hw_llc_config: dict) -> tuple:
+    """Resolve LLC configuration into per-port settings.
+
+    Priority for the effective hit ratio:
+        port llc_hit_ratio → scenario llc_hit_ratio → hw llc.default_hit_ratio
+
+    Sources:
+      - hw.yaml 'llc:' section: capacity_mb, default_hit_ratio, power_coeff
+        (project-fixed properties)
+      - scenario globals: llc_hit_ratio / llc_power (per-scenario override)
+      - scenario 'llc_paths': list of LLC-resident buffer definitions
+          - {port: "HW.PORT", hit_ratio: 0.7}      # single buffer
+          - {from: "HW.PORT", to: "HW.PORT", ...}  # producer → next-frame consumer
+      - per-port 'llc'/'llc_enable' keys (canonicalized to 'llc_enable')
+
+    Returns:
+        (errors, warnings) — errors block the run (like sanity check),
+        warnings are printed but non-fatal.
+    """
+    from src.model.bw import (
+        port_buffer_bytes, llc_enabled, DEFAULT_LLC_POWER_COEFF
+    )
+    errors = []
+    warnings = []
+    sc = scenario_config.get('scenario', scenario_config)
+    hw_llc = dict(hw_llc_config or {})
+
+    default_hit = float(sc.get('llc_hit_ratio',
+                               hw_llc.get('default_hit_ratio', 0.0)))
+    power_coeff = float(sc.get('llc_power',
+                               hw_llc.get('power_coeff', DEFAULT_LLC_POWER_COEFF)))
+    scenario._llc_config = hw_llc
+    scenario._llc_default_hit_ratio = default_hit
+    scenario._llc_power_coeff = power_coeff
+
+    ip_settings = scenario._ip_settings
+
+    # Canonicalize legacy per-port 'llc' key → 'llc_enable'
+    for settings in ip_settings.values():
+        for key in ('inputs', 'outputs'):
+            for p in settings.get(key, []):
+                if 'llc' in p and 'llc_enable' not in p:
+                    p['llc_enable'] = p['llc']
+
+    # Port index: (hw, port) → [(direction_key, port_dict), ...]
+    port_index = {}
+    for settings in ip_settings.values():
+        hw_name = settings.get('hw', '')
+        for key in ('inputs', 'outputs'):
+            for p in settings.get(key, []):
+                port_index.setdefault((hw_name, p.get('port', '')), []).append((key, p))
+
+    # Resolve llc_paths entries
+    resolved_paths = []
+
+    def _apply_ref(ref: str, hit_ratio) -> bool:
+        """Apply LLC settings to one HW.PORT reference. True on success."""
+        if '.' not in ref:
+            errors.append(
+                f"[llc_paths] '{ref}': expected 'HW.PORT' format\n"
+                f"         → Fix: e.g. port: \"MTNR0.WDMA1\"")
+            return False
+        hw_name, port_name = ref.split('.', 1)
+        entries = port_index.get((hw_name, port_name))
+        if not entries:
+            available = sorted({f"{h}.{pt}" for (h, pt) in port_index.keys()
+                                if h == hw_name}) or ['(no ports for this HW)']
+            errors.append(
+                f"[llc_paths] '{ref}' not found in ip_settings ports\n"
+                f"         → Fix: check scenario.yaml llc_paths — "
+                f"available on '{hw_name}': {', '.join(available)}")
+            return False
+        for _key, p in entries:
+            p['llc_enable'] = 'enable'
+            if hit_ratio is not None:
+                p['llc_hit_ratio'] = hit_ratio
+        return True
+
+    for entry in sc.get('llc_paths', []) or []:
+        hit = entry.get('hit_ratio')
+        hit = float(hit) if hit is not None else None
+        if 'port' in entry:
+            ok = _apply_ref(entry['port'], hit)
+            label = entry['port']
+        elif 'from' in entry and 'to' in entry:
+            label = f"{entry['from']} → {entry['to']}"
+            ok = _apply_ref(entry['from'], hit)
+            ok = _apply_ref(entry['to'], hit) and ok
+        else:
+            errors.append(
+                "[llc_paths] entry must have 'port' or 'from'+'to' keys\n"
+                "         → Fix: e.g. - port: \"MTNR0.WDMA1\"  or  "
+                "- from: \"YUVP.WDMA0\"\n           to: \"MTNR1.RDMA2\"")
+            continue
+        if ok:
+            resolved_paths.append({
+                'path': label,
+                'hit_ratio': hit if hit is not None else default_hit,
+            })
+
+    scenario._llc_paths = resolved_paths
+
+    # Post-checks: zero-effect warnings + capacity footprint
+    footprint_bytes = 0.0
+    any_llc = False
+    for settings in ip_settings.values():
+        hw_name = settings.get('hw', '')
+        for key in ('inputs', 'outputs'):
+            for p in settings.get(key, []):
+                if not llc_enabled(p):
+                    continue
+                any_llc = True
+                hit = p.get('llc_hit_ratio', default_hit)
+                if not hit:
+                    warnings.append(
+                        f"[LLC] {hw_name}.{p.get('port', '')}: LLC enabled but "
+                        f"effective hit ratio is 0 — set llc_hit_ratio "
+                        f"(port/scenario) or hw.yaml llc.default_hit_ratio")
+                if key == 'outputs':
+                    # Output buffers are the LLC-resident allocations
+                    footprint_bytes += port_buffer_bytes(p)
+
+    cap_mb = hw_llc.get('capacity_mb')
+    if any_llc and cap_mb:
+        footprint_mb = footprint_bytes / (1024 * 1024)
+        scenario._llc_config['footprint_mb'] = footprint_mb
+        if footprint_mb > float(cap_mb):
+            warnings.append(
+                f"[LLC] resident buffer footprint {footprint_mb:.1f} MB exceeds "
+                f"LLC capacity {cap_mb} MB — actual hit ratio will be lower; "
+                f"consider fewer llc_paths or a smaller hit_ratio")
+
+    return errors, warnings
+
+
 def sanity_check_config(hw_registry: dict, hw_raw: dict,
                         scenario: 'ScenarioGraph',
                         scenario_config: dict) -> list:
@@ -1272,6 +1408,18 @@ def main():
             hw_list = hw_config
         else:
             hw_list = hw_config.get('hardware', [])
+        # Extract project-level LLC config:
+        #   dict format → top-level 'llc:' key
+        #   list format → a list item '- llc: {...}' (no 'name' key)
+        hw_llc_cfg = hw_config.get('llc', {}) if isinstance(hw_config, dict) else {}
+        filtered_hw_list = []
+        for cfg in hw_list:
+            if 'llc' in cfg and 'name' not in cfg:
+                hw_llc_cfg = cfg.get('llc') or {}
+            else:
+                filtered_hw_list.append(cfg)
+        hw_list = filtered_hw_list
+
         # Build HW nodes + raw config map, expanding 'instances' in one pass.
         # (hw_raw keeps raw YAML dicts for Level2 HTML view module info)
         hw_nodes = []
@@ -1338,9 +1486,19 @@ def main():
     # Apply scenario settings to HW nodes
     apply_scenario_settings(hw_registry, scenario_config, resolved_sensor=resolved_sensor)
 
+    # ── LLC settings (hw.yaml llc config + scenario llc_paths) ──
+    llc_errors, llc_warnings = apply_llc_settings(scenario, scenario_config, hw_llc_cfg)
+    for w in llc_warnings:
+        print(f"[Warning] {w}")
+    if scenario._llc_paths:
+        vprint(f"[LLC] {len(scenario._llc_paths)} path(s) active, "
+               f"default hit ratio {scenario._llc_default_hit_ratio}, "
+               f"power coeff {scenario._llc_power_coeff} mW/GB/s")
+
     # ── Sanity Check: cross-reference validation ──────────────
     print("\n[Sanity Check]")
     sanity_errors = sanity_check_config(hw_registry, hw_raw, scenario, scenario_config)
+    sanity_errors.extend(llc_errors)
     if sanity_errors:
         print("  ERROR: Configuration sanity check failed:")
         for err in sanity_errors:

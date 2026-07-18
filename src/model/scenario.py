@@ -153,6 +153,14 @@ class ScenarioGraph:
         self._vBat: float = 4.0                     # battery voltage [V]
         self._pmic_efficiency: float = 0.85
 
+        # ── LLC (Last Level Cache) configuration ──
+        # _llc_config comes from hw.yaml 'llc:' (project-fixed properties);
+        # scenario globals (llc_hit_ratio / llc_power) may override defaults.
+        self._llc_config: Dict[str, Any] = {}       # capacity_mb, default_hit_ratio, power_coeff
+        self._llc_power_coeff: float = 8.0          # mW/GB/s (LLC access power)
+        self._llc_default_hit_ratio: float = 0.0    # 0 = no reduction unless configured
+        self._llc_paths: List[dict] = []            # resolved llc_paths entries (for report)
+
     def add_task(self, task_id: str, mapped_hw: str,
                  workload: Optional[Dict[str, Any]] = None,
                  task_type: str = "hw",
